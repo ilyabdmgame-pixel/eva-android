@@ -118,6 +118,8 @@ public final class Home extends Activity {
         @JavascriptInterface public void townMic(){runOnUiThread(()->chat.microphone());}
         @JavascriptInterface public void townSpeak(String id,String text){runOnUiThread(()->chat.speak(id,text));}
         @JavascriptInterface public String routines(){return LifeState.routines(Home.this).toString();}
+        @JavascriptInterface public String roomActivities(){return LifeState.activities(Home.this).toString();}
+        @JavascriptInterface public void finishedActivity(String key){LifeState.finishedActivity(Home.this,key);}
         @JavascriptInterface public void connectWeather(){runOnUiThread(()->weather.connect());}
         @JavascriptInterface public String cityWeather(){return forecast.read(Home.this);}
         @JavascriptInterface public void chooseForecastLocation(){runOnUiThread(()->{

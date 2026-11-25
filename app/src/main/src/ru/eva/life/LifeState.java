@@ -11,15 +11,20 @@ final class LifeState {
     static final long QUARTER = 900_000L;
     private static final int LIMIT = 96;
     private static final String[] DISTRICTS={"home","street","school","shop","cafe","beach","lane","garden","park","square","market","promenade","pier","headland","courtyard","terrace"};
-    private static JSONObject routines;
+    private static JSONObject routines, activities;
     static synchronized JSONObject routines(Context context){
-        if(routines==null){
-            try(java.io.InputStream input=context.getAssets().open("home/routines.json");
-                java.util.Scanner reader=new java.util.Scanner(input,"UTF-8").useDelimiter("\\A")){
-                routines=new JSONObject(reader.next());
-            }catch(Exception error){throw new IllegalStateException("Invalid packaged schedule",error);}
-        }
+        if(routines==null)routines=readAsset(context,"routines.json");
         return routines;
+    }
+    static synchronized JSONObject activities(Context context){
+        if(activities==null)activities=readAsset(context,"room-activities.json");
+        return activities;
+    }
+    private static JSONObject readAsset(Context context,String name){
+        try(java.io.InputStream input=context.getAssets().open("home/"+name);
+            java.util.Scanner reader=new java.util.Scanner(input,"UTF-8").useDelimiter("\\A")){
+            return new JSONObject(reader.next());
+        }catch(Exception error){throw new IllegalStateException("Invalid room asset: "+name,error);}
     }
     private static JSONArray entry(JSONObject person,int hour) throws JSONException{
         JSONArray rows=person.getJSONArray("entries");
@@ -84,6 +89,19 @@ final class LifeState {
     static synchronized void heartbeat(Context c,long now) {
         read(c,now);
         prefs(c).edit().putLong("heartbeat",now).apply();
+    }
+    static synchronized void finishedActivity(Context c,String key){
+        if(key==null||key.length()>32)return;
+        JSONObject activity=activities(c).optJSONObject(key);
+        if(activity==null)return;
+        long now=System.currentTimeMillis();
+        try{
+            JSONObject state=advance(c,now);
+            JSONArray events=state.optJSONArray("events");
+            state.put("events",append(events==null?new JSONArray():events,
+                event(now,"Ева","home",activity.getString("event"))));
+            prefs(c).edit().putString("timeline",state.toString()).apply();
+        }catch(JSONException ignored){}
     }
     static synchronized void localAction(Context c,String action,String where) {
         long now=System.currentTimeMillis();
