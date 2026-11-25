@@ -12,12 +12,25 @@ import android.view.View;
 import android.view.WindowManager;
 import android.webkit.*;
 import android.widget.Toast;
+import ru.eva.envtest.CodexService;
 import org.json.*;
 import java.io.*;
 import java.util.*;
 
 public final class Home extends Activity {
     private static final String HOST="eva-life.invalid";
+    private static Home visible;
+    public static boolean visible(){return visible!=null;}
+    public static boolean enabled(Context context){
+        int state=context.getPackageManager().getComponentEnabledSetting(new ComponentName(context,Home.class));
+        return state==PackageManager.COMPONENT_ENABLED_STATE_DEFAULT||state==PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
+    }
+    public static void setEnabled(Context context,boolean enabled){
+        context.getPackageManager().setComponentEnabledSetting(new ComponentName(context,Home.class),
+            enabled?PackageManager.COMPONENT_ENABLED_STATE_ENABLED:PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            PackageManager.DONT_KILL_APP);
+        if(!enabled)context.stopService(new Intent(context,LifeService.class));
+    }
     private final Map<String,ResolveInfo> entries=new HashMap<>();
     private String catalog="[]";
     private WebView web;
@@ -165,8 +178,8 @@ public final class Home extends Activity {
         });
         web.addJavascriptInterface(new Bridge(),"Desk");web.loadUrl("https://"+HOST+"/index.html");
     }
-    protected void onStart(){super.onStart();weather.start();}
-    protected void onStop(){weather.stop();super.onStop();}
+    protected void onStart(){super.onStart();visible=this;CodexService.desktopVisibilityChanged();weather.start();}
+    protected void onStop(){if(visible==this){visible=null;CodexService.desktopVisibilityChanged();}weather.stop();super.onStop();}
     protected void onActivityResult(int request,int code,Intent data){
         super.onActivityResult(request,code,data);
         if(request==WeatherWidget.BIND||request==WeatherWidget.CONFIGURE)weather.result(request,code);

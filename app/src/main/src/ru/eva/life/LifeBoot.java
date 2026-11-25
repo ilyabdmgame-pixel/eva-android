@@ -6,7 +6,7 @@ import android.content.Intent;
 
 public final class LifeBoot extends BroadcastReceiver {
     @Override public void onReceive(Context context,Intent intent){
-        if(!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())||!LifeState.enabled(context)
+        if(!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())||!Home.enabled(context)||!LifeState.enabled(context)
                 ||!context.getSharedPreferences("theme",0).getBoolean("boot",true))return;
         try{context.startForegroundService(new Intent(context,LifeService.class));}
         catch(IllegalStateException ignored){/* Home retries when it next becomes visible. */}

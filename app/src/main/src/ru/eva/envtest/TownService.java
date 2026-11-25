@@ -9,29 +9,24 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
 
-public final class TownService extends Service implements Application.ActivityLifecycleCallbacks {
+public final class TownService extends Service {
  private final ExecutorService io=Executors.newSingleThreadExecutor();
- private final Handler main=new Handler(Looper.getMainLooper());
  private volatile CodexService owner;
- private boolean bound,home,chat;
+ private boolean bound,home;
  private final TownVoice voice=new TownVoice(this);
  private final ServiceConnection connection=new ServiceConnection(){
-  public void onServiceConnected(ComponentName n,IBinder b){owner=((CodexService.LocalBinder)b).get();visibility();}
+  public void onServiceConnected(ComponentName n,IBinder b){owner=((CodexService.LocalBinder)b).get();}
   public void onServiceDisconnected(ComponentName n){owner=null;}
  };
- private void visibility(){if(owner!=null)owner.refreshPet(home||chat);}
  public void onCreate(){
-  super.onCreate();File[] stale=getCacheDir().listFiles((dir,name)->name.startsWith("town-voice-")&&name.endsWith(".wav"));if(stale!=null)for(File f:stale)f.delete();getApplication().registerActivityLifecycleCallbacks(this);
+  super.onCreate();File[] stale=getCacheDir().listFiles((dir,name)->name.startsWith("town-voice-")&&name.endsWith(".wav"));if(stale!=null)for(File f:stale)f.delete();
   Intent i=new Intent(this,CodexService.class);
   if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
   bound=bindService(i,connection,BIND_AUTO_CREATE);
  }
- public IBinder onBind(Intent i){home=true;visibility();return incoming.getBinder();}
- public boolean onUnbind(Intent i){voice.stop();home=false;visibility();return false;}
- public void onDestroy(){voice.destroy();home=false;visibility();getApplication().unregisterActivityLifecycleCallbacks(this);if(bound)unbindService(connection);io.shutdownNow();super.onDestroy();}
- public void onActivityResumed(Activity a){if(a instanceof MainActivity){chat=true;visibility();}}
- public void onActivityPaused(Activity a){if(a instanceof MainActivity){chat=false;main.post(this::visibility);}}
- public void onActivityCreated(Activity a,Bundle b){} public void onActivityStarted(Activity a){} public void onActivityStopped(Activity a){main.post(()->{if(home)visibility();});} public void onActivitySaveInstanceState(Activity a,Bundle b){} public void onActivityDestroyed(Activity a){}
+ public IBinder onBind(Intent i){home=true;return incoming.getBinder();}
+ public boolean onUnbind(Intent i){voice.stop();home=false;return false;}
+ public void onDestroy(){voice.destroy();home=false;if(bound)unbindService(connection);io.shutdownNow();super.onDestroy();}
  private final Messenger incoming=new Messenger(new Handler(Looper.getMainLooper(),m->{
   final Messenger reply=m.replyTo;final String request=m.getData().getString("json","");
   if(reply==null||request.length()>160000)return true;

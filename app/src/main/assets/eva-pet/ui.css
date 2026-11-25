@@ -1,4 +1,4 @@
-#eva-pet-controls { min-height:44px; margin:8px 0; padding:9px 14px; border:1px solid #74b5a6; border-radius:11px; background:#264442; color:#effaf5; }
+#eva-pet-controls { min-height:44px; }
     html.eva-pet-root { background:transparent!important; }
     body.eva-pet-chat { width:var(--visible-width,100vw); height:var(--visible-height,100dvh); box-sizing:border-box; border-radius:24px; overflow:hidden; background:#18242e; }
     body.eva-pet-chat #avatar-stage, body.eva-pet-chat #header-toggle,
@@ -12,6 +12,13 @@
     body.eva-pet-chat #form { padding-bottom:8px; }
     body.eva-pet-chat #work-indicator { max-width:100%; }
     body.eva-pet-chat #status { padding-inline:12px; }
+    body.eva-pet-compose #eva-pet-header { min-height:44px; padding-block:0; }
+    body.eva-pet-compose .pet-composer-extra, body.eva-pet-compose :is(#voice-output,#messages .welcome),
+    body.eva-pet-compose:not(.eva-pet-compose-details) :is(#messages,#eva-pet-work-cards,#work-indicator) { display:none!important; }
+    body.eva-pet-compose #form { flex-shrink:0; margin:6px 8px; padding:4px; }
+    body.eva-pet-compose #form textarea { max-height:64px; }
+    body.eva-pet-compose #form button { min-width:44px; min-height:44px; }
+    body.eva-pet-compose #form .attach { display:none; }
 #eva-pet-work-cards {display:none;}
 body.eva-pet-chat #eva-pet-work-cards {display:block;flex:none;max-height:32%;overflow:auto;background:#24383d;color:#f3f8f7;}
 #eva-pet-work-cards article {padding:9px 14px;border-bottom:1px solid #537871;}

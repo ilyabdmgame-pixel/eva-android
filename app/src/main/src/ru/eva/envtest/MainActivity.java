@@ -23,6 +23,8 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import android.widget.*;
 import android.graphics.Color;
+import android.graphics.Rect;
+import ru.eva.life.Home;
 import java.util.regex.Pattern;
 import android.util.Base64;
 import java.net.HttpURLConnection;
@@ -40,6 +42,11 @@ import java.security.spec.X509EncodedKeySpec;
 public final class MainActivity extends Activity implements CodexService.Listener {
   private WebView web;
   private boolean compact=false, petChat=false, resumed=false, pendingPetPermission=false;
+  private boolean petComposerDetails;
+  private Rect petAnchor;
+  private final Rect petVisibleFrame=new Rect();
+  private int petEditorBottom;
+  private CheckBox petFeature;
   private String petUi;
   private int compactX=0, compactY=-1, dragStartX, dragStartY;
   private float dragDownX, dragDownY;
@@ -56,15 +63,20 @@ public final class MainActivity extends Activity implements CodexService.Listene
   private static final int FILES=102, MIC=103, TERMUX_PERMISSION=104;
   private CodexService service; private boolean bound, assistantPending, pageReady; private String loadedUrl="";
   private final android.content.ServiceConnection connection=new android.content.ServiceConnection(){
-    public void onServiceConnected(android.content.ComponentName n,android.os.IBinder b){service=((CodexService.LocalBinder)b).get();service.attach(MainActivity.this);service.refreshPet(resumed);}
+    public void onServiceConnected(android.content.ComponentName n,android.os.IBinder b){service=((CodexService.LocalBinder)b).get();service.attach(MainActivity.this);syncPet();}
     public void onServiceDisconnected(android.content.ComponentName n){service=null;showWelcome("Связь со средой потеряна");}
   };
   public void changed(){if(service==null)return;if(!service.url.isEmpty()){if(!service.url.equals(loadedUrl)){loadedUrl=service.url;showWeb(loadedUrl);}}else showWelcome(service.status);}
-  @Override public void onCreate(Bundle b){super.onCreate(b);updateLaunchMode(getIntent());if(isAssist(getIntent()))EvaVoiceService.setChatActive(true);enableFullscreen();getWindow().setStatusBarColor(Color.rgb(21,25,35));setupNativeTts();assistantPending=isAssist(getIntent());startBackend();}
+  @Override public void onCreate(Bundle b){super.onCreate(b);updateLaunchMode(getIntent());if(isAssist(getIntent()))EvaVoiceService.setChatActive(true);enableFullscreen();getWindow().getDecorView().getViewTreeObserver().addOnGlobalLayoutListener(this::updatePetEditorBounds);getWindow().setStatusBarColor(Color.rgb(21,25,35));setupNativeTts();assistantPending=isAssist(getIntent());startBackend();}
   private boolean isAssist(Intent i){return Intent.ACTION_ASSIST.equals(i.getAction())||Intent.ACTION_VOICE_COMMAND.equals(i.getAction());}
+  private boolean petComposer(){return petChat&&petAnchor!=null;}
+  private void syncPet(){if(service!=null)service.refreshPet(resumed,resumed&&petComposer());}
   private void updateLaunchMode(Intent i){
     boolean assistant=isAssist(i);
     petChat=PetOverlay.OPEN_CHAT.equals(i.getAction());
+    petAnchor=petChat?i.getParcelableExtra(PetOverlay.COMPOSER_ANCHOR):null;
+    petComposerDetails=false;
+    petEditorBottom=0;
     compact=assistant;
     if(compact && i.hasExtra("petCenterX")){
       android.util.DisplayMetrics dm=getResources().getDisplayMetrics();
@@ -78,6 +90,42 @@ public final class MainActivity extends Activity implements CodexService.Listene
   private int voiceBubbleSize(){
     android.util.DisplayMetrics dm=getResources().getDisplayMetrics();
     return Math.min(Math.round(152*dm.density),Math.min(dm.widthPixels,dm.heightPixels));
+  }
+  private void updatePetEditorBounds(){
+    if(!petComposer()||!editorActive)return;
+    getWindow().getDecorView().getWindowVisibleDisplayFrame(petVisibleFrame);
+    int bottom=petVisibleFrame.bottom;
+    if(Build.VERSION.SDK_INT>=30){
+      android.view.WindowMetrics metrics=getWindowManager().getCurrentWindowMetrics();
+      int keyboard=metrics.getWindowInsets().getInsets(android.view.WindowInsets.Type.ime()).bottom;
+      if(keyboard>0)bottom=Math.min(bottom,metrics.getBounds().bottom-keyboard);
+    }
+    if(bottom>0&&bottom!=petEditorBottom){
+      petEditorBottom=bottom;
+      enableFullscreen();
+    }
+  }
+  private void placePetComposer(android.view.WindowManager.LayoutParams lp,android.util.DisplayMetrics dm){
+    int gap=Math.round(8*dm.density);
+    Rect area=new Rect(0,0,dm.widthPixels,dm.heightPixels);
+    if(Build.VERSION.SDK_INT>=30){
+      android.view.WindowMetrics metrics=getWindowManager().getMaximumWindowMetrics();
+      area.set(metrics.getBounds());
+      android.graphics.Insets insets=metrics.getWindowInsets().getInsetsIgnoringVisibility(
+          android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());
+      area.set(area.left+insets.left,area.top+insets.top,area.right-insets.right,area.bottom-insets.bottom);
+    }
+    boolean keyboardBounds=editorActive&&petEditorBottom>area.top&&petEditorBottom<area.bottom;
+    if(keyboardBounds)area.bottom=petEditorBottom;
+    lp.width=Math.max(1,Math.min(area.width()-2*gap,Math.round(380*dm.density)));
+    int heightLimit=editorActive&&!keyboardBounds?Math.round(area.height()*.4f):area.height()-2*gap;
+    lp.height=Math.max(1,Math.min(heightLimit,Math.round((petComposerDetails?232:124)*dm.density)));
+    lp.gravity=android.view.Gravity.TOP|android.view.Gravity.LEFT;
+    int left=petAnchor.centerX()-lp.width/2-area.left;
+    lp.x=area.left+Math.max(gap,Math.min(area.width()-lp.width-gap,left));
+    int below=petAnchor.bottom-area.top+gap,above=petAnchor.top-area.top-lp.height-gap;
+    int ideal=editorActive&&!keyboardBounds?gap:below+lp.height<=area.height()-gap?below:above;
+    lp.y=area.top+Math.max(gap,Math.min(area.height()-lp.height-gap,ideal));
   }
   private void enableFullscreen(){
     if(compact){
@@ -93,6 +141,11 @@ public final class MainActivity extends Activity implements CodexService.Listene
     lp.height=Math.max(1,Math.min(
       (int)(dm.heightPixels*(editorActive?.82f:.56f)),Math.round((editorActive?720:490)*dm.density)));
     lp.x=0;lp.y=Math.round(10*dm.density);
+    if(petComposer()){
+      getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
+      getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+      placePetComposer(lp,dm);
+    }
     getWindow().setAttributes(lp);
     getWindow().getDecorView().setSystemUiVisibility(0);
     getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -111,12 +164,27 @@ public final class MainActivity extends Activity implements CodexService.Listene
     super.onConfigurationChanged(configuration);
     enableFullscreen();
   }
-  @Override protected void onNewIntent(Intent i){super.onNewIntent(i);setIntent(i);updateLaunchMode(i);EvaVoiceService.setChatActive(isAssist(i));enableFullscreen();if(service!=null)changed();startAssistantIfReady();}
+  @Override protected void onNewIntent(Intent i){
+    super.onNewIntent(i);
+    if(resumed&&petComposer()&&PetOverlay.OPEN_CHAT.equals(i.getAction())&&i.hasExtra(PetOverlay.COMPOSER_ANCHOR)){
+      closePetChat();return;
+    }
+    if(compact&&!isAssist(i)&&web!=null)web.evaluateJavascript("if(typeof conversation==='boolean'&&conversation)document.getElementById('conversation')?.click()",null);
+    setIntent(i);updateLaunchMode(i);
+    if(petComposer()){
+      editorActive=false;
+      if(web!=null)web.evaluateJavascript("if(document.activeElement?.matches('input,textarea'))document.activeElement.blur()",null);
+    }
+    EvaVoiceService.setChatActive(isAssist(i));enableFullscreen();
+    syncPet();if(service!=null)changed();startAssistantIfReady();
+  }
   private void startAssistantIfReady(){if(web!=null){if(compact){web.setOutlineProvider(new android.view.ViewOutlineProvider(){public void getOutline(android.view.View v,android.graphics.Outline o){o.setOval(0,0,v.getWidth(),v.getHeight());}});web.setClipToOutline(true);}else{web.setClipToOutline(false);}}if(web!=null&&pageReady){
     web.evaluateJavascript("document.documentElement.classList.toggle('eva-compact-root',"+compact+
       ");document.body.classList.toggle('eva-compact',"+compact+
       ");document.documentElement.classList.toggle('eva-pet-root',"+petChat+
-      ");document.body.classList.toggle('eva-pet-chat',"+petChat+");window.evaPetWorkCards?.("+petChat+")",null);
+      ");document.body.classList.toggle('eva-pet-chat',"+petChat+");document.body.classList.toggle('eva-pet-compose',"+petComposer()+
+      ");document.body.classList.toggle('eva-pet-compose-details',"+(petComposer()&&petComposerDetails)+
+      ");window.evaPetComposer?.("+petComposer()+");window.evaPetWorkCards?.("+petChat+")",null);
   }if(!assistantPending||!pageReady||web==null)return;assistantPending=false;web.evaluateJavascript("window.evaStartAssistant?.()",null);}
   private void startBackend(){if(bound){if(service!=null)changed();return;}showWelcome("Запускаю Еву…");Intent i=new Intent(this,CodexService.class);startService(i);bound=bindService(i,connection,BIND_AUTO_CREATE);}
   private void showWelcome(String explanation){LinearLayout layout=new LinearLayout(this);layout.setOrientation(1);layout.setGravity(android.view.Gravity.CENTER);layout.setPadding(40,80,40,40);layout.setBackgroundColor(Color.rgb(20,25,35));TextView title=new TextView(this);title.setText("Ева");title.setTextSize(28);title.setTextColor(Color.rgb(151,222,199));title.setGravity(android.view.Gravity.CENTER);layout.addView(title);TextView info=new TextView(this);info.setText(explanation);info.setTextSize(16);info.setTextColor(Color.LTGRAY);info.setGravity(android.view.Gravity.CENTER);LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-2,-2);textParams.setMargins(0,20,0,28);layout.addView(info,textParams);if(explanation.contains("Запуска")||explanation.contains("Подготавли")||explanation.contains("Перенош")){android.widget.ProgressBar progress=new android.widget.ProgressBar(this);layout.addView(progress,new LinearLayout.LayoutParams(56,56));}setContentView(layout);layout.setAlpha(0f);layout.animate().alpha(1f).setDuration(450).start();}
@@ -189,25 +257,40 @@ public final class MainActivity extends Activity implements CodexService.Listene
     web.evaluateJavascript(petUi,null);
   }
   private void showPetSettings(){
-    boolean enabled=PetOverlay.enabled(this)&&Settings.canDrawOverlays(this);
-    new android.app.AlertDialog.Builder(this).setTitle("Ева поверх приложений")
-      .setMessage(enabled?"Аватар появится, когда ты выйдешь из Евы. Тап открывает чат, перетаскивание перемещает Еву. Скрыть её можно через уведомление."
-        :"Разреши показ поверх приложений. После этого Ева появится, когда ты вернёшься на главный экран или откроешь другое приложение.")
-      .setNegativeButton("Закрыть",null)
-      .setNeutralButton("Опоры",(dialog,which)->showPetAnchors())
-      .setPositiveButton(enabled?"Скрыть":"Включить",(dialog,which)->{
-        if(enabled||Settings.canDrawOverlays(this)){
-          PetOverlay.setEnabled(this,!enabled);
-          if(service!=null)service.refreshPet(resumed);
-          return;
-        }
-        pendingPetPermission=true;
-        try{startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));}
-        catch(android.content.ActivityNotFoundException error){
-          pendingPetPermission=false;
-          Toast.makeText(this,"Настройки показа поверх приложений недоступны",Toast.LENGTH_LONG).show();
-        }
-      }).show();
+    int padding=Math.round(20*getResources().getDisplayMetrics().density);
+    LinearLayout options=new LinearLayout(this);
+    options.setOrientation(LinearLayout.VERTICAL);options.setPadding(padding,padding/2,padding,0);
+    CheckBox desktop=new CheckBox(this);desktop.setText("Тема рабочего стола");
+    desktop.setChecked(Home.enabled(this));options.addView(desktop);
+    CheckBox pet=new CheckBox(this);pet.setText("Питомец поверх приложений");
+    pet.setChecked(PetOverlay.enabled(this)&&Settings.canDrawOverlays(this));options.addView(pet);
+    petFeature=pet;
+    Button defaultHome=new Button(this);defaultHome.setText("Выбрать главный экран Android");
+    defaultHome.setEnabled(desktop.isChecked());options.addView(defaultHome);
+    defaultHome.setOnClickListener(v->{
+      try{startActivity(new Intent(Settings.ACTION_HOME_SETTINGS));}
+      catch(android.content.ActivityNotFoundException error){Toast.makeText(this,"Настройки главного экрана недоступны",Toast.LENGTH_SHORT).show();}
+    });
+    desktop.setOnClickListener(v->{
+      boolean enabled=desktop.isChecked();Home.setEnabled(this,enabled);defaultHome.setEnabled(enabled);
+      if(web!=null)web.evaluateJavascript("document.getElementById('home-open').hidden="+!enabled,null);
+    });
+    pet.setOnClickListener(v->{
+      if(!pet.isChecked()||Settings.canDrawOverlays(this)){
+        PetOverlay.setEnabled(this,pet.isChecked());syncPet();return;
+      }
+      pet.setChecked(false);pendingPetPermission=true;
+      try{startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));}
+      catch(android.content.ActivityNotFoundException error){
+        pendingPetPermission=false;
+        Toast.makeText(this,"Настройки показа поверх приложений недоступны",Toast.LENGTH_LONG).show();
+      }
+    });
+    android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(this).setTitle("Рабочий стол и питомец")
+        .setView(options).setNeutralButton("Опоры питомца",(d,w)->showPetAnchors())
+        .setPositiveButton("Готово",null).create();
+    dialog.setOnDismissListener(d->petFeature=null);
+    dialog.show();
   }
   private void showPetAnchors(){
     boolean enabled=PetOverlay.anchorsEnabled(this);
@@ -255,8 +338,9 @@ public final class MainActivity extends Activity implements CodexService.Listene
   }
   public final class EvaBridge {
     @JavascriptInterface public void openHome(){
-      runOnUiThread(()->startActivity(new Intent(MainActivity.this,ru.eva.life.Home.class)));
+      runOnUiThread(()->{if(Home.enabled(MainActivity.this))startActivity(new Intent(MainActivity.this,Home.class));});
     }
+    @JavascriptInterface public boolean homeEnabled(){return Home.enabled(MainActivity.this);}
     @JavascriptInterface public void openPetResult(String path){runOnUiThread(()->{
       if(!resumed||!petChat)return;
       try{PetResultFile.view(MainActivity.this,path);}
@@ -270,14 +354,19 @@ public final class MainActivity extends Activity implements CodexService.Listene
     });}
     @JavascriptInterface public void petSettings(){runOnUiThread(()->{if(resumed&&!petChat)showPetSettings();});}
     @JavascriptInterface public void closePetChat(){runOnUiThread(MainActivity.this::closePetChat);}
+    @JavascriptInterface public void petComposerDetails(){runOnUiThread(()->{
+      if(!petComposer()||!resumed||petComposerDetails)return;
+      petComposerDetails=true;enableFullscreen();startAssistantIfReady();
+    });}
     @JavascriptInterface public void startMiniVoice(){runOnUiThread(()->{
-      if(!petChat || !resumed)return;
+      if(!petChat||petComposer()||!resumed)return;
       setIntent(new Intent(MainActivity.this,MainActivity.class).setAction(Intent.ACTION_ASSIST));
       updateLaunchMode(getIntent());
       editorActive=false;
       android.view.inputmethod.InputMethodManager ime=(android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
       if(ime!=null && web!=null)ime.hideSoftInputFromWindow(web.getWindowToken(),0);
       enableFullscreen();
+      syncPet();
       startAssistantIfReady();
     });}
     @JavascriptInterface public void showMiniText(){runOnUiThread(()->{
@@ -285,13 +374,15 @@ public final class MainActivity extends Activity implements CodexService.Listene
       setIntent(new Intent(MainActivity.this,MainActivity.class).setAction(PetOverlay.OPEN_CHAT));
       updateLaunchMode(getIntent());
       enableFullscreen();
+      syncPet();
       startAssistantIfReady();
     });}
     @JavascriptInterface public void expandPetChat(){runOnUiThread(()->{
       if(!petChat)return;
       setIntent(new Intent(MainActivity.this,MainActivity.class));
-      petChat=false;
+      updateLaunchMode(getIntent());
       enableFullscreen();
+      syncPet();
       startAssistantIfReady();
     });}
 
@@ -301,7 +392,15 @@ public final class MainActivity extends Activity implements CodexService.Listene
     @JavascriptInterface public boolean hasFilePermission(){return checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)==PackageManager.PERMISSION_GRANTED;}
   }
   public final class NativeVoiceBridge {
-    @JavascriptInterface public void setEditing(boolean editing){runOnUiThread(()->{editorActive=editing;if(petChat)enableFullscreen();if(editing){getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_VISIBLE);getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);}else enableFullscreen();});}
+    @JavascriptInterface public void setEditing(boolean editing){runOnUiThread(()->{
+      editorActive=editing;
+      if(petComposer()){if(!editing)petEditorBottom=0;enableFullscreen();return;}
+      if(petChat)enableFullscreen();
+      if(editing){
+        getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_VISIBLE);
+        getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+      }else enableFullscreen();
+    });}
     @JavascriptInterface public void setVoiceChatActive(boolean active){EvaVoiceService.setChatActive(active);}
     @JavascriptInterface public boolean wakeEnabled(){return EvaVoiceService.enabled(MainActivity.this);}
     @JavascriptInterface public String wakeStatus(){return getSharedPreferences("eva_wake",0).getString("status","Выключено");}
@@ -318,12 +417,13 @@ public final class MainActivity extends Activity implements CodexService.Listene
       pendingPetPermission=false;
       if(Settings.canDrawOverlays(this))PetOverlay.setEnabled(this,true);
     }
-    if(service!=null)service.refreshPet(true);
+    if(petFeature!=null)petFeature.setChecked(PetOverlay.enabled(this)&&Settings.canDrawOverlays(this));
+    syncPet();
     if(isAssist(getIntent()))EvaVoiceService.setChatActive(true);
   }
   @Override protected void onStop(){
     resumed=false;
-    if(service!=null)service.refreshPet(false);
+    syncPet();
     super.onStop();
   }
   @Override protected void onDestroy(){if(compact||petChat)EvaVoiceService.setChatActive(false);if(service!=null)service.detach(this);if(bound)unbindService(connection);if(nativeTts!=null){nativeTts.shutdown();nativeTts=null;}if(recognizer!=null){recognizer.destroy();recognizer=null;}if(web!=null){web.destroy();web=null;}super.onDestroy();}

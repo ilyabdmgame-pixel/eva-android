@@ -50,6 +50,7 @@ import java.io.InputStream;
 
 final class PetOverlay {
     static final String OPEN_CHAT="ru.eva.envtest.OPEN_PET_CHAT";
+    static final String COMPOSER_ANCHOR="petComposerAnchor";
     static final String STOP="ru.eva.envtest.STOP_PET";
     private static final String PREFS="eva_pet";
     private static final String[] FRAMES={
@@ -130,7 +131,7 @@ final class PetOverlay {
             long now=SystemClock.uptimeMillis();
             if(now<ignoreGravityUntil)return;
             int direction=gravity.direction(rotation,now);
-            if(touched||parked||appHidden||direction==physicalDown)return;
+            if(touched||parked||appHidden||composerVisible||direction==physicalDown)return;
             physicalDown=direction;
             fallWithTilt();
         }
@@ -251,13 +252,22 @@ final class PetOverlay {
         c.getSharedPreferences(PREFS,0).edit().putBoolean("anchors",enabled).apply();
     }
 
-    void setSuspended(boolean value) {
-        suspended=value;
+    private boolean composerVisible;
+    void setPresentation(boolean suspend,boolean composer) {
+        boolean closing=composerVisible&&!composer;
+        composerVisible=composer;
+        suspended=suspend;
         sync();
+        if(sprite==null)return;
+        if(composer){
+            handler.removeCallbacks(next);
+            choreographer.removeFrameCallback(tick);
+        }else if(closing)returnToFloor();
     }
 
     void sync() {
-        if(!enabled(context)||!Settings.canDrawOverlays(context)||suspended||!power.isInteractive()||keyguard.isKeyguardLocked()) {
+        if(!enabled(context)||!Settings.canDrawOverlays(context)||suspended||ru.eva.life.Home.visible()
+            ||!power.isInteractive()||keyguard.isKeyguardLocked()) {
             remove();
             return;
         }
@@ -727,7 +737,7 @@ final class PetOverlay {
     }
 
     private void onFrame(long frameTimeNanos){
-        if(sprite==null||touched)return;
+        if(sprite==null||touched||composerVisible)return;
         boolean resting=mode==PetMotion.SEATED_PEEK||mode==PetMotion.IDLE_WINK||
             mode==PetMotion.IDLE_YAWN||mode==PetMotion.LOOK_AROUND;
         long interval=resting?31_000_000:15_000_000;
@@ -1069,7 +1079,7 @@ final class PetOverlay {
 
     private void refreshAppScene(){
         handler.removeCallbacks(appCheck);
-        if(sprite==null||suspended||!anchorsEnabled(context))return;
+        if(sprite==null||suspended||composerVisible||!anchorsEnabled(context))return;
         PetAppScene previous=appScene;
         appScene=EvaAccessibility.petAppScene();
         if(appScene!=null)PetAppProfiles.seen(appScene.app);
@@ -1366,7 +1376,7 @@ final class PetOverlay {
         windowEdges=edges;
         List<PetHomeMap.Box> previousTerrain=windowTerrain;
         windowTerrain=PetWindowGround.local(edges,contentOriginX,contentOriginY);
-        if(touched||parked||appHidden||physicalDown!=PetGravity.DOWN||turnInAir!=null)return;
+        if(touched||parked||appHidden||composerVisible||physicalDown!=PetGravity.DOWN||turnInAir!=null)return;
 
         PetHomeMap.Box under=PetWindowGround.covering(windowTerrain,x,y,layout.width,layout.height);
         if(platform!=null&&platform.window()){
@@ -2041,10 +2051,10 @@ final class PetOverlay {
         pendingWorkGesture=0;
         workSignalUntil=0;
         if(sprite==null||keyguard.isKeyguardLocked())return;
-        if(motionEnabled)play(PetMotion.GREET,false);
-        Intent i=new Intent(context,MainActivity.class).setAction(Intent.ACTION_ASSIST)
-            .putExtra("petCenterX",layout.x+layout.width/2)
-            .putExtra("petCenterY",layout.y+layout.height/2)
+        int[] location=new int[2];sprite.getLocationOnScreen(location);
+        Rect anchor=new Rect(location[0],location[1],location[0]+sprite.getWidth(),location[1]+sprite.getHeight());
+        Intent i=new Intent(context,MainActivity.class).setAction(OPEN_CHAT)
+            .putExtra(COMPOSER_ANCHOR,anchor)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
         try { context.startActivity(i); }
         catch(RuntimeException e) { android.util.Log.w("EvaPet","Could not open chat",e); }
@@ -2281,6 +2291,7 @@ final class PetOverlay {
         }
 
         @Override public boolean onTouchEvent(MotionEvent e) {
+            if(composerVisible)return e.getActionMasked()!=MotionEvent.ACTION_UP||performClick();
             switch(e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     lastPetTouch=SystemClock.uptimeMillis();

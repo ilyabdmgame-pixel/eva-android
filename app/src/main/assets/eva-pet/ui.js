@@ -1,16 +1,13 @@
 (() => {
   if (document.getElementById('eva-pet-header')) return;
-  const settings = document.getElementById('voice-settings');
-  let button;
+  const settings = document.getElementById('voice-settings-open');
   if (settings) {
-    button = document.createElement('button');
+    const button = document.createElement('button');
     button.id = 'eva-pet-controls';
     button.type = 'button';
-    button.textContent = 'Ева поверх приложений';
+    button.textContent = 'Рабочий стол и питомец';
     button.addEventListener('click', () => EvaApp.petSettings());
-    const access = document.getElementById('accessibility-open');
-    if (access) access.insertAdjacentElement('afterend', button);
-    else settings.append(button);
+    settings.insertAdjacentElement('afterend', button);
   }
   const style = document.createElement('link');
   style.rel = 'stylesheet';
@@ -24,6 +21,7 @@
   const games = document.createElement('button');
   games.type = 'button';
   games.id = 'eva-pet-games-launcher';
+  games.className = 'pet-composer-extra';
   games.textContent = 'Игры';
   games.setAttribute('aria-label', 'Игры с Евой');
   games.addEventListener('click', openGames);
@@ -38,11 +36,38 @@
     control.type = 'button';
     control.textContent = glyph;
     control.setAttribute('aria-label', label);
+    if (action === 'petAppProfile' || action === 'petMap') control.className = 'pet-composer-extra';
     control.title = label;
     control.addEventListener('click', () => EvaApp[action]());
     header.append(control);
   }
   document.body.prepend(header);
+
+  const composer = document.getElementById('form');
+  const input = document.getElementById('input');
+  const mic = document.getElementById('mic');
+  let composing = false;
+  const draftKey = () => 'eva-pet-draft:' + (localStorage.getItem('eva-current-thread') || 'new');
+  window.evaPetComposer = active => {
+    if (active === composing) return;
+    composing = active;
+    if (composing && !input.value) {
+      input.value = localStorage.getItem(draftKey()) || '';
+      if (input.value) input.dispatchEvent(new Event('input'));
+    }
+  };
+  input?.addEventListener('input', () => {
+    if (!composing) return;
+    if (input.value) localStorage.setItem(draftKey(), input.value);
+    else localStorage.removeItem(draftKey());
+  });
+  composer?.addEventListener('submit', () => {
+    if (!composing || !input.value.trim()) return;
+    const key = draftKey();
+    EvaApp.petComposerDetails();
+    queueMicrotask(() => { if (!input.value) localStorage.removeItem(key); });
+  }, true);
+  mic?.addEventListener('click', () => { if (composing) EvaApp.petComposerDetails(); }, true);
 
   const items = [
     { id:'ball', name:'Мяч' }, { id:'camera', name:'Фотоаппарат' }, { id:'plane', name:'Самолёт' }

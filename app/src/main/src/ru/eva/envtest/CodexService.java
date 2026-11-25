@@ -12,12 +12,14 @@ public final class CodexService extends Service {
  public volatile String url="",status="Запускаю Еву…";
  private Listener listener;private java.lang.Process process;
  private PetOverlay pet;
+ private static CodexService active;
  private final Handler handler=new Handler(Looper.getMainLooper());
  private final ExecutorService io=Executors.newSingleThreadExecutor();
  public void attach(Listener l){listener=l;l.changed();}
  public void detach(Listener l){if(listener==l)listener=null;}
  private void report(String text){handler.post(()->{status=text;if(listener!=null)listener.changed();});}
  @Override public void onCreate(){super.onCreate();try{
+  active=this;
   startForeground(11,notification());
   try{pet=new PetOverlay(this);}catch(RuntimeException error){android.util.Log.w("EvaPet","Could not initialise overlay",error);}
   io.execute(this::startProcess);
@@ -45,14 +47,18 @@ public final class CodexService extends Service {
   return builder.build();
  }
  void openPetMap(){if(pet!=null)pet.requestSupportMap();}
- void refreshPet(boolean activityVisible){
-  if(pet!=null)pet.setSuspended(activityVisible);
+ public static void desktopVisibilityChanged(){
+  CodexService service=active;
+  if(service!=null)service.handler.post(()->{if(active==service&&service.pet!=null)service.pet.sync();});
+ }
+ void refreshPet(boolean activityVisible,boolean composerVisible){
+  if(pet!=null)pet.setPresentation(activityVisible&&!composerVisible,composerVisible);
   ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(11,notification());
  }
  @Override public int onStartCommand(Intent intent,int flags,int id){
   if(intent!=null&&PetOverlay.STOP.equals(intent.getAction())){
    PetOverlay.setEnabled(this,false);
-   refreshPet(false);
+   refreshPet(false,false);
   }
   return START_NOT_STICKY;
  }
@@ -104,5 +110,5 @@ public final class CodexService extends Service {
   try(BufferedReader in=new BufferedReader(new InputStreamReader(process.getInputStream(),"UTF-8"))){String line;while((line=in.readLine())!=null){if(line.equals("EVA_PET_WORK done")||line.equals("EVA_PET_WORK waiting")){boolean waiting=line.endsWith("waiting");handler.post(()->{if(pet!=null)pet.workNotice(waiting);});}else if(line.startsWith("EVA_READY ")){String ready=line.substring(10);if(ready.matches("^http://127\\.0\\.0\\.1:[0-9]{1,5}/#[0-9a-f]{48}$")){url=ready;report("Ева готова");}}}}
   url="";report("Среда остановлена. Откройте приложение заново.");
  }catch(Exception e){report("Ошибка запуска: "+e.getMessage());}}
- @Override public void onDestroy(){if(pet!=null)pet.destroy();if(process!=null)process.destroy();io.shutdownNow();handler.removeCallbacksAndMessages(null);super.onDestroy();}
+ @Override public void onDestroy(){if(active==this)active=null;if(pet!=null)pet.destroy();if(process!=null)process.destroy();io.shutdownNow();handler.removeCallbacksAndMessages(null);super.onDestroy();}
 }
