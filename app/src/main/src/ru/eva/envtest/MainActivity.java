@@ -41,16 +41,13 @@ import java.security.spec.X509EncodedKeySpec;
 
 public final class MainActivity extends Activity implements CodexService.Listener {
   private WebView web;
-  private boolean compact=false, petChat=false, resumed=false, pendingPetPermission=false;
+  private boolean assistantVoice=false, petChat=false, resumed=false, pendingPetPermission=false;
   private boolean petComposerDetails;
   private Rect petAnchor;
   private final Rect petVisibleFrame=new Rect();
   private int petEditorBottom;
   private CheckBox petFeature;
   private String petUi;
-  private int compactX=0, compactY=-1, dragStartX, dragStartY;
-  private float dragDownX, dragDownY;
-  private boolean dragging=false;
   private ValueCallback<Uri[]> fileCallback;
   private PermissionRequest pendingMic;
   private SpeechRecognizer recognizer;
@@ -77,22 +74,12 @@ public final class MainActivity extends Activity implements CodexService.Listene
     petAnchor=petChat?i.getParcelableExtra(PetOverlay.COMPOSER_ANCHOR):null;
     petComposerDetails=false;
     petEditorBottom=0;
-    compact=assistant;
-    if(compact && i.hasExtra("petCenterX")){
-      android.util.DisplayMetrics dm=getResources().getDisplayMetrics();
-      int size=voiceBubbleSize();
-      int horizontal=Math.max(0,(dm.widthPixels-size)/2);
-      compactX=Math.max(-horizontal,Math.min(horizontal,i.getIntExtra("petCenterX",dm.widthPixels/2)-dm.widthPixels/2));
-      compactY=Math.max(0,Math.min(dm.heightPixels-size,dm.heightPixels-i.getIntExtra("petCenterY",dm.heightPixels/2)-size/2));
-    }
+    assistantVoice=assistant;
     assistantPending=assistant;
   }
-  private int voiceBubbleSize(){
-    android.util.DisplayMetrics dm=getResources().getDisplayMetrics();
-    return Math.min(Math.round(152*dm.density),Math.min(dm.widthPixels,dm.heightPixels));
-  }
+  private boolean usesSmallComposer(){return petComposer()||assistantVoice;}
   private void updatePetEditorBounds(){
-    if(!petComposer()||!editorActive)return;
+    if(!usesSmallComposer()||!editorActive)return;
     getWindow().getDecorView().getWindowVisibleDisplayFrame(petVisibleFrame);
     int bottom=petVisibleFrame.bottom;
     if(Build.VERSION.SDK_INT>=30){
@@ -117,47 +104,48 @@ public final class MainActivity extends Activity implements CodexService.Listene
     }
     boolean keyboardBounds=editorActive&&petEditorBottom>area.top&&petEditorBottom<area.bottom;
     if(keyboardBounds)area.bottom=petEditorBottom;
-    lp.width=Math.max(1,Math.min(area.width()-2*gap,Math.round(380*dm.density)));
+    lp.width=Math.max(1,Math.min(area.width()-2*gap,Math.round(338*dm.density)));
     int heightLimit=editorActive&&!keyboardBounds?Math.round(area.height()*.4f):area.height()-2*gap;
-    lp.height=Math.max(1,Math.min(heightLimit,Math.round((petComposerDetails?232:124)*dm.density)));
+    lp.height=Math.max(1,Math.min(heightLimit,Math.round((petComposerDetails?232:112)*dm.density)));
     lp.gravity=android.view.Gravity.TOP|android.view.Gravity.LEFT;
-    int left=petAnchor.centerX()-lp.width/2-area.left;
+    int center=petAnchor==null?area.centerX():petAnchor.centerX();
+    int left=center-lp.width/2-area.left;
     lp.x=area.left+Math.max(gap,Math.min(area.width()-lp.width-gap,left));
-    int below=petAnchor.bottom-area.top+gap,above=petAnchor.top-area.top-lp.height-gap;
-    int ideal=editorActive&&!keyboardBounds?gap:below+lp.height<=area.height()-gap?below:above;
+    int ideal=area.height()-lp.height-gap;
+    if(petAnchor!=null){
+      int below=petAnchor.bottom-area.top+gap,above=petAnchor.top-area.top-lp.height-gap;
+      ideal=below+lp.height<=area.height()-gap?below:above;
+    }
+    if(editorActive&&!keyboardBounds)ideal=gap;
     lp.y=area.top+Math.max(gap,Math.min(area.height()-lp.height-gap,ideal));
   }
   private void enableFullscreen(){
-    if(compact){
-      getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
-      getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-      getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
-    }else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
-    if(petChat){
-    android.util.DisplayMetrics dm=getResources().getDisplayMetrics();
-    android.view.WindowManager.LayoutParams lp=getWindow().getAttributes();
-    lp.gravity=android.view.Gravity.BOTTOM|android.view.Gravity.CENTER_HORIZONTAL;
-    lp.width=Math.max(1,Math.min(dm.widthPixels-Math.round(20*dm.density),Math.round(440*dm.density)));
-    lp.height=Math.max(1,Math.min(
-      (int)(dm.heightPixels*(editorActive?.82f:.56f)),Math.round((editorActive?720:490)*dm.density)));
-    lp.x=0;lp.y=Math.round(10*dm.density);
-    if(petComposer()){
-      getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
-      getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-      placePetComposer(lp,dm);
+    if(petChat||assistantVoice){
+      android.util.DisplayMetrics dm=getResources().getDisplayMetrics();
+      android.view.WindowManager.LayoutParams lp=getWindow().getAttributes();
+      if(usesSmallComposer()){
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
+        getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        placePetComposer(lp,dm);
+      }else{
+        getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
+        lp.gravity=android.view.Gravity.BOTTOM|android.view.Gravity.CENTER_HORIZONTAL;
+        lp.width=Math.max(1,Math.min(dm.widthPixels-Math.round(20*dm.density),Math.round(440*dm.density)));
+        lp.height=Math.max(1,Math.min((int)(dm.heightPixels*(editorActive?.82f:.56f)),
+            Math.round((editorActive?720:490)*dm.density)));
+        lp.x=0;lp.y=Math.round(10*dm.density);
+      }
+      getWindow().setAttributes(lp);
+      getWindow().getDecorView().setSystemUiVisibility(0);
+      getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+      return;
     }
-    getWindow().setAttributes(lp);
-    getWindow().getDecorView().setSystemUiVisibility(0);
-    getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-    return;
-  }if(compact){getWindow().getDecorView().setSystemUiVisibility(0);getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));int size=voiceBubbleSize();android.view.WindowManager.LayoutParams lp=getWindow().getAttributes();lp.gravity=android.view.Gravity.BOTTOM|android.view.Gravity.CENTER_HORIZONTAL;lp.width=size;lp.height=size;if(compactY<0)compactY=(int)(24*getResources().getDisplayMetrics().density);lp.x=compactX;lp.y=compactY;getWindow().setAttributes(lp);return;}getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT);getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);}
-  @Override public boolean dispatchTouchEvent(android.view.MotionEvent event){
-    if(!compact)return super.dispatchTouchEvent(event);
-    int action=event.getActionMasked();
-    if(action==android.view.MotionEvent.ACTION_DOWN){dragging=false;dragDownX=event.getRawX();dragDownY=event.getRawY();dragStartX=compactX;dragStartY=compactY;return super.dispatchTouchEvent(event);}
-    if(action==android.view.MotionEvent.ACTION_MOVE){float dx=event.getRawX()-dragDownX,dy=event.getRawY()-dragDownY;int slop=android.view.ViewConfiguration.get(this).getScaledTouchSlop();if(!dragging&&dx*dx+dy*dy>slop*slop){dragging=true;android.view.MotionEvent cancel=android.view.MotionEvent.obtain(event);cancel.setAction(android.view.MotionEvent.ACTION_CANCEL);super.dispatchTouchEvent(cancel);cancel.recycle();}if(dragging){android.view.WindowManager.LayoutParams lp=getWindow().getAttributes();android.util.DisplayMetrics dm=getResources().getDisplayMetrics();int horizontal=Math.max(0,(dm.widthPixels-lp.width)/2),vertical=Math.max(0,dm.heightPixels-lp.height);compactX=Math.max(-horizontal,Math.min(horizontal,dragStartX+Math.round(dx)));compactY=Math.max(0,Math.min(vertical,dragStartY-Math.round(dy)));lp.x=compactX;lp.y=compactY;getWindow().setAttributes(lp);return true;}}
-    if(dragging&&(action==android.view.MotionEvent.ACTION_UP||action==android.view.MotionEvent.ACTION_CANCEL)){dragging=false;return true;}
-    return super.dispatchTouchEvent(event);
+    getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
+    getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT);
+    getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        |android.view.View.SYSTEM_UI_FLAG_FULLSCREEN|android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        |android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE|android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        |android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
   }
   @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);if(hasFocus&&!editorActive)enableFullscreen();}
   @Override public void onConfigurationChanged(android.content.res.Configuration configuration){
@@ -169,23 +157,26 @@ public final class MainActivity extends Activity implements CodexService.Listene
     if(resumed&&petComposer()&&PetOverlay.OPEN_CHAT.equals(i.getAction())&&i.hasExtra(PetOverlay.COMPOSER_ANCHOR)){
       closePetChat();return;
     }
-    if(compact&&!isAssist(i)&&web!=null)web.evaluateJavascript("if(typeof conversation==='boolean'&&conversation)document.getElementById('conversation')?.click()",null);
+    if(assistantVoice&&!isAssist(i)&&web!=null)web.evaluateJavascript("window.evaStopAssistant?.()",null);
     setIntent(i);updateLaunchMode(i);
-    if(petComposer()){
+    if(usesSmallComposer()){
       editorActive=false;
       if(web!=null)web.evaluateJavascript("if(document.activeElement?.matches('input,textarea'))document.activeElement.blur()",null);
     }
     EvaVoiceService.setChatActive(isAssist(i));enableFullscreen();
     syncPet();if(service!=null)changed();startAssistantIfReady();
   }
-  private void startAssistantIfReady(){if(web!=null){if(compact){web.setOutlineProvider(new android.view.ViewOutlineProvider(){public void getOutline(android.view.View v,android.graphics.Outline o){o.setOval(0,0,v.getWidth(),v.getHeight());}});web.setClipToOutline(true);}else{web.setClipToOutline(false);}}if(web!=null&&pageReady){
-    web.evaluateJavascript("document.documentElement.classList.toggle('eva-compact-root',"+compact+
-      ");document.body.classList.toggle('eva-compact',"+compact+
-      ");document.documentElement.classList.toggle('eva-pet-root',"+petChat+
-      ");document.body.classList.toggle('eva-pet-chat',"+petChat+");document.body.classList.toggle('eva-pet-compose',"+petComposer()+
-      ");document.body.classList.toggle('eva-pet-compose-details',"+(petComposer()&&petComposerDetails)+
-      ");window.evaPetComposer?.("+petComposer()+");window.evaPetWorkCards?.("+petChat+")",null);
-  }if(!assistantPending||!pageReady||web==null)return;assistantPending=false;web.evaluateJavascript("window.evaStartAssistant?.()",null);}
+  private void startAssistantIfReady(){
+    if(!pageReady||web==null)return;
+    boolean themed=petChat||assistantVoice;
+    web.evaluateJavascript("document.documentElement.classList.toggle('eva-pet-root',"+themed+
+        ");document.body.classList.toggle('eva-pet-chat',"+themed+
+        ");document.body.classList.toggle('eva-voice-session',"+assistantVoice+
+        ");document.body.classList.toggle('eva-pet-compose',"+usesSmallComposer()+
+        ");document.body.classList.toggle('eva-pet-compose-details',"+(usesSmallComposer()&&petComposerDetails)+
+        ");window.evaPetComposer?.("+usesSmallComposer()+", "+themed+");window.evaPetWorkCards?.("+petChat+")",null);
+    if(assistantPending){assistantPending=false;web.evaluateJavascript("window.evaStartAssistant?.()",null);}
+  }
   private void startBackend(){if(bound){if(service!=null)changed();return;}showWelcome("Запускаю Еву…");Intent i=new Intent(this,CodexService.class);startService(i);bound=bindService(i,connection,BIND_AUTO_CREATE);}
   private void showWelcome(String explanation){LinearLayout layout=new LinearLayout(this);layout.setOrientation(1);layout.setGravity(android.view.Gravity.CENTER);layout.setPadding(40,80,40,40);layout.setBackgroundColor(Color.rgb(20,25,35));TextView title=new TextView(this);title.setText("Ева");title.setTextSize(28);title.setTextColor(Color.rgb(151,222,199));title.setGravity(android.view.Gravity.CENTER);layout.addView(title);TextView info=new TextView(this);info.setText(explanation);info.setTextSize(16);info.setTextColor(Color.LTGRAY);info.setGravity(android.view.Gravity.CENTER);LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-2,-2);textParams.setMargins(0,20,0,28);layout.addView(info,textParams);if(explanation.contains("Запуска")||explanation.contains("Подготавли")||explanation.contains("Перенош")){android.widget.ProgressBar progress=new android.widget.ProgressBar(this);layout.addView(progress,new LinearLayout.LayoutParams(56,56));}setContentView(layout);layout.setAlpha(0f);layout.animate().alpha(1f).setDuration(450).start();}
   private void showWeb(String url){pageReady=false;if(web!=null){web.destroy();web=null;}web=new WebView(this);web.setBackgroundColor(Color.TRANSPARENT);web.getSettings().setJavaScriptEnabled(true);web.getSettings().setMediaPlaybackRequiresUserGesture(false);web.getSettings().setDomStorageEnabled(true);WebView.setWebContentsDebuggingEnabled(true);web.getSettings().setAllowFileAccess(false);web.getSettings().setAllowContentAccess(true);web.addJavascriptInterface(new NativeVoiceBridge(),"NativeVoice");web.addJavascriptInterface(new EvaBridge(),"EvaApp");web.addJavascriptInterface(new NativePhoneBridge(),"NativePhone");web.setWebViewClient(new WebViewClient(){@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest request){
@@ -193,6 +184,12 @@ public final class MainActivity extends Activity implements CodexService.Listene
     if(sameLocalOrigin(url,target.toString())){
       String asset=null;
       String path=target.getPath();
+      if("/eva-composer.css".equals(path)||"/art/theme-icons.png".equals(path)){
+        String shared="/eva-composer.css".equals(path)?"home/composer.css":"home/art/theme-icons.png";
+        try{return new WebResourceResponse(shared.endsWith(".css")?"text/css":"image/png",
+            shared.endsWith(".css")?"UTF-8":null,getAssets().open(shared));}
+        catch(java.io.IOException error){android.util.Log.w("EvaPet","Missing shared composer asset",error);}
+      }
       if("/eva-pet-ui.css".equals(path))asset="ui.css";
       else if("/eva-pet-game/ball.png".equals(path))asset="play_ball.png";
       else if("/eva-pet-game/camera.png".equals(path))asset="play_camera.png";
@@ -204,7 +201,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
       }
     }
     return super.shouldInterceptRequest(v,request);
-  }@Override public void onPageFinished(WebView v,String loaded){super.onPageFinished(v,loaded);if(v!=web||!sameLocalOrigin(url,loaded))return;pageReady=true;installPetUi();if(compact)web.evaluateJavascript("document.body.classList.add('eva-compact')",null);startAssistantIfReady();}@Override public boolean shouldOverrideUrlLoading(WebView v,String target){Uri u=Uri.parse(target);if(("http".equals(u.getScheme())||"https".equals(u.getScheme()))&&!("127.0.0.1".equals(u.getHost())&&u.getPort()==Uri.parse(url).getPort())){try{startActivity(new Intent(Intent.ACTION_VIEW,u));}catch(Exception ignored){}return true;}return !"http".equals(u.getScheme())||!"127.0.0.1".equals(u.getHost())||u.getPort()!=Uri.parse(url).getPort();}@Override public void onReceivedError(WebView v,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame())startBackend();}});
+  }@Override public void onPageFinished(WebView v,String loaded){super.onPageFinished(v,loaded);if(v!=web||!sameLocalOrigin(url,loaded))return;pageReady=true;installPetUi();startAssistantIfReady();}@Override public boolean shouldOverrideUrlLoading(WebView v,String target){Uri u=Uri.parse(target);if(("http".equals(u.getScheme())||"https".equals(u.getScheme()))&&!("127.0.0.1".equals(u.getHost())&&u.getPort()==Uri.parse(url).getPort())){try{startActivity(new Intent(Intent.ACTION_VIEW,u));}catch(Exception ignored){}return true;}return !"http".equals(u.getScheme())||!"127.0.0.1".equals(u.getHost())||u.getPort()!=Uri.parse(url).getPort();}@Override public void onReceivedError(WebView v,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame())startBackend();}});
   web.setWebChromeClient(new WebChromeClient(){@Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> cb,FileChooserParams params){if(fileCallback!=null)fileCallback.onReceiveValue(null);fileCallback=cb;try{Intent choose=new Intent(Intent.ACTION_OPEN_DOCUMENT);choose.addCategory(Intent.CATEGORY_OPENABLE);choose.setType("*/*");choose.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);startActivityForResult(choose,FILES);return true;}catch(Exception e){fileCallback=null;return false;}}@Override public void onPermissionRequest(PermissionRequest req){runOnUiThread(()->{Uri origin=req.getOrigin();if(!"http".equals(origin.getScheme())||!"127.0.0.1".equals(origin.getHost())||origin.getPort()!=Uri.parse(url).getPort()){req.deny();return;}if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){req.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});}else{pendingMic=req;requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},MIC);}});}});setContentView(web);web.loadUrl(url);}
   @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==105){if(phoneId==null)return;if(results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)performPhone();else{String id=phoneId;phoneId=null;phoneReply(id,null,"Android не предоставил разрешение");}return;}if(request==MIC){boolean allowed=results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED;if(wakeStartPending){wakeStartPending=false;if(allowed)EvaVoiceService.setEnabled(this,true);else getSharedPreferences("eva_wake",0).edit().putString("status","Нет разрешения на микрофон").apply();}if(pendingMic!=null){if(allowed)pendingMic.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});else pendingMic.deny();pendingMic=null;}if(nativeStartPending){nativeStartPending=false;if(allowed)startNativeRecognition();else sendRecognitionFinish("not-allowed");}}}
   @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==106){String id=photoId;photoId=null;if(id==null)return;if(result!=RESULT_OK||data==null||data.getExtras()==null){phoneReply(id,null,"Снимок отменён или не получен");return;}Object image=data.getExtras().get("data");if(!(image instanceof android.graphics.Bitmap)){phoneReply(id,null,"Приложение камеры не вернуло снимок");return;}try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();((android.graphics.Bitmap)image).compress(android.graphics.Bitmap.CompressFormat.JPEG,90,bytes);phoneReply(id,Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP),null);}catch(Exception e){phoneReply(id,null,"Не удалось сохранить снимок");}return;}if(request!=FILES||fileCallback==null)return;Uri[] values=null;if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null){int n=data.getClipData().getItemCount();values=new Uri[n];for(int j=0;j<n;j++)values[j]=data.getClipData().getItemAt(j).getUri();}else if(data.getData()!=null)values=new Uri[]{data.getData()};}fileCallback.onReceiveValue(values);fileCallback=null;}
@@ -330,7 +327,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
   }
 
   private void closePetChat(){
-    if(!petChat)return;
+    if(!petChat&&!assistantVoice)return;
     if(recognizer!=null){recognizer.cancel();recognizer.destroy();recognizer=null;sendRecognitionFinish("aborted");}
     if(nativeTts!=null)nativeTts.stop();
     if(web!=null)web.evaluateJavascript("if(typeof stopVoice==='function')stopVoice();if(typeof conversation==='boolean'&&conversation)document.getElementById('conversation')?.click()",null);
@@ -355,30 +352,15 @@ public final class MainActivity extends Activity implements CodexService.Listene
     @JavascriptInterface public void petSettings(){runOnUiThread(()->{if(resumed&&!petChat)showPetSettings();});}
     @JavascriptInterface public void closePetChat(){runOnUiThread(MainActivity.this::closePetChat);}
     @JavascriptInterface public void petComposerDetails(){runOnUiThread(()->{
-      if(!petComposer()||!resumed||petComposerDetails)return;
+      if(!usesSmallComposer()||!resumed||petComposerDetails)return;
       petComposerDetails=true;enableFullscreen();startAssistantIfReady();
     });}
-    @JavascriptInterface public void startMiniVoice(){runOnUiThread(()->{
-      if(!petChat||petComposer()||!resumed)return;
-      setIntent(new Intent(MainActivity.this,MainActivity.class).setAction(Intent.ACTION_ASSIST));
-      updateLaunchMode(getIntent());
-      editorActive=false;
-      android.view.inputmethod.InputMethodManager ime=(android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE);
-      if(ime!=null && web!=null)ime.hideSoftInputFromWindow(web.getWindowToken(),0);
-      enableFullscreen();
-      syncPet();
-      startAssistantIfReady();
-    });}
-    @JavascriptInterface public void showMiniText(){runOnUiThread(()->{
-      if(!compact || !resumed)return;
-      setIntent(new Intent(MainActivity.this,MainActivity.class).setAction(PetOverlay.OPEN_CHAT));
-      updateLaunchMode(getIntent());
-      enableFullscreen();
-      syncPet();
-      startAssistantIfReady();
-    });}
     @JavascriptInterface public void expandPetChat(){runOnUiThread(()->{
-      if(!petChat)return;
+      if(!petChat&&!assistantVoice)return;
+      if(assistantVoice){
+        if(web!=null)web.evaluateJavascript("window.evaStopAssistant?.()",null);
+        EvaVoiceService.setChatActive(false);
+      }
       setIntent(new Intent(MainActivity.this,MainActivity.class));
       updateLaunchMode(getIntent());
       enableFullscreen();
@@ -386,7 +368,6 @@ public final class MainActivity extends Activity implements CodexService.Listene
       startAssistantIfReady();
     });}
 
-    @JavascriptInterface public void closeAssistant(){runOnUiThread(()->{if(compact){EvaVoiceService.setChatActive(false);finish();}});}
     @JavascriptInterface public void voiceSettings(){runOnUiThread(()->{try{startActivity(new Intent("com.android.settings.TTS_SETTINGS"));}catch(Exception e){Toast.makeText(MainActivity.this,"Настройки голоса Android недоступны",Toast.LENGTH_LONG).show();}});}
     @JavascriptInterface public void filePermission(){runOnUiThread(()->{if(checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE,Manifest.permission.WRITE_EXTERNAL_STORAGE},107);});}
     @JavascriptInterface public boolean hasFilePermission(){return checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)==PackageManager.PERMISSION_GRANTED;}
@@ -394,7 +375,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
   public final class NativeVoiceBridge {
     @JavascriptInterface public void setEditing(boolean editing){runOnUiThread(()->{
       editorActive=editing;
-      if(petComposer()){if(!editing)petEditorBottom=0;enableFullscreen();return;}
+      if(usesSmallComposer()){if(!editing)petEditorBottom=0;enableFullscreen();return;}
       if(petChat)enableFullscreen();
       if(editing){
         getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_VISIBLE);
@@ -426,14 +407,14 @@ public final class MainActivity extends Activity implements CodexService.Listene
     syncPet();
     super.onStop();
   }
-  @Override protected void onDestroy(){if(compact||petChat)EvaVoiceService.setChatActive(false);if(service!=null)service.detach(this);if(bound)unbindService(connection);if(nativeTts!=null){nativeTts.shutdown();nativeTts=null;}if(recognizer!=null){recognizer.destroy();recognizer=null;}if(web!=null){web.destroy();web=null;}super.onDestroy();}
+  @Override protected void onDestroy(){if(assistantVoice||petChat)EvaVoiceService.setChatActive(false);if(service!=null)service.detach(this);if(bound)unbindService(connection);if(nativeTts!=null){nativeTts.shutdown();nativeTts=null;}if(recognizer!=null){recognizer.destroy();recognizer=null;}if(web!=null){web.destroy();web=null;}super.onDestroy();}
   @Override public void onBackPressed(){
     if(petChat&&pageReady&&web!=null){
       WebView current=web;
       current.evaluateJavascript("window.evaPetGameBack?.() === true",handled->{
         if(current==web&&petChat&&!"true".equals(handled))closePetChat();
       });
-    }else if(petChat)closePetChat();
+    }else if(petChat||assistantVoice)closePetChat();
     else if(web!=null&&web.canGoBack())web.goBack();
     else super.onBackPressed();
   }

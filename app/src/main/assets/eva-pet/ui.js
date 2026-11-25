@@ -13,11 +13,19 @@
   style.rel = 'stylesheet';
   style.href = '/eva-pet-ui.css';
   document.head.append(style);
+  const sharedStyle = document.createElement('link');
+  sharedStyle.rel = 'stylesheet';
+  sharedStyle.href = '/eva-composer.css';
+  document.head.append(sharedStyle);
   const header = document.createElement('div');
   header.id = 'eva-pet-header';
   const title = document.createElement('strong');
   title.textContent = 'Ева';
   header.append(title);
+  const voiceStatus = document.createElement('span');
+  voiceStatus.id = 'eva-mini-listening';
+  voiceStatus.setAttribute('role', 'status');
+  header.append(voiceStatus);
   const games = document.createElement('button');
   games.type = 'button';
   games.id = 'eva-pet-games-launcher';
@@ -29,7 +37,6 @@
   for (const [glyph, label, action] of [
     ['⚙','Поведение в приложении','petAppProfile'],
     ['▱','Покажи, что видишь','petMap'],
-    ['↗','Развернуть Еву','expandPetChat'],
     ['×','Закрыть мини-чат','closePetChat']
   ]) {
     const control = document.createElement('button');
@@ -46,9 +53,25 @@
   const composer = document.getElementById('form');
   const input = document.getElementById('input');
   const mic = document.getElementById('mic');
+  const expand = document.createElement('button');
+  expand.id = 'eva-compose-expand';
+  expand.type = 'button';
+  expand.hidden = true;
+  expand.setAttribute('aria-label', 'Развернуть чат');
+  const expandIcon = document.createElement('i');
+  expandIcon.className = 'eva-composer-icon eva-composer-expand';
+  expandIcon.setAttribute('aria-hidden', 'true');
+  expand.append(expandIcon);
+  expand.addEventListener('click', () => EvaApp.expandPetChat());
+  composer?.append(expand);
   let composing = false;
-  const draftKey = () => 'eva-pet-draft:' + (localStorage.getItem('eva-current-thread') || 'new');
-  window.evaPetComposer = active => {
+  const voiceSession = () => document.body.classList.contains('eva-voice-session');
+  const draftKey = () => (voiceSession() ? 'eva-voice-draft:' : 'eva-pet-draft:') +
+    (localStorage.getItem('eva-current-thread') || 'new');
+  window.evaPetComposer = (active, themed) => {
+    composer?.classList.toggle('eva-composer', themed);
+    expand.hidden = !themed;
+    window.updateComposerActions?.();
     if (active === composing) return;
     composing = active;
     if (composing && !input.value) {
@@ -57,9 +80,12 @@
     }
   };
   input?.addEventListener('input', () => {
-    if (!composing) return;
+    if (!composing || (voiceSession() && mic?.classList.contains('listening'))) return;
     if (input.value) localStorage.setItem(draftKey(), input.value);
     else localStorage.removeItem(draftKey());
+  });
+  input?.addEventListener('focus', () => {
+    if (voiceSession()) window.evaStopAssistant?.();
   });
   composer?.addEventListener('submit', () => {
     if (!composing || !input.value.trim()) return;
@@ -67,7 +93,9 @@
     EvaApp.petComposerDetails();
     queueMicrotask(() => { if (!input.value) localStorage.removeItem(key); });
   }, true);
-  mic?.addEventListener('click', () => { if (composing) EvaApp.petComposerDetails(); }, true);
+  mic?.addEventListener('click', () => {
+    if (composing && !voiceSession()) EvaApp.petComposerDetails();
+  }, true);
 
   const items = [
     { id:'ball', name:'Мяч' }, { id:'camera', name:'Фотоаппарат' }, { id:'plane', name:'Самолёт' }

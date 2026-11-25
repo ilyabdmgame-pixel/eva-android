@@ -92,7 +92,8 @@ public final class Home extends Activity {
             }
             if(p==null||!p.matches("/[a-z0-9_./-]+")||p.contains(".."))return empty();
             String mime=p.endsWith(".html")?"text/html":p.endsWith(".css")?"text/css":(p.endsWith(".js")||p.endsWith(".mjs"))?"text/javascript":p.endsWith(".svg")?"image/svg+xml":p.endsWith(".jpg")?"image/jpeg":"image/png";
-            return new WebResourceResponse(mime,mime.startsWith("text/")?"utf-8":null,getAssets().open("home"+p));
+            String asset="/question-options.js".equals(p)?"eva-questions.js":"home"+p;
+            return new WebResourceResponse(mime,mime.startsWith("text/")?"utf-8":null,getAssets().open(asset));
         }catch(Exception ignored){return empty();}
     }
     private WebResourceResponse empty(){return new WebResourceResponse("text/plain","utf-8",404,"Not Found",Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));}

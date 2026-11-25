@@ -1,0 +1,32 @@
+:is(#town-compose,#form).eva-composer {
+  display:flex; align-items:center; gap:2px; box-sizing:border-box; padding:4px;
+  border:1px solid #98b8bd73; border-radius:26px;
+  background:linear-gradient(145deg,#334653f5,#202e39f5);
+  box-shadow:0 2px 8px #0c1b2445; color:#f0f4f6;
+}
+.eva-composer[hidden] { display:none!important; }
+:is(#town-compose,#form).eva-composer :is(input:not([type=file]),textarea) {
+  flex:1; width:0; min-width:0; min-height:0; margin:0; padding:8px 0;
+  border:0; border-radius:0; background:transparent; color:#fff6e8;
+  font:16px/1.35 system-ui,sans-serif; resize:none;
+}
+.eva-composer :is(input,textarea)::placeholder { color:#c1c9c8; }
+:is(#town-compose,#form).eva-composer button {
+  flex:0 0 44px; width:44px; min-width:44px; height:44px; min-height:44px;
+  margin:0; padding:0; border:0; border-radius:50%;
+  display:grid; place-items:center; background:transparent; color:inherit; line-height:1;
+}
+:is(#town-compose,#form).eva-composer button[type=submit] { background:#9fd8d3; color:#203a40; }
+.eva-composer button:disabled { opacity:.45; }
+.eva-composer button[hidden] { display:none!important; }
+:is(#town-compose,#form).eva-composer .listening { color:#ffaf9b; background:#633a3a; }
+.eva-composer :is(button,input,textarea):focus-visible { outline:2px solid #a9dbd4; outline-offset:-2px; }
+.eva-composer-icon,#form.eva-composer :is(#mic,#send)::before {
+  content:'';
+  display:block; width:24px; height:24px; flex:none; pointer-events:none;
+  background:url('art/theme-icons.png') var(--icon-x,0%) 50% / 400% 300% no-repeat;
+  filter:grayscale(1) sepia(.22) hue-rotate(112deg) saturate(.72) brightness(1.15);
+}
+.eva-composer-send,#form.eva-composer #send::before { --icon-x:33.3333%; width:36px; height:36px; filter:none; }
+.eva-composer-expand { --icon-x:66.6667%; }
+#form.eva-composer :is(#mic,#send) > .ui-icon { display:none; }

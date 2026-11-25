@@ -10,6 +10,8 @@ class Element {
     this.attributes = {};
     this.events = new Map();
     this.value = '';
+    const classes = new Set();
+    this.classList = { toggle: (name, on) => on ? classes.add(name) : classes.delete(name), contains: name => classes.has(name) };
   }
   append(child) { this.children.push(child); }
   prepend(child) { this.children.unshift(child); }
@@ -46,14 +48,15 @@ const window = {};
 const globals = { document, EvaApp, window, localStorage, Event, queueMicrotask };
 vm.runInNewContext(script, globals);
 vm.runInNewContext(script, globals);
-assert.equal(head.children.length, 1);
+assert.equal(head.children.length, 2);
 assert.equal(body.children.length, 1);
 assert.equal(head.children[0].href, '/eva-pet-ui.css');
+assert.equal(head.children[1].href, '/eva-composer.css');
 assert.equal(settings.inserted.id, 'eva-pet-controls');
 settings.inserted.click();
 const [title, ...buttons] = body.children[0].children;
 const control = label => buttons.find(button => button.attributes['aria-label'] === label);
-const expand = control('Развернуть Еву'), close = control('Закрыть мини-чат');
+const expand = form.children[0], close = control('Закрыть мини-чат');
 const profile = control('Поведение в приложении');
 assert(profile);
 profile.click();
@@ -61,16 +64,18 @@ const map = control('Покажи, что видишь');
 assert(map);
 map.click();
 assert.equal(title.textContent, 'Ева');
-assert.equal(expand.attributes['aria-label'], 'Развернуть Еву');
+assert.equal(expand.attributes['aria-label'], 'Развернуть чат');
 assert.equal(close.attributes['aria-label'], 'Закрыть мини-чат');
 expand.click();
 close.click();
-window.evaPetComposer(true);
+window.evaPetComposer(true, true);
+assert(form.classList.contains('eva-composer') && !expand.hidden);
 input.value = 'Черновик';
 input.dispatchEvent(new Event('input'));
-window.evaPetComposer(false);
+window.evaPetComposer(false, false);
+assert(!form.classList.contains('eva-composer') && expand.hidden);
 input.value = '';
-window.evaPetComposer(true);
+window.evaPetComposer(true, true);
 assert.equal(input.value, 'Черновик');
 mic.click();
 form.dispatchEvent(new Event('submit'));
@@ -79,4 +84,13 @@ assert.deepEqual(calls, ['petSettings', 'petAppProfile', 'petMap', 'expandPetCha
 const css = fs.readFileSync(path.join(__dirname, '../../app/src/main/assets/eva-pet/ui.css'), 'utf8');
 const formRule = css.match(/body\.eva-pet-chat #form\s*\{([^}]*)\}/);
 assert(formRule && !/display:\s*none/i.test(formRule[1]));
+const home = fs.readFileSync(path.join(__dirname, '../../app/src/main/assets/home/index.html'), 'utf8');
+assert(home.includes('href="composer.css"') && home.includes('id="town-compose" class="eva-composer"'));
+const {parse} = require('../../runtime/codex-mobile/question-options');
+assert.deepEqual(parse('Сначала уточню.\nКак оформить?\n\n1. **Список**\n2. Таблица'),
+  {question: 'Как оформить?', options: ['Список', 'Таблица'], text: 'Сначала уточню.'});
+assert.deepEqual(parse('```eva-poll\n{"question":"Где?","options":["Дома","В парке"]}\n```').options,
+  ['Дома', 'В парке']);
+assert.equal(parse('Порядок действий:\n1. Открыть\n2. Проверить'), null);
+assert.equal(parse('Как оформить?\n1. Единственный способ'), null);
 console.log('Pet UI: settings, CSP-compatible stylesheet, accessible controls and bridge actions OK');

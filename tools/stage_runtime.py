@@ -65,6 +65,7 @@ def stage(deps, output):
         shutil.copyfile(deps / name, assets / name)
     for name in LIBRARIES:
         shutil.copyfile(deps / name, libraries / name)
+    shutil.copyfile(RUNTIME / "codex-mobile" / "question-options.js", assets / "eva-questions.js")
     pack = assets / "eva-runtime.pack"
     with pack.open("wb") as destination, gzip.GzipFile(filename="", fileobj=destination, mode="wb", mtime=0) as compressed:
         with tarfile.open(fileobj=compressed, mode="w|") as archive:

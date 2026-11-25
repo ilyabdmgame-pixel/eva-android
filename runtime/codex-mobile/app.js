@@ -48,14 +48,13 @@ function imagePathAllowed(p){return /^\/(?:sdcard\/Documents\/Codex|root\/\.code
 function appendLinks(el,text){const re=/https?:\/\/[^\s<>]+/g;let m,last=0;while((m=re.exec(text))){let url=m[0].replace(/[.,!?;:)]+$/,'');el.append(document.createTextNode(text.slice(last,m.index)));const a=document.createElement('a');a.href=url;a.textContent=url;a.rel='noopener noreferrer';a.onclick=e=>e.stopPropagation();el.append(a);last=m.index+url.length;re.lastIndex=last}el.append(document.createTextNode(text.slice(last)))}
 function renderPlainMessageImage(el,text){el.dataset.rawText=text;el.textContent='';const pattern=/!?\[([^\]\n]*)\]\((\/(?:sdcard\/Documents\/Codex|root\/\.codex\/generated_images)\/[^)\n]+\.(?:png|jpe?g|webp|gif))(?::\d+)?\)/gi;let match,last=0;while((match=pattern.exec(text))){if(!imagePathAllowed(match[2]))continue;appendLinks(el,text.slice(last,match.index));const imgPath=match[2],link=document.createElement('a'),img=document.createElement('img');link.href='/chat-image?token='+encodeURIComponent(token)+'&path='+encodeURIComponent(match[2]);link.rel='noopener noreferrer';link.className='chat-image-link';link.onclick=e=>e.stopPropagation();img.src=link.href;img.alt=match[1]||'Изображение';img.loading='lazy';img.className='chat-image';link.append(img);el.append(link);const save=document.createElement('button');save.type='button';save.className='chat-image-save';save.textContent='↓ Скачать';save.onclick=async e=>{e.stopPropagation();save.disabled=true;save.textContent='Сохраняю…';try{const result=await api('/chat-image/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:imgPath})});save.textContent='✓ В загрузках: '+result.name}catch(err){save.textContent='Ошибка сохранения';save.title=err.message;alert(err.message)}finally{save.disabled=false}};el.append(save);last=pattern.lastIndex}appendLinks(el,text.slice(last))}
 function renderMessageImage(el,text){
- const pattern=/```eva-poll\s*\n([\s\S]*?)\n```/i,match=el.classList.contains('agent')?pattern.exec(text):null;let poll=null;
- if(match){try{const x=JSON.parse(match[1]);if(typeof x.question==='string'&&x.question.trim()&&x.question.length<=300&&Array.isArray(x.options)&&x.options.length<=5&&x.options.every(v=>typeof v==='string'&&v.trim()&&v.length<=120))poll=x}catch{}}
- renderPlainMessageImage(el,poll?text.slice(0,match.index)+text.slice(match.index+match[0].length):text);el.dataset.rawText=text;if(!poll)return;
+ const poll=el.classList.contains('agent')?window.EvaQuestions?.parse(text):null;
+ renderPlainMessageImage(el,poll?poll.text:text);el.dataset.rawText=text;if(!poll)return;
  const card=document.createElement('div');card.className='eva-poll';card.addEventListener('click',e=>e.stopPropagation());card.addEventListener('keydown',e=>e.stopPropagation());const title=document.createElement('strong');title.textContent=poll.question;card.append(title);let selected='';const buttons=[];
  const other=document.createElement('input');other.type='text';other.maxLength=500;other.autocomplete='off';other.placeholder='Или свой вариант';other.setAttribute('aria-label','Свой вариант ответа');
  for(const value of poll.options){const b=document.createElement('button');b.type='button';b.className='eva-poll-option';b.textContent=value;b.setAttribute('aria-pressed','false');b.onclick=()=>{selected=value;other.value='';for(const item of buttons)item.setAttribute('aria-pressed',String(item===b))};buttons.push(b);card.append(b)}
  other.oninput=()=>{if(other.value.trim()){selected='';for(const item of buttons)item.setAttribute('aria-pressed','false')}};card.append(other);
- const submit=document.createElement('button');submit.type='button';submit.className='eva-poll-submit';submit.textContent='Ответить';const status=document.createElement('small');status.setAttribute('role','status');submit.onclick=()=>{const answer=other.value.trim()||selected;if(!answer){status.textContent='Выбери вариант или напиши свой';return}if(busy||threadSwitching||savingDraft||queued.length||pendingUploads.size||attachments.length||$('input').value.trim()){status.textContent='Сначала закончи текущую работу или сохрани текст';return}$('input').value='Вопрос: '+poll.question+'\nОтвет: '+answer;$('input').dispatchEvent(new Event('input'));$('form').requestSubmit();submit.disabled=true;for(const b of buttons)b.disabled=true;other.disabled=true;status.textContent='Ответ передан на отправку'};card.append(submit,status);el.append(card)
+ const submit=document.createElement('button');submit.type='button';submit.className='eva-poll-submit';submit.textContent='Ответить';const status=document.createElement('small');status.setAttribute('role','status');submit.onclick=()=>{const answer=other.value.trim()||selected;if(!answer){status.textContent='Выбери вариант или напиши свой';return}if(threadSwitching||savingDraft||steering||interruptPending||interruptingTurn||pendingUploads.size||attachments.length||$('input').value.trim()){status.textContent='Сначала закончи текущую работу или сохрани текст';return}$('input').value='Вопрос: '+poll.question+'\nОтвет: '+answer;$('input').dispatchEvent(new Event('input'));$('form').requestSubmit(steerTarget()?$('steer'):$('send'));submit.disabled=true;for(const b of buttons)b.disabled=true;other.disabled=true;status.textContent='Ответ передан на отправку'};card.append(submit,status);el.append(card)
 }
 let renderingHistory=false,threadSwitching=false,threadSwitchSequence=0,pendingOpenThread=null;
 
@@ -76,11 +75,14 @@ function steerTarget(){
 function updateComposerActions(){
  const blocked=savingDraft||threadSwitching||pendingUploads.size>0;
  const send=$('send'),steer=$('steer');
- send.disabled=blocked;
+ send.disabled=blocked||(send.form?.classList.contains('eva-composer')&&!$('input').value.trim()&&!attachments.length);
  const sendLabel=busy||steering||queued.length?'В очередь':'Отправить';
  send.title=sendLabel;
  send.setAttribute('aria-label',sendLabel);
- steer.hidden=steerTarget()===null;
+ const canSteer=steerTarget()!==null;
+ steer.hidden=!canSteer;
+ if(canSteer&&document.body.classList.contains('eva-pet-compose')&&
+    !document.body.classList.contains('eva-pet-compose-details'))window.EvaApp?.petComposerDetails();
  steer.disabled=blocked||steering||interruptPending||Boolean(interruptingTurn)||
   (!$('input').value.trim()&&!attachments.length);
 }
@@ -390,6 +392,7 @@ function request(m){const box=$('approval');box.hidden=false;box.replaceChildren
 window.__phoneResult=(id,payload)=>{let value;try{value=JSON.parse(payload)}catch{value={error:'Некорректный ответ Android'}}api('/phone/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,...value})}).catch(()=>{})};
 function requestUserInput(m){
  const box=$('approval');box.hidden=false;box.replaceChildren();box.classList.add('questionnaire');
+ if(document.body.classList.contains('eva-pet-compose'))window.EvaApp?.petComposerDetails();
  const title=document.createElement('strong');title.textContent='Вопрос от Евы';box.append(title);
  const entries=[];
  for(const q of (m.params.questions||[])){
@@ -400,7 +403,7 @@ function requestUserInput(m){
  }
  const error=document.createElement('div');error.setAttribute('role','status');box.append(error);const submit=document.createElement('button');submit.type='button';submit.className='question-submit';submit.textContent='Ответить';submit.onclick=async()=>{const answers={};for(const entry of entries){const value=entry.value();if(!value){error.textContent='Выберите или впишите ответ на каждый вопрос.';entry.input.focus();return}answers[entry.q.id]={answers:[value]}}submit.disabled=true;error.textContent='Отправляю…';try{await api('/answer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:m.id,result:{answers}})});box.hidden=true;box.classList.remove('questionnaire');box.replaceChildren();finishPendingRequest(m.id)}catch(e){submit.disabled=false;error.textContent='Не удалось отправить ответ: '+e.message}};box.append(submit);
 }
-const es=new EventSource('/events?token='+encodeURIComponent(token));es.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='phone'){if(window.NativePhone)window.NativePhone.run(m.id,m.action,JSON.stringify(m.args));return}if(m.type==='request'){receiveThreadRequest(m);return}if(m.type==='error'){message(m.message);if(modelProvider==='codex')setBusy(false);return}const p=m.params||{};if(m.method==='turn/started'&&p.threadId&&p.turn?.id)runningThreads.set(p.threadId,p.turn.id);if(m.method==='turn/completed'&&p.threadId){const known=runningThreads.get(p.threadId);if(!known||!p.turn?.id||known===p.turn.id)runningThreads.delete(p.threadId);let cleared=false;for(const [id,r] of pendingThreadRequests)if(r.owner===p.threadId){pendingThreadRequests.delete(id);cleared=true}if(cleared&&p.threadId===thread)renderPendingRequest();if(!$('sidebar').hidden)list()}if(p.threadId&&p.threadId!==thread)return;if(m.method==='item/agentMessage/delta'){if(!agent)agent=message('','agent');agent.textContent+=p.delta;scheduleJournalSave();scheduleMessageScroll()}else if(m.method==='item/completed'&&p.item?.type==='agentMessage'){if(!agent)agent=message(p.item.text||'','agent');else renderMessageImage(agent,p.item.text||agent.textContent);agent=null;saveJournal()}else if(m.method==='turn/completed'){const finished=p.turn?.id;if(finished){if(endedTurns.has(finished))return;endedTurns.add(finished);if(endedTurns.size>40)endedTurns.delete(endedTurns.values().next().value);if(turn&&turn!==finished)return}if(thread&&(!finished||runningThreads.get(thread)===finished))runningThreads.delete(thread);turn=null;interruptingTurn=null;interruptPending=false;setBusy(false);setTimeout(drainQueue,0);if(p.turn?.status==='failed')message('Ошибка: '+(p.turn.error?.message||'задача не завершена'));else if(p.turn?.status==='interrupted'&&!queued.length){$('status').textContent='Остановлено';message('Остановлено')}}};es.onerror=()=>{$('status').textContent='Нет соединения'};es.onopen=()=>{$('status').textContent=busy?'Работает…':'На связи';if(busy)syncActiveTurn()};
+const es=new EventSource('/events?token='+encodeURIComponent(token));es.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='phone'){if(window.NativePhone)window.NativePhone.run(m.id,m.action,JSON.stringify(m.args));return}if(m.type==='request'){receiveThreadRequest(m);return}if(m.type==='error'){message(m.message);if(modelProvider==='codex')setBusy(false);return}const p=m.params||{};if(m.method==='turn/started'&&p.threadId&&p.turn?.id)runningThreads.set(p.threadId,p.turn.id);if(m.method==='turn/completed'&&p.threadId){const known=runningThreads.get(p.threadId);if(!known||!p.turn?.id||known===p.turn.id)runningThreads.delete(p.threadId);let cleared=false;for(const [id,r] of pendingThreadRequests)if(r.owner===p.threadId){pendingThreadRequests.delete(id);cleared=true}if(cleared&&p.threadId===thread)renderPendingRequest();if(!$('sidebar').hidden)list()}if(p.threadId&&p.threadId!==thread)return;if(m.method==='turn/started'&&p.threadId===thread&&p.turn?.id&&(!turn||turn===p.turn.id)&&!endedTurns.has(p.turn.id)&&modelProvider==='codex'&&!externalController){turn=p.turn.id;setBusy(true)}else if(m.method==='item/agentMessage/delta'){if(!agent)agent=message('','agent');agent.textContent+=p.delta;scheduleJournalSave();scheduleMessageScroll()}else if(m.method==='item/completed'&&p.item?.type==='agentMessage'){if(!agent)agent=message(p.item.text||'','agent');else renderMessageImage(agent,p.item.text||agent.textContent);agent=null;saveJournal()}else if(m.method==='turn/completed'){const finished=p.turn?.id;if(finished){if(endedTurns.has(finished))return;endedTurns.add(finished);if(endedTurns.size>40)endedTurns.delete(endedTurns.values().next().value);if(turn&&turn!==finished)return}if(thread&&(!finished||runningThreads.get(thread)===finished))runningThreads.delete(thread);turn=null;interruptingTurn=null;interruptPending=false;setBusy(false);setTimeout(drainQueue,0);if(p.turn?.status==='failed')message('Ошибка: '+(p.turn.error?.message||'задача не завершена'));else if(p.turn?.status==='interrupted'&&!queued.length){$('status').textContent='Остановлено';message('Остановлено')}}};es.onerror=()=>{$('status').textContent='Нет соединения'};es.onopen=()=>{$('status').textContent=busy?'Работает…':'На связи';if(busy)syncActiveTurn()};
 es.addEventListener('message',event=>{
  let msg;try{msg=JSON.parse(event.data)}catch{return}
  const id=msg.params?.threadId;if(!id)return;
@@ -422,13 +425,14 @@ function voiceState(){$('voice-output').classList.toggle('active',voiceEnabled);
 voiceState();loadVoiceSettings();$('voice-output').onclick=()=>{unlockAudio();if(!voiceSynth){message('Озвучивание не поддерживается этим браузером');return}voiceEnabled=!voiceEnabled;localStorage.setItem('voiceOutput',voiceEnabled?'1':'0');saveVoiceSettings();voiceState();if(!voiceEnabled)stopVoice()};
 function joinRecognitionParts(parts){const kept=[];for(const part of parts){const text=String(part||'').trim();if(!text)continue;const prev=kept[kept.length-1];if(prev&&text.toLocaleLowerCase().startsWith(prev.toLocaleLowerCase()+' ')){kept[kept.length-1]=text}else if(prev&&prev.toLocaleLowerCase()===text.toLocaleLowerCase()){continue}else kept.push(text)}return kept.join(' ')}
 $('mic').onclick=()=>{
+ if(document.body.classList.contains('eva-voice-session')){
+  if(convoRecognizer)convoRecognizer.stop();
+  else window.evaStartAssistant();
+  return;
+ }
  const petComposer=document.body.classList.contains('eva-pet-compose');
  if(busy&&!petComposer){message('Дождитесь завершения ответа или нажмите стоп');return}
  if(conversation&&convoRecognizer){message('Голосовой разговор уже включён');return}
- if(!petComposer&&document.body.classList.contains('eva-pet-chat')&&window.EvaApp?.startMiniVoice&&
-    !recognition&&!$('input').value.trim()&&!attachments.length){
-  window.EvaApp.startMiniVoice();return;
- }
  if(!SpeechRecognition){message('Голосовой ввод недоступен в этом браузере. Используйте микрофон клавиатуры.');return}
  if(recognition){recognition.manualStop=true;recognition.stop();return}
  const recognizer=new SpeechRecognition(),input=$('input'),base=input.value.trim(),segments=[];
@@ -467,8 +471,8 @@ function conversationStatus(text){
 }
 function listenConversation() {
   if (!conversation || convoRecognizer || (busy && !convoSpeaking)) return;
-  const compact = document.body.classList.contains('eva-compact');
-  if (compact && voiceAwaitUser) {
+  const handsFreeWindow = document.body.classList.contains('eva-voice-session');
+  if (handsFreeWindow && voiceAwaitUser) {
     conversationStatus('Нажми микрофон');
     refreshVoiceButton();
     return;
@@ -520,7 +524,7 @@ function listenConversation() {
     convoRecognizer = null;
     $('conversation').click();
     const denied=recognitionError==='not-allowed'||recognitionError==='service-not-allowed';
-    if(compact)conversationStatus(denied?'Нет доступа к микрофону':'Не удалось услышать');
+    if(handsFreeWindow)conversationStatus(denied?'Нет доступа к микрофону':'Не удалось услышать');
     message(denied?'Разреши доступ к микрофону, чтобы я могла тебя услышать.'
       :'Распознавание речи прервалось. Включи голосовой режим, когда будешь готов.');
   };
@@ -530,15 +534,19 @@ function listenConversation() {
     convoRecognizer = null;
     const text = recognitionError ? '' : joinRecognitionParts(segments.filter(segment => segment?.final).map(segment => segment.text)).trim();
     if (text) {
-      if (compact) voiceAwaitUser = true;
+      if (handsFreeWindow) voiceAwaitUser = true;
       input.value = text;
       conversationStatus(busy ? 'Завершаю ответ…' : 'Отправляю…');
       voiceSubmission = true;
       try { $('form').requestSubmit(); }
       finally { voiceSubmission = false; }
+      if (handsFreeWindow && previousText && !input.value) {
+        input.value = previousText;
+        input.dispatchEvent(new Event('input'));
+      }
     } else {
       restorePreview();
-      if (compact) voiceAwaitUser = true;
+      if (handsFreeWindow) voiceAwaitUser = true;
       convoTimer = setTimeout(() => {
         if (generation === convoGeneration) listenConversation();
       }, 300);
@@ -670,7 +678,7 @@ function clearAvatarExpression(){avatarEmotionGeneration++;avatarStage.classList
 async function tryShowAvatarEmotion(){if(!avatarPendingEmotion||busy||convoSpeaking||voiceIsAudible||avatarActivity||avatarStage.hidden||document.hidden)return;const emotion=avatarPendingEmotion;avatarPendingEmotion=null;clearAvatarExpression();const generation=avatarEmotionGeneration;const pair=generatedAvatarTransitions[emotion];if(pair){try{const imgs=pair.map(key=>avatarStage.querySelector('.avatar-expression-'+key));for(const img of imgs){if(!img)throw Error('Missing frame');if(!img.getAttribute('src'))img.src=img.dataset.src;if(img.decode)await img.decode()}if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;if(!reducedMotion.matches){avatarStage.classList.add('avatar-expression-'+pair[0]+'-active');await new Promise(r=>setTimeout(r,500));if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden){avatarStage.classList.remove('avatar-expression-'+pair[0]+'-active');return}}avatarStage.classList.add('avatar-expression-'+pair[1]+'-active');avatarStage.classList.remove('avatar-expression-'+pair[0]+'-active');clearTimeout(avatarHappyTimer);avatarHappyTimer=setTimeout(clearAvatarExpression,4500);return}catch(err){console.warn('Переход аватара недоступен:',err);avatarStage.classList.remove(...pair.map(key=>'avatar-expression-'+key+'-active'))}}if(avatarExpressions.includes(emotion)){const img=avatarStage.querySelector('.avatar-expression-'+emotion);if(!img)return;if(!img.src&&img.dataset.src)img.src=img.dataset.src;try{if(img.decode)await img.decode()}catch{return}if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;if(emotion==='laugh'&&!reducedMotion.matches){const mid=avatarStage.querySelector('.avatar-expression-smile-mid');if(mid){if(!mid.src&&mid.dataset.src)mid.src=mid.dataset.src;try{if(mid.decode)await mid.decode();if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;avatarStage.classList.add('avatar-expression-smile-mid-active');await new Promise(r=>setTimeout(r,500));avatarStage.classList.remove('avatar-expression-smile-mid-active')}catch{}}}if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;avatarStage.classList.add('avatar-expression-'+emotion+'-active')}else if(emotion==='surprised')avatarStage.classList.add('avatar-is-surprised');else return;clearTimeout(avatarHappyTimer);avatarHappyTimer=setTimeout(clearAvatarExpression,4500)}
 
 // One context-sensitive control for recording and stopping work or speech.
-function refreshVoiceButton(){const trigger=$('eva-voice-next');if(trigger)trigger.hidden=!(conversation&&voiceAwaitUser&&!busy&&!convoSpeaking);const listening=!!recognition||!!(conversation&&convoRecognizer);$('mic').innerHTML=uiIcon('mic');$('mic').classList.toggle('listening',listening);$('mic').title='Голосовой ввод';$('mic').setAttribute('aria-label','Голосовой ввод');$('mic').setAttribute('aria-pressed',String(listening));$('stop').hidden=!(busy||voiceIsAudible||convoSpeaking||listening)}
+function refreshVoiceButton(){const listening=!!recognition||!!(conversation&&convoRecognizer);$('mic').innerHTML=uiIcon('mic');$('mic').classList.toggle('listening',listening);$('mic').title='Голосовой ввод';$('mic').setAttribute('aria-label','Голосовой ввод');$('mic').setAttribute('aria-pressed',String(listening));$('stop').hidden=!(busy||voiceIsAudible||convoSpeaking||listening)}
 // The menu floats above the portrait and stays hidden until requested.
 $('header-toggle').onclick=()=>$('menu').click();
 $('chat-tools').addEventListener('toggle',()=>{if($('chat-tools').open)refreshLimits()});
@@ -757,17 +765,12 @@ async function runPhoneCommand(item){
  return true;
 }
 
-window.evaStartAssistant=()=>{document.documentElement.classList.add('eva-compact-root');document.body.classList.add('eva-compact');avatarStage.hidden=false;let b=$('eva-voice-close');if(!b){b=document.createElement('button');b.id='eva-voice-close';b.textContent='×';b.setAttribute('aria-label','Закрыть голосовое окно');b.onclick=()=>{if(conversation)$('conversation').click();if(window.EvaApp&&window.EvaApp.closeAssistant)window.EvaApp.closeAssistant();};document.body.append(b);}if(!$('eva-voice-next')){const next=document.createElement('button');next.id='eva-voice-next';next.type='button';next.setAttribute('aria-label','Сказать следующую фразу');next.innerHTML=uiIcon('mic');next.hidden=true;next.onclick=()=>{if(!conversation||busy||convoSpeaking)return;voiceAwaitUser=false;refreshVoiceButton();listenConversation()};document.body.append(next)}if(!$('eva-mini-listening')){
-  const label=document.createElement('span');label.id='eva-mini-listening';label.setAttribute('role','status');document.body.append(label);
-}
-if(window.EvaApp?.showMiniText && !$('eva-mini-text')){
-  const text=document.createElement('button');text.id='eva-mini-text';text.type='button';text.textContent='Чат';
-  text.onclick=()=>{if(conversation)$('conversation').click();window.EvaApp.showMiniText()};
-  document.body.append(text);
-}
-if(!conversation){assistantGreeting=false;$('conversation').click()}
-else if(voiceAwaitUser&&!busy&&!convoSpeaking){voiceAwaitUser=false;listenConversation()}
-return conversation;};
+window.evaStartAssistant=()=>{
+ if(!conversation){assistantGreeting=false;$('conversation').click()}
+ else if(voiceAwaitUser&&!busy&&!convoSpeaking){voiceAwaitUser=false;listenConversation()}
+ return conversation;
+};
+window.evaStopAssistant=()=>{if(conversation)$('conversation').click()};
 
 // Group settings belong to the current conversation, not to the selected provider.
 function groupKey(){return 'eva-group:'+thread}

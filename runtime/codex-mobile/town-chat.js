@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('fs'),path=require('path');
-module.exports=function townChat({rpc,cards,authenticated,root}){
+module.exports=function townChat({rpc,cards,authenticated,root,questionPending=()=>false}){
  const file=path.join(root,'town-chat.json');
  let data={};try{data=JSON.parse(fs.readFileSync(file,'utf8'))}catch(e){if(e.code!=='ENOENT')throw e}
  const running=new Map(),messages=new Map();
@@ -59,7 +59,7 @@ module.exports=function townChat({rpc,cards,authenticated,root}){
  function settingsForChat(){try{return JSON.parse(fs.readFileSync(path.join(root,'voice-settings.json'),'utf8'))}catch{return {}}}
  function state(){
    const c=card(),settings=settingsForChat();
-   return {status:c?.waiting||data.question?'question':sending||running.size?'working':data.answer||c?'done':'idle',
+   return {status:c?.waiting||data.question||questionPending(data.thread)?'question':sending||running.size?'working':data.answer||c?'done':'idle',
      answer:data.answer||null,voiceName:settings.voiceName||'',rate:Number(settings.voiceRate)||1,accent:settings['silero-accent']!=='0',yo:settings['silero-yo']!=='0',voice:voiceMode||settings.voiceOutput==='1',roomBusy:sending||running.has(data.thread)};
  }
  async function run(o){

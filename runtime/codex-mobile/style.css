@@ -199,23 +199,18 @@ body>header>button{min-width:38px;max-width:44px;flex:1}
 body.keyboard-open #form{margin-bottom:4px}
 body.keyboard-open #form textarea{max-height:min(14vh,80px);overflow-y:auto}
 
-body.eva-compact #avatar-stage,body.eva-compact #header-toggle,body.eva-compact #top-panel{display:none!important}body.eva-compact{border-radius:24px 24px 0 0;overflow:hidden}body.eva-compact #messages{padding-top:36px}
 
-body.eva-compact #messages,body.eva-compact #form,body.eva-compact #attachments,body.eva-compact #voice-output{display:none!important}body.eva-compact #avatar-stage{display:block!important;opacity:1!important;pointer-events:none}body.eva-compact #avatar-stage .avatar-figure{height:230%;top:-7%}body.eva-compact #avatar-stage .avatar-body,body.eva-compact .avatar-extra,body.eva-compact .avatar-pose{display:none}body.eva-compact #work-indicator{display:block!important;position:absolute;top:auto;bottom:18px;left:50%;transform:translateX(-50%);z-index:30;max-width:80%;text-align:center}body.eva-compact #eva-voice-close{position:absolute;right:14px;top:12px;z-index:40}#eva-voice-close{display:none}body.eva-compact #eva-voice-close{display:block}
 #models-panel #group-settings{margin-top:20px;padding-top:14px;border-top:1px solid #ffffff30}#models-panel #group-settings summary{cursor:pointer;font-weight:600}#models-panel #group-settings input[type=checkbox]{display:inline-block;width:20px;height:20px;margin:0 8px 0 0;vertical-align:middle}#models-panel #group-settings textarea{display:block;box-sizing:border-box;width:100%;padding:10px;border-radius:10px;font:inherit}
 #threads .thread-row{display:flex;align-items:center;width:100%;height:54px;min-height:54px;box-sizing:border-box;gap:6px}#threads .thread-row .thread{display:block;flex:1;min-width:0;height:44px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}#threads .thread-row .thread-delete{flex:0 0 36px;width:36px;height:36px;padding:8px}
 
 #approval.questionnaire{max-height:48vh;background:#202e38}#approval.questionnaire fieldset{border:0;padding:8px 0;margin:0}#approval.questionnaire legend{font-weight:600;padding-top:12px}#approval.questionnaire .question-option{display:block;width:100%;text-align:left;margin:6px 0;background:#344850}#approval.questionnaire .question-option[aria-pressed=true]{background:#548775;outline:2px solid #a7edcf}#approval.questionnaire small{font-size:12px;color:#d1e1dd;margin-top:3px}#approval.questionnaire input{width:100%;padding:10px;border:1px solid #60757c;border-radius:8px;background:#15222b;color:#fff;font:inherit}#approval.questionnaire .question-submit{background:#548775}
 
 /* Круглое окно голосового помощника */
-html.eva-compact-root{background:transparent!important}body.eva-compact{position:relative;width:100vw;height:100vh;margin:0;border-radius:50%;overflow:hidden;background:radial-gradient(circle at 50% 36%,#34434b 0%,#222d39 55%,#141b25 100%);box-shadow:inset 0 0 0 2px #caa88299,inset 0 0 40px #0007}body.eva-compact #avatar-stage{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;overflow:hidden}body.eva-compact #avatar-stage .avatar-figure{height:185%;top:-5%}body.eva-compact #avatar-glow{opacity:.6}body.eva-compact #avatar-state{display:none}body.eva-compact #work-indicator{bottom:9%;max-width:68%;padding:5px 12px;border-radius:18px;background:#18232be8;color:#eff8f4;font-size:12px}body.eva-compact #eva-voice-close{top:12%;right:14%;width:34px;height:34px;padding:0;border-radius:50%;background:#19252bdd;color:#fff;font-size:21px;line-height:34px}body.eva-compact #messages-viewport,body.eva-compact #approval,body.eva-compact #sidebar,body.eva-compact #sidebar-backdrop{display:none!important}
 
 /* Коррекция круглого голосового окна */
-body.eva-compact #avatar-stage .avatar-figure{height:140%;top:0}body.eva-compact #avatar-stage .avatar-body{display:block}body.eva-compact #eva-voice-close{top:14%;right:15%;width:32px;height:32px;background:#17232bd9}body.eva-compact #work-indicator{bottom:10%;background:#17232be8}body.eva-compact #avatar-stage::after{background:linear-gradient(0deg,#101a2488,transparent 38%)}
 
 .saved-drafts{width:fit-content;max-width:90%;border:1px solid #ffffff20;border-radius:12px;background:#17242cdd;padding:10px}.saved-drafts summary{cursor:pointer;color:#b8e3d7}.saved-draft-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-top:1px solid #ffffff18}.saved-draft-row span{flex:1;min-width:130px}.saved-draft-row button{background:#3f7469;border-radius:8px;padding:6px 9px}.saved-draft-row button:last-child{background:#5d4650}
 
-#eva-voice-next{display:none}body.eva-compact #eva-voice-next:not([hidden]){display:grid;place-items:center;position:absolute;z-index:40;left:50%;bottom:19%;transform:translateX(-50%);width:48px;height:48px;border-radius:50%;background:#35685e;color:#eafff7;box-shadow:0 2px 12px #0008}body.eva-compact #eva-voice-next .ui-icon{width:24px;height:24px}
 
 #eva-wake-settings{margin:18px 0;padding:14px;border:1px solid #ffffff25;border-radius:14px;background:#1b3031}#eva-wake-settings p{font-size:13px;line-height:1.4;color:#c3d9d3}#eva-wake-settings button{padding:10px 13px;border-radius:9px;background:#46786b;color:#fff}
 
@@ -266,11 +261,11 @@ body>header#top-panel:not([hidden]){position:fixed;top:calc(max(7px,env(safe-are
 #models-panel [hidden],#voice-settings [hidden],#notes-panel [hidden],#tasks-panel [hidden],.eva-account [hidden]{display:none!important}
 
 /* Small entrance and depth using the existing layers; no new image requests. */
-body:not(.eva-compact) #avatar-stage:not([hidden]) .avatar-figure{animation:evaArrival 900ms ease-out both}
+body #avatar-stage:not([hidden]) .avatar-figure{animation:evaArrival 900ms ease-out both}
 @keyframes evaArrival{from{opacity:.35;transform:translateX(-50%) translateY(9px) scale(.985)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
-body:not(.eva-compact) .avatar-glow{animation:evaGlow 8s ease-in-out infinite alternate}
+body .avatar-glow{animation:evaGlow 8s ease-in-out infinite alternate}
 @keyframes evaGlow{from{opacity:.32;transform:scale(.96)}to{opacity:.62;transform:scale(1.04)}}
-@media (prefers-reduced-motion:reduce){body:not(.eva-compact) #avatar-stage:not([hidden]) .avatar-figure,body:not(.eva-compact) .avatar-glow{animation:none!important}}
+@media (prefers-reduced-motion:reduce){body #avatar-stage:not([hidden]) .avatar-figure,body .avatar-glow{animation:none!important}}
 .sound-feedback-option{display:flex!important;align-items:center;gap:8px}
 
 /* Newly generated curious expression uses the existing head layer. */
@@ -386,9 +381,8 @@ body:not(.eva-compact) .avatar-glow{animation:evaGlow 8s ease-in-out infinite al
 #work-progress li small{color:#bcccd0;text-align:right;flex-shrink:0}
 #work-progress li[data-state=inProgress] small,#work-progress li[data-state=active] small{color:#9ef0d6}
 #work-progress li[data-state=failed] small,#work-progress li[data-state=ended] small{color:#ffc3b7}
-.eva-compact #work-indicator{padding-right:22px}
 #header-toggle{left:max(10px,env(safe-area-inset-left));right:auto}
-body:not(.eva-compact) #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
+body #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
 #sidebar{width:min(86vw,360px)}
 #chat-tools{margin:8px 0;color:#c3d5d8}
 #chat-tools summary{cursor:pointer;padding:12px 7px;font-size:14px}
@@ -404,11 +398,6 @@ body:not(.eva-compact) #voice-output{right:max(10px,env(safe-area-inset-right));
 #work-server-open .chat-lamp,#workshop-open .chat-lamp{margin-left:auto}
 #threads .thread-row .thread-delete{width:44px;height:44px;flex-basis:44px;background:transparent;color:#a6b9bf}
 
-#eva-mini-listening,#eva-mini-text{display:none}
-body.eva-compact #work-indicator{display:none!important}
-body.eva-compact #eva-mini-listening{display:block;position:absolute;z-index:40;bottom:11%;left:10%;width:80%;text-align:center;color:white;background:#18232bd9;border-radius:12px;font-size:12px;pointer-events:none}
-body.eva-compact #eva-mini-text{display:block;position:absolute;z-index:40;top:14%;left:12%;padding:3px 6px;border-radius:12px;font-size:12px}
-body.eva-compact #eva-voice-next:not([hidden]){bottom:26%;width:36px;height:36px}
 
 #sidebar #top-panel:not([hidden]){display:block;padding:0}
 #sidebar #top-panel>.menu-connection{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 8px 7px;font-size:12px;color:#a7c1c7}
@@ -427,7 +416,8 @@ body.eva-compact #eva-voice-next:not([hidden]){bottom:26%;width:36px;height:36px
 #sidebar #limits-card{margin:9px 3px 12px}
 @media(max-width:345px){.menu-items,.chat-destinations{grid-template-columns:1fr}}
 
-#steer{align-self:flex-end;flex:none;min-height:44px;margin:0 max(14px,env(safe-area-inset-right)) 4px 0;padding:0 14px;border-radius:12px;background:#31595b;color:#ecfcf8;font:inherit;font-weight:650}
+#composer{position:relative;z-index:3;flex:none;min-width:0}
+#steer{display:block;min-height:44px;margin:0 max(14px,env(safe-area-inset-right)) 4px auto;padding:0 14px;border-radius:12px;background:#31595b;color:#ecfcf8;font:inherit;font-weight:650}
 #steer:hover:not(:disabled){background:#3e6b6d}
 #steer:disabled{opacity:.65}
-#steer[hidden],body.eva-compact #steer{display:none!important}
+#steer[hidden]{display:none!important}
