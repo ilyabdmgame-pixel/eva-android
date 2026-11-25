@@ -44,6 +44,7 @@ function arrangeFolders(){
    const x=(tile.slot%columns+.5)*cellWidth-tile.button.offsetWidth/2,y=Math.floor(tile.slot/columns)*cellHeight;
    tile.button.style.transform='translate('+x+'px,'+y+'px)';
  }
+ if(sheet==='folder')positionFolderSheet();
 }
 function wireFolder(button,owner,options){
  const tile={button,owner},bar=$('folders');
@@ -97,7 +98,11 @@ function folderBar(){
  drag=null;folderTiles=[];
  const bar=$('folders');bar.replaceChildren();
  groups.forEach((group,i)=>{
-  const b=btn(null,'folder',()=>folderScreen(i));const tile=node('span',null,'tile');
+  const b=btn(null,'folder',event=>{
+   folderScreen(i);
+   sheetOpener=event.currentTarget;
+  });const tile=node('span',null,'tile');
+  b.setAttribute('aria-haspopup','dialog');
   const members=group.keys.map(key=>apps.find(a=>a.key===key)).filter(Boolean);
   if(!members.length)tile.append(node('i',null,'art-icon folder-art'));else members.slice(0,4).forEach(a=>tile.append(icon(a)));
   b.append(tile,node('span',group.name));bar.append(b);wireFolder(b,group);
@@ -132,14 +137,37 @@ function nameFolder(i){
 }
 function folderScreen(i,edit=false){
  if(edit){editFolder(i);return}
- const group=groups[i],out=showSheet('folder',group.name);
+ const group=groups[i];
+ folderAnchor=group;
+ const out=showSheet('folder',group.name);
  const options=$('sheet-options');
  options.hidden=false;options.onclick=()=>folderMenu(i);
  const members=apps.filter(app=>group.keys.includes(app.key));
- if(!members.length){out.append(btn('Добавить приложения','back-link',()=>editFolder(i)));return}
- const grid=node('div',null,'apps');
- for(const app of members)grid.append(appCard(app,()=>folderScreen(i),false));
- out.append(grid);
+ if(!members.length)out.append(btn('Добавить приложения','back-link',()=>editFolder(i)));
+ else{
+  const grid=node('div',null,'apps');
+  for(const app of members)grid.append(appCard(app,()=>folderScreen(i),false));
+  out.append(grid);
+ }
+ positionFolderSheet();
+}
+function folderButton(group){return folderTiles.find(tile=>tile.owner===group)?.button}
+function positionFolderSheet(){
+ const panel=$('sheet');
+ const anchor=folderButton(folderAnchor)?.getBoundingClientRect();
+ if(!anchor)return;
+ const margin=12,gap=8,{clientWidth:width,clientHeight:height}=document.documentElement;
+ const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+ panel.style.removeProperty('--folder-limit');
+ const {offsetWidth:panelWidth,offsetHeight:panelHeight}=panel;
+ const after=clamp(anchor.bottom+gap,margin,height-margin);
+ const before=clamp(anchor.top-gap,margin,height-margin);
+ const below=height-margin-after,above=before-margin;
+ const openBelow=panelHeight<=below||below>=above;
+ panel.style.setProperty('--folder-limit',Math.max(1,openBelow?below:above)+'px');
+ const left=clamp(anchor.left+(anchor.width-panelWidth)/2,margin,width-panelWidth-margin);
+ panel.style.setProperty('--folder-x',left+'px');
+ panel.style.setProperty('--folder-y',(openBelow?after:before-panel.offsetHeight)+'px');
 }
 function folderMenu(i){
  const group=groups[i],out=showSheet('folder-options',group.name);

@@ -47,6 +47,11 @@ public final class Home extends Activity {
     private String catalog="[]";
     private WebView web;
     private boolean homeActive;
+    private int batteryLevel=-1;
+    private boolean batteryCharging;
+    private final BroadcastReceiver battery=new BroadcastReceiver(){
+        @Override public void onReceive(Context context,Intent intent){updateBattery(intent);}
+    };
     private WeatherWidget weather;
     private TownChat chat;
     void townEvent(JSONObject data){if(web!=null)web.evaluateJavascript("window.townEvent?.("+data.toString()+")",null);}
@@ -110,6 +115,18 @@ public final class Home extends Activity {
     }
     private WebResourceResponse empty(){return new WebResourceResponse("text/plain","utf-8",404,"Not Found",Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));}
     private void launch(Intent i){runOnUiThread(()->{try{startActivity(i);}catch(RuntimeException e){Toast.makeText(this,"Приложение недоступно",Toast.LENGTH_SHORT).show();refresh();}});}
+    private void updateBattery(Intent status){
+        if(status==null)return;
+        int level=status.getIntExtra(BatteryManager.EXTRA_LEVEL,-1);
+        int scale=status.getIntExtra(BatteryManager.EXTRA_SCALE,0);
+        int percent=level>=0&&scale>0?Math.round(100f*level/scale):-1;
+        boolean charging=status.getIntExtra(BatteryManager.EXTRA_STATUS,0)==BatteryManager.BATTERY_STATUS_CHARGING;
+        if(batteryLevel==percent&&batteryCharging==charging)return;
+        batteryLevel=percent;batteryCharging=charging;showBattery();
+    }
+    private void showBattery(){
+        if(web!=null)web.evaluateJavascript("window.setHomeBattery?.("+batteryLevel+","+batteryCharging+")",null);
+    }
     public final class Bridge{
         @JavascriptInterface public void worldSnapshot(String raw){TownWorld.publish(raw);}
         @JavascriptInterface public String worldTake(){return TownWorld.take();}
@@ -185,12 +202,21 @@ public final class Home extends Activity {
             public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}
             @Override public void onPageFinished(WebView v,String url){
                 v.evaluateJavascript("window.refreshApps?.(); window.setHomeActive?.("+homeActive+")",null);
+                showBattery();
             }
         });
         web.addJavascriptInterface(new Bridge(),"Desk");web.loadUrl("https://"+HOST+"/index.html");
     }
-    protected void onStart(){super.onStart();visible=this;CodexService.desktopVisibilityChanged();weather.start();}
-    protected void onStop(){if(visible==this){visible=null;CodexService.desktopVisibilityChanged();}weather.stop();super.onStop();}
+    protected void onStart(){
+        super.onStart();visible=this;CodexService.desktopVisibilityChanged();weather.start();
+        IntentFilter filter=new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+        updateBattery(Build.VERSION.SDK_INT>=33?registerReceiver(battery,filter,Context.RECEIVER_NOT_EXPORTED):registerReceiver(battery,filter));
+    }
+    protected void onStop(){
+        unregisterReceiver(battery);
+        if(visible==this){visible=null;CodexService.desktopVisibilityChanged();}
+        weather.stop();super.onStop();
+    }
     protected void onActivityResult(int request,int code,Intent data){
         super.onActivityResult(request,code,data);
         if(request==WeatherWidget.BIND||request==WeatherWidget.CONFIGURE)weather.result(request,code);

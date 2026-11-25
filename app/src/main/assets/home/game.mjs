@@ -1242,7 +1242,11 @@ function openRoomActivities(program=Object.keys(roomActivities),title='Заня�
    }
  }
 }
-$('interact').onclick=()=>{
+$('home-menu').onclick=()=>{
+ const out=showSheet('home-menu','Дом Евы');
+ out.append(label('События','','◷',openTimeline),label('В комнате','','⌂',openRoomObjects));
+};
+function openRoomObjects(){
  const out=showSheet('decor','В комнате');
  out.append(label('Расстановка','Переместить или повернуть мебель','✥',()=>beginLayout()),label('Палитра предметов','Добавить предмет в комнату','＋',()=>{beginLayout();openPalette()}));
  if(carrying||dropAim||toyAim)out.append(label('Отменить действие','','×',()=>{closeSheet();perform(null,'cancel')}));
@@ -1251,7 +1255,7 @@ $('interact').onclick=()=>{
    closeSheet();pauseInitiative();flight=null;move=[];onArrival=null;carrying=null;selectTarget=null;dropAim=null;toyAim=kind;
    say('Ткни в пол. Кому прилетит — чисто случайность.');
  }));
-};
+}
 $('weather').onclick=openWeather;
 function openWeather(){
  const out=showSheet('weather','Погода');
@@ -1296,7 +1300,6 @@ function appendSoundControls(out,refresh){
  bar.onchange=storage;
  out.append(volume);
 }
-$('toys').onclick=openTimeline;
 $('wallet').onclick=openInventory;
 function openInventory(){
  const out=showSheet('inventory','Карман');

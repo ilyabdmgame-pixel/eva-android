@@ -30,6 +30,13 @@ header .now{min-width:0}#calendar{white-space:nowrap}
 
 header{top:max(14px,env(safe-area-inset-top));left:5%;right:5%}
 .top-tools{display:grid;justify-items:end;gap:2px}
+.top-status{display:flex;align-items:center;gap:5px}
+#battery{display:flex;align-items:center;gap:6px;color:#eff5f6;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #142027}
+.battery-icon{position:relative;display:block;width:20px;height:11px;border:1px solid #dce9ea;border-radius:3px}
+.battery-icon::before{content:"";position:absolute;inset:1px;border-radius:1px;background:linear-gradient(to right,#dce9ea var(--charge),transparent var(--charge))}
+.battery-icon::after{content:"";position:absolute;right:-3px;top:3px;width:2px;height:3px;border-radius:0 2px 2px 0;background:#dce9ea}
+#battery[data-charging]{color:#b6e9c9}
+#battery[data-charging] .battery-icon::before{background:linear-gradient(to right,#a1d9b7 var(--charge),transparent var(--charge))}
 #wallet{display:flex;align-items:center;gap:6px;justify-content:flex-end;min-width:44px;min-height:44px;padding:4px 7px;background:transparent;color:#fff5d7;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #302010}
 .coin{width:19px;height:19px;display:block;border-radius:50%;background:radial-gradient(ellipse at 38% 30%,#ffe891,#e8ac42 65%,#b87525);border:2px solid #fdde93;box-shadow:inset 0 0 0 1px #aa6928,0 1px 2px #493217}
 #folders{display:block;left:3%;right:3%;top:var(--folder-top,160px);bottom:calc(6% + 115px);overflow:visible;max-height:none;pointer-events:none}
@@ -68,7 +75,8 @@ time{font-size:clamp(51px,14vw,75px);letter-spacing:-.055em;color:#fff6df}
 .tile,.newfolder{border-radius:14px;background:linear-gradient(145deg,#354d4ded,#253738ec);border:1px solid #dfc49b91;box-shadow:inset 0 1px 1px #fae3bb22,0 2px 6px #13201e50}
 .tile .art-icon{width:32px;height:32px}.newfolder .art-icon{width:21px;height:21px}
 .folder>span:last-child{padding:2px 3px;border-radius:5px;background:#1b282ad9;font-size:11px;font-weight:550;color:#fff2db}
-#actions .art-icon{width:20px;height:20px}#actions .pill{padding:7px 10px}
+#actions{justify-content:center}
+#actions .art-icon{width:20px;height:20px}#actions .pill{padding:7px 14px}
 #dock{height:60px;border-radius:19px;border:1px solid #d2b58b88;background:linear-gradient(165deg,#304444f5,#1e3134f5);box-shadow:inset 0 1px 0 #f3d9ac26,0 4px 12px #07191e55}
 #all{width:44px;height:44px;background:#1c3333;border:1px solid #b49b756e;border-radius:13px}#all i{width:27px;height:27px}
 #sheet{background:linear-gradient(140deg,#fbf1de,#f3e9d5);border:1px solid #ad9777;border-bottom:0;border-radius:22px 22px 0 0;color:#283c39}
@@ -117,17 +125,22 @@ body:has(#sheet:not([hidden])) #layout-tools{visibility:hidden}
 .sheet-buttons{display:flex;gap:2px;flex:none}
 #sheet-options{width:44px;height:44px;background:transparent;display:grid;place-items:center}
 #sheet-options::before{content:"";width:4px;height:4px;border-radius:50%;background:currentColor;box-shadow:-6px 0,6px 0}
+#scrim:has(+ #sheet[data-page=folder]){background:#111b2136}
 #sheet[data-page=folder]{
- inset:auto 12px max(12px,env(safe-area-inset-bottom));
- width:min(calc(100% - 24px),420px);margin-inline:auto;max-height:64%;
- padding:6px 10px 10px;border-radius:20px;
+ inset:var(--folder-y,12px) auto auto var(--folder-x,12px);
+ width:min(calc(100% - 24px),304px);max-height:min(56dvh,var(--folder-limit,340px));
+ padding:5px 9px 9px;border:1px solid #9cb9c484;border-radius:18px;
+ background:#253541dd;color:#eff5f6;backdrop-filter:blur(12px);
+ box-shadow:0 7px 22px #0e1c2c74;
 }
 #sheet[data-page=folder] .grip{display:none}
 #sheet[data-page=folder] .sheethead{margin:0 2px 4px;gap:4px}
-#sheet[data-page=folder] .sheethead h1{font:650 18px/1.25 Roboto,system-ui,sans-serif;margin:0 4px;overflow-wrap:anywhere}
-#sheet[data-page=folder] #close{background:transparent;font-size:21px}
+#sheet[data-page=folder] .sheethead h1{font:650 17px/1.25 Roboto,system-ui,sans-serif;color:inherit;margin:0 4px;overflow-wrap:anywhere}
+#sheet[data-page=folder] .sheethead button{background:transparent;color:inherit}
+#sheet[data-page=folder] #close{font-size:21px}
 #sheet[data-page=folder] .apps{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
-#sheet[data-page=folder] .app-card>.app{min-height:62px;padding:4px 2px;gap:4px;align-content:center}
+#sheet[data-page=folder] .app-card>.app{min-height:62px;padding:4px 2px;gap:4px;align-content:center;color:inherit}
+#sheet[data-page=folder] .app-card:focus-within{background:#dce7e81a}
 #sheet[data-page=folder] .app img{width:34px;height:34px;object-fit:contain}
 #sheet[data-page=folder] .app span{font-size:11px;line-height:1.2}
 #sheet[data-page=folder-edit] #content>.back-link{margin-top:0}

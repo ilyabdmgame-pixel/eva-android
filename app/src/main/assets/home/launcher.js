@@ -7,7 +7,7 @@ function label(text,detail,icon,fn){
  const b=btn(null,'row',fn);const art={'☾':'wall-art','⌂':'grid-art','♫':'speaker-art','◷':'journal-art'}[icon];
  const tag=node('span',art?null:icon,'tag');if(art)tag.append(node('i',null,'art-icon '+art));b.append(tag);const body=node('span',null);body.append(node('strong',text),node('small',detail));b.append(body);return b;
 }
-let sheetOpener;
+let sheetOpener,folderAnchor;
 function showSheet(id,title){
  window.closeTown?.();
  if(!sheet){sheetOpener=document.activeElement;$('screen').inert=true}
@@ -27,13 +27,22 @@ window.closeSheet=()=>{
  if(!sheet)return false;
  sheet='';pinMode=false;
  $('sheet').hidden=$('scrim').hidden=true;$('screen').inert=false;
- const focus=sheetOpener?.isConnected&&sheetOpener!==document.body?sheetOpener:$('all');
+ const focus=(sheetOpener?.isConnected&&sheetOpener!==document.body?sheetOpener:folderButton(folderAnchor))||$('all');
  focus.focus({preventScroll:true});
- sheetOpener=null;
+ sheetOpener=folderAnchor=null;
  window.homeSheetChanged?.();
  return true;
 };
 $('close').onclick=$('scrim').onclick=closeSheet;
+window.setHomeBattery=(level,charging)=>{
+ const battery=$('battery');
+ if(!Number.isInteger(level)||level<0||level>100){battery.hidden=true;return}
+ battery.hidden=false;
+ battery.style.setProperty('--charge',level+'%');
+ battery.toggleAttribute('data-charging',charging);
+ battery.setAttribute('aria-label','Заряд '+level+' процентов'+(charging?', идёт зарядка':''));
+ $('battery-level').textContent=level+'%';
+};
 $('sheet').addEventListener('keydown',event=>{
  if(event.key==='Escape'){event.preventDefault();closeSheet();return}
  if(event.key!=='Tab')return;
