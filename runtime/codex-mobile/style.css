@@ -410,6 +410,7 @@ body #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
 #sidebar #top-panel .menu-items button,.chat-destinations>button{min-height:46px;justify-content:flex-start;align-items:center;text-align:left;background:#2a3b46;color:#eef4f3;border-radius:10px;padding:7px 9px;line-height:1.2}
 #sidebar #top-panel .menu-items .top-label{white-space:normal;overflow:visible}
 #sidebar .chat-destinations>button{margin:0;width:100%;min-width:0}
+#sidebar .chat-destinations>button:not([hidden]){display:flex;gap:8px}
 #sidebar #new.menu-primary{min-height:48px;margin:4px 0 8px;background:#9bd8cd;color:#203a3c;font-weight:700}
 #sidebar #new.menu-primary .ui-icon{color:currentColor}
 #sidebar :is(.chat-destinations,.menu-items) button:active{background:#3c5663}
@@ -417,6 +418,8 @@ body #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
 @media(max-width:345px){.menu-items,.chat-destinations{grid-template-columns:1fr}}
 
 #composer{position:relative;z-index:3;flex:none;min-width:0}
+#messages .welcome{width:min(100%,290px);box-sizing:border-box;padding:12px 16px;border-radius:16px;background:#16232de8;color:#eef5f6;text-shadow:none}
+#messages .welcome h1,#messages .welcome p{margin:4px 0}
 #steer{display:block;min-height:44px;margin:0 max(14px,env(safe-area-inset-right)) 4px auto;padding:0 14px;border-radius:12px;background:#31595b;color:#ecfcf8;font:inherit;font-weight:650}
 #steer:hover:not(:disabled){background:#3e6b6d}
 #steer:disabled{opacity:.65}

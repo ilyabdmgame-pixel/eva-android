@@ -45,7 +45,8 @@ const EvaApp = Object.fromEntries(
 );
 const script = fs.readFileSync(path.join(__dirname, '../../app/src/main/assets/eva-pet/ui.js'), 'utf8');
 const window = {};
-const globals = { document, EvaApp, window, localStorage, Event, queueMicrotask };
+const globals = { document, EvaApp, window, localStorage, Event, queueMicrotask,
+  uiIcon: icon => '<svg aria-hidden="true" data-icon="'+icon+'"></svg>' };
 vm.runInNewContext(script, globals);
 vm.runInNewContext(script, globals);
 assert.equal(head.children.length, 2);

@@ -38,11 +38,13 @@ gradle :app:assembleDebug
 
 ```sh
 TZ=Europe/Moscow node --test tests/town-chat.test.cjs tests/home/tests/*.test.mjs tests/pet/*.cjs
-node --test tests/codex-persona.test.cjs
+node --test tests/codex-persona.test.cjs tests/providers.test.cjs
 python3 -m unittest discover -s tests -p 'test_runtime_pack.py'
 ```
 
 Проверки app-server используют локальную имитацию Responses API. Токен OpenAI и подключение к аккаунту для них не требуются. Бинарник Codex можно указать через `EVA_TEST_CODEX`.
+
+Тест внешних моделей подставляет локальные ответы Gemini, DeepSeek, Anthropic и OpenRouter. Он проверяет формат запросов, передачу характера и истории, выбор модели, ошибки и отмену без подключения к провайдерам.
 
 Личные чаты, ключи, настройки провайдеров, материалы пользователя, резервные копии, APK и подписывающие ключи сохраняются вне отслеживаемых файлов. Прогноз в «Доме» обращается к Open-Meteo после ввода координат. Озвучка и распознавание через системный сервис зависят от установленного на устройстве движка.
 

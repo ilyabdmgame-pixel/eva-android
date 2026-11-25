@@ -5,7 +5,7 @@
     const button = document.createElement('button');
     button.id = 'eva-pet-controls';
     button.type = 'button';
-    button.textContent = 'Рабочий стол и питомец';
+    button.innerHTML = uiIcon('tune') + '<span>Рабочий стол и питомец</span>';
     button.addEventListener('click', () => EvaApp.petSettings());
     settings.insertAdjacentElement('afterend', button);
   }
@@ -34,14 +34,14 @@
   games.setAttribute('aria-label', 'Игры с Евой');
   games.addEventListener('click', openGames);
   header.append(games);
-  for (const [glyph, label, action] of [
-    ['⚙','Поведение в приложении','petAppProfile'],
-    ['▱','Покажи, что видишь','petMap'],
-    ['×','Закрыть мини-чат','closePetChat']
+  for (const [icon, label, action] of [
+    ['tune','Поведение в приложении','petAppProfile'],
+    ['map','Покажи, что видишь','petMap'],
+    ['close','Закрыть мини-чат','closePetChat']
   ]) {
     const control = document.createElement('button');
     control.type = 'button';
-    control.textContent = glyph;
+    control.innerHTML = uiIcon(icon);
     control.setAttribute('aria-label', label);
     if (action === 'petAppProfile' || action === 'petMap') control.className = 'pet-composer-extra';
     control.title = label;

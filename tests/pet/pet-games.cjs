@@ -39,6 +39,7 @@ function advance() {
 }
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../app/src/main/assets/eva-pet/ui.js'),'utf8'), {
   document, window, performance:{now:()=>now},
+  uiIcon: name => `<svg data-icon="${name}"></svg>`,
   Math:Object.assign(Object.create(Math),{random:()=>.999}),
   setTimeout:(fn,delay)=>{ pending={fn,delay,id:++id}; return id; },
   clearTimeout:value=>{ if (pending && pending.id===value) pending=null; }

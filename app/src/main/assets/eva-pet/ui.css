@@ -6,7 +6,7 @@
     body.eva-pet-chat #eva-pet-header { display:flex; }
     #eva-pet-header { display:none; flex-shrink:0; align-items:center; gap:8px; padding:4px 9px 4px 15px; min-height:48px; background:#1f3439; color:#dff6ec; border-bottom:1px solid #7bb2a44d; }
     #eva-pet-header strong { flex:1; font-size:15px; }
-    #eva-pet-header button { width:44px; height:44px; background:transparent; color:inherit; border-radius:9px; padding:0; font-size:20px; }
+    #eva-pet-header button { display:grid;place-items:center;width:44px; height:44px; background:transparent; color:inherit; border-radius:9px; padding:0; font-size:20px; }
     #eva-pet-header button:focus-visible { outline:2px solid #9edfc7; }
     body.eva-pet-chat #messages { padding-top:8px; }
     body.eva-pet-chat #form { padding-bottom:8px; }
