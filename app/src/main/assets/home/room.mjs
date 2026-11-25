@@ -1,14 +1,39 @@
 import {district,worldPoint} from './district.mjs';
 import {buildingEdge} from './buildings.mjs';
+import {furnitureSurface} from './occlusion.mjs';
+import {turnFixture} from './prop-finish.mjs';
+import {approach} from './contact.mjs';
 
 export const room=district('home');
 export const roomEdge=buildingEdge;
-export const roomCenter=worldPoint('home',.35,0);
-export const roomScale=.113;
-export const roomOffset=.125;
+export const roomCenter=worldPoint('home',.13,0);
+export const roomScale=.098;
+export const roomOffset=.108;
 
 const windowFrame={left:-1.19,right:2.13,bottom:1.22,top:2.68};
 export const attachedFurniture=new Map([[1,[5,6]],[3,[10,11]],[21,[22,23]],[25,[26]]]);
+export const furnitureOwners=new Map([...attachedFurniture].flatMap(([parent,children])=>children.map(id=>[id,parent])));
+
+export function roomApproach(item,fixtures,actor,blocked){
+ const owner=fixtures.find(fixture=>fixture.id===furnitureOwners.get(item.id));
+ return approach(owner||item,actor,blocked);
+}
+
+export function roomFurniture(models){
+ const layout=new Map(models.filter(item=>item.sector===room.key).map(item=>[item.id,item]));
+ layout.set(81,models.find(item=>item.id===81));
+ for(const [id,u,v,turned] of [[2,.70,-1.30],[3,-3.26,-.62],[21,-3.48,1.86,true],[24,2.36,-2.44],
+                               [25,-1.65,-2.93],[81,-.56,.04],[300,-.97,2.59],[301,-2.02,2.59],
+                               [302,.18,2.59],[303,-3.30,-2.20],[304,-3.35,-3.25],[305,-3.43,-1.26]]){
+   const before=layout.get(id);
+   const after={...(turned?turnFixture(before):before),...worldPoint(room.key,u,v),sector:room.key,approach:null};
+   layout.set(id,after);
+   for(const child of attachedFurniture.get(id)||[]){
+     layout.set(child,attachedPosition(layout.get(child),before,after));
+   }
+ }
+ return layout;
+}
 
 export function inRoom(u,v,margin=0){
  const edge=roomEdge-margin;
@@ -43,6 +68,19 @@ export function attachedPosition(fixture,before,parent){
  return {...fixture,u:parent.u+u,v:parent.v+v,
    w:parent.turned?fixture.d:fixture.w,d:parent.turned?fixture.w:fixture.d,
    artFlip:Boolean(fixture.artFlip)!==Boolean(parent.turned),approach};
+}
+
+export function bedRest(bed,pillow,asleep){
+ const top=furnitureSurface(bed.art,[bed.w,bed.d],bed.artFlip);
+ const height=top?.height??bed.surfaceHeight??.53;
+ const rest={
+   u:bed.u+bed.w*(asleep?(bed.turned?.18:.5):(bed.turned?.63:.86)),
+   v:bed.v+bed.d*(asleep?(bed.turned?.5:.18):(bed.turned?.86:.63))
+ };
+ if(asleep&&pillow){
+   rest.u=pillow.u+pillow.w/2;rest.v=pillow.v+pillow.d/2;
+ }
+ return {...rest,height:height+(asleep ? .10 : 0)};
 }
 
 export function drawRoom(renderer,open){

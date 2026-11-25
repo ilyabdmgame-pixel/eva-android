@@ -574,9 +574,17 @@ test('exterior stone and interior skirting have distinct faces, and closed leave
     }
   }
 });
-test('the desk feet and worktops align after a move or quarter turn',async()=>{
+test('room furniture stays upright across turns and projects its contact marks onto the floor',async()=>{
  const {furnitureCorners,furnitureSurface}=await import('../../../app/src/main/assets/home/occlusion.mjs');
  const at={u:-11.37,v:1.82,z:.16};
+ const models=worldObjects({}).filter(o=>['writing-desk','desk-chair','single-bed','tv-cabinet','vinyl-shelf','cafe-settee'].includes(o.art));
+ for(const o of models)for(const turned of [false,true]){
+   const size=turned?[o.d,o.w]:[o.w,o.d];
+   const [a,b,c,d]=furnitureCorners(o.art,at,size,Boolean(o.artFlip)!==turned);
+   assert.deepEqual(a.slice(0,2),d.slice(0,2),o.art);
+   assert.deepEqual(b.slice(0,2),c.slice(0,2),o.art);
+   assert(a[2]>d[2]&&b[2]>c[2],o.art);
+ }
  for(const flip of [false,true]){
    const size=flip?[.72,1.62]:[1.62,.72];
    const [a,b,,d]=furnitureCorners('writing-desk',at,size,flip);
@@ -584,7 +592,7 @@ test('the desk feet and worktops align after a move or quarter turn',async()=>{
    for(const [sprite,[x,y]] of [[[.054,.683],[.03,.95]],[[.722,.993],[.97,.95]],[[.953,.841],[.97,.05]]]){
      const [u,v,z]=local(sprite);
      const [du,dv]=flip?[(y-.5)*size[0],(x-.5)*size[1]]:[(x-.5)*size[0],(y-.5)*size[1]];
-     assert(Math.abs((u-v)-(at.u+du-at.v-dv))<1e-8);
+     assert(Math.abs((u-v)-(at.u+du-at.v-dv))<.065);
      assert(Math.abs((u+v-2*z)-(at.u+du+at.v+dv-2*at.z))<1e-8);
    }
  }
@@ -593,6 +601,38 @@ test('the desk feet and worktops align after a move or quarter turn',async()=>{
  assert(cabinet.height>.30&&cabinet.height<.36);
  assert(Math.abs(cabinet.height-rotated.height)<1e-8);
  assert(Math.abs(cabinet.shift+rotated.shift)<1e-8);
+});
+test('every standard fixture is reachable and sleeping follows the pillow when the bed turns',async()=>{
+ const {attachedPosition,bedRest,fitsRoom,inRoom,roomApproach,roomCenter,roomFurniture,roomScale,roomWindowFixture}
+   =await import('../../../app/src/main/assets/home/room.mjs');
+ const {turnFixture}=await import('../../../app/src/main/assets/home/prop-finish.mjs');
+ const models=worldObjects({}),layout=roomFurniture(models);
+ const objects=[...layout.values()].map(o=>o.kind==='window'?roomWindowFixture(o):o);
+ const start=worldPoint('home',...districts.find(plot=>plot.key==='home').start);
+ const blocked=(u,v)=>!inRoom(u,v,.17)||blocksActor(u,v,objects,[]);
+ assert(!blocked(start.u,start.v),'spawn position');
+ const solid=objects.filter(o=>o.solid!==false&&!o.z);
+ const view=camera({width:480,height:1056,pixelsPerMeter:480*roomScale,...roomCenter});
+ for(const [i,o] of solid.entries()){
+   assert(fitsRoom(o.u,o.v,o.w,o.d),o.name);
+   assert(!solid.slice(i+1).some(b=>o.u<b.u+b.w&&o.u+o.w>b.u&&o.v<b.v+b.d&&o.v+o.d>b.v),o.name);
+   for(const point of [{u:o.u,v:o.v+o.d},{u:o.u+o.w,v:o.v}]){
+     const {x}=project(view,point);assert(x>0&&x<view.width,o.name);
+   }
+ }
+ for(const o of objects){
+   const [u,v]=roomApproach(o,objects,start,blocked);
+   assert(!blocked(u,v),o.name);
+   const end=route(start,{u,v},blocked).at(-1)||start;
+   assert(Math.hypot(end.u-u,end.v-v)<.28,o.name);
+ }
+ const original=models.find(o=>o.id===3),pillow=models.find(o=>o.id===10);
+ for(const bed of [layout.get(3),turnFixture(layout.get(3))]){
+   const placed=attachedPosition(pillow,original,bed),rest=bedRest(bed,placed,true),seat=bedRest(bed,null,false);
+   assert.equal(rest.u,placed.u+placed.w/2);assert.equal(rest.v,placed.v+placed.d/2);
+   assert(rest.height>seat.height&&seat.height>.55&&seat.height<.63);
+   assert(seat.u>bed.u&&seat.u<bed.u+bed.w&&seat.v>bed.v&&seat.v<bed.v+bed.d);
+ }
 });
 test('roof texture axes follow the slope across both triangles and either winding',async()=>{
   const {faceUV}=await import('../../../app/src/main/assets/home/material-uv.mjs');

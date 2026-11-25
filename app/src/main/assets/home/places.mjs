@@ -212,7 +212,7 @@ const beach=[
   prop(97,'Спасательный круг',-1.67,-.73,.32,.27,'rescue','rescue-post',{visualHeight:1.37})
 ];
 export const places={
-  home:{title:'Комната',objects:home,start:[.30,.62],theme:'home'},
+  home:{title:'Комната',objects:home,start:[.38,.92],theme:'home'},
   street:{title:'Улица',objects:street,start:[1.76,-1.37],theme:'street'},
   school:{title:'Школа',objects:school,start:[.65,1.03],theme:'school'},
   shop:{title:'Цветочная лавка',objects:shop,start:[.56,.83],theme:'shop'},

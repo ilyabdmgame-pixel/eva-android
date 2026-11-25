@@ -9,11 +9,12 @@ import {domestic,actionTime,useFrame} from './household.mjs';
 import {editableFixture,placementIssue} from './layout.mjs';
 import {drawNotice,castFurniture} from './street-furniture.mjs';
 import {migrateTown} from './town-plan.mjs';
-import {fixtureTop, approach, blocksActor, canPlace, hitsFixture} from './contact.mjs';
+import {fixtureTop,blocksActor,canPlace,hitsFixture} from './contact.mjs';
 import {choosePastime} from './pastimes.mjs';
 import {project,worldAtHeight,inView} from './camera.mjs';
 import {createScene} from './render.mjs';
-import {room,roomCenter,roomScale,roomOffset,roomEdge,inRoom,fitsRoom,roomWindowFixture,drawRoom,drawRoomWindow,attachedPosition,attachedFurniture} from './room.mjs';
+import {room,roomCenter,roomScale,roomOffset,roomEdge,inRoom,fitsRoom,roomWindowFixture,drawRoom,drawRoomWindow,
+  attachedPosition,attachedFurniture,furnitureOwners as parents,roomFurniture,roomApproach,bedRest} from './room.mjs';
 import {windowWeather,windowWeatherMoves} from './window-weather.mjs';
 import {places} from './places.mjs';
 import {startFlight,flightPoint,advanceFlight,drawToy} from './toys.mjs';
@@ -77,26 +78,17 @@ const models=worldObjects({});
 const modelsById=new Map(models.map(o=>[o.id,o]));
 const catalogIds=[2,12,21,24,34,61,65,74,79,81,82,87,91,115,300,301,302,303,304,305];
 const catalog=new Map(models.filter(o=>catalogIds.includes(o.id)).map(o=>[o.id,o]));
-const roomDefaults=new Map(models.filter(o=>o.sector===section).map(o=>[o.id,o]));
-const settee=models.find(o=>o.id===81);
-roomDefaults.set(81,settee);
-for(const [id,u,v] of [[2,.70,-1.30],[21,-3.20,1.74],[24,2.36,-2.44],[25,-1.65,-2.93],
-                        [81,-.56,.04],[300,-.97,2.59],[301,-2.02,2.59],[302,-2.86,2.59],
-                        [303,-3.30,-2.20],[304,-3.35,-3.25],[305,-3.43,-1.26]]){
- const before=roomDefaults.get(id);
- const after={...before,...worldPoint(section,u,v),sector:section,approach:null};
- roomDefaults.set(id,after);
- for(const child of attachedFurniture.get(id)||[]){
-   roomDefaults.set(child,attachedPosition(roomDefaults.get(child),before,after));
- }
-}
-const parents=new Map([...attachedFurniture].flatMap(([parent,children])=>children.map(id=>[id,parent])));
+const roomDefaults=roomFurniture(models);
 function attachedTo(child,parent){
- const attachment=attachedPosition(roomDefaults.get(child.id),roomDefaults.get(parent.id),parent);
- const top=!parent.back&&furnitureSurface(parent.art,[parent.w,parent.d],parent.artFlip);
+ const original=modelsById.get(parent.id);
+ const attachment=attachedPosition(modelsById.get(child.id),original,parent);
+ const key=parent.back?'back-'+parent.art:parent.art;
+ const top=furnitureSurface(key,[parent.w,parent.d],parent.artFlip);
  if(top){
    attachment.u+=top.shift;attachment.v-=top.shift;
-   attachment.z+=top.height-fixtureTop(roomDefaults.get(parent.id));
+   attachment.z=parent.kind==='bed'
+     ?top.height+(child.kind==='pillow'?.018:.006)
+     :attachment.z+top.height-fixtureTop(original);
  }
  return attachment;
 }
@@ -266,7 +258,7 @@ function walkTo(u,v,done,automatic=false){
  dirty=true;wake();
 }
 function around(o,actor=eva){
- return approach(o,actor,blocks);
+ return roomApproach(o,fixtures,actor,blocks);
 }
 function face(target){
  direction=heading(target.u+target.w*.5-eva.u,target.v+target.d*.5-eva.v,direction);
@@ -292,7 +284,9 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
  if(o.kind==='chair'&&action==='sit'&&seated?.id===o.id){
    leaveSeat();direction='down-left';dirty=true;say('Встала. Стул может выдохнуть.');return;
  }
- const target=around(o);
+ const bedEdge=o.kind==='bed'&&action==='sit'&&bedRest(o,null,false);
+ const edge=bedEdge&&(o.turned?[bedEdge.u,o.v+o.d+.28]:[o.u+o.w+.28,bedEdge.v]);
+ const target=edge&&!blocks(...edge)?edge:around(o);
  walkTo(...target,()=>{
    if(automatic)nextPastime=now()+15000+Math.random()*12000;
    if(Math.hypot(eva.u-target[0],eva.v-target[1])>.28){
@@ -315,16 +309,21 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
      case 'eatSnack':
        if(trade('eat',snack)){appEvent('snack');say(snack==='tea'?'Чай. Вот теперь я человек. Почти.':'Перекусила. Жизнь снова вывозим.','pleased');}break;
      case 'shelter':say('Вот тут сухо. Дождь, можешь писать жалобу.','pleased');break;
-     case 'sleep':
+     case 'sleep': {
        direction=o.turned?'down-left':'down-right';
-       takeSeat({id:o.id,stand:target,height:.75,sleep:true},
-         {u:o.u+(o.turned?.27:o.w*.48),v:o.v+(o.turned?o.d*.48:.27)});
-       statusNote('Ева спит. Тап по полу её разбудит.');break;
+       const pillow=o.id===3&&fixtures.find(item=>item.id===10);
+       const rest=bedRest(o,pillow,true);
+       takeSeat({id:o.id,stand:target,height:rest.height,sleep:true},rest);
+       speech.clear();
+       statusNote('Ева спит. Тап по полу её разбудит.');
+       break;
+     }
      case 'sit':
        direction=o.seatDirection||'down-left';
        const pos=o.back?.40:.60;
-       takeSeat({id:o.id,depth:Math.max(o.w,o.d)>1?.32:.16,stand:standFrom(o),height:o.seatHeight||.5},
-         {u:o.u+o.w*(o.kind==='bed'?.87:o.turned?pos:.5),v:o.v+o.d*(o.turned?.5:pos)});
+       takeSeat({id:o.id,depth:Math.max(o.w,o.d)>1?.32:.16,stand:bedEdge?target:standFrom(o),
+         height:bedEdge?.height??o.seatHeight??.5},
+         bedEdge||{u:o.u+o.w*(o.turned?pos:.5),v:o.v+o.d*(o.turned?.5:pos)});
        appEvent('sit');say(remark('seat'),'pleased');break;
      case 'desk':
        saved.drawers??={};saved.drawers[o.id]=!drawerOpen(o.id);
@@ -1166,4 +1165,9 @@ document.addEventListener('click',event=>{
  if(saved.sound&&button){prepareSound();sound(button.closest('#town-compose')?'chatTap':'uiTap');}
 },true);
 for(const key of ['walk-eva','act-eva-front','act-eva-rear','desk-drawer','amber-sconce','closed-umbrella','folded-throw'])renderer.artReady(key);
-refreshObjects();publishHUD();last=now();pullClock();paint();storage();wake();
+refreshObjects();
+if(blocks(eva.u,eva.v)){
+ const free=blocks(start.u,start.v)?pathTo(start).find(p=>!blocks(p.u,p.v)):start;
+ eva={...(free||start)};
+}
+publishHUD();last=now();pullClock();paint();storage();wake();

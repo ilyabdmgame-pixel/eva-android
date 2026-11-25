@@ -29,13 +29,15 @@ export function surfaceTriangles(corners,uv,limits,floor){
  return triangles;
 }
 
-// Three marked soles in each cutout map to the same ground points used for collisions.
+// Contact marks are measured in the cutout. Fit the floor projection while keeping
+// every painted upright vertical, even when the artist's perspective differs slightly.
 const contacts={
  'writing-desk':[[.054,.683],[.722,.993],[.953,.841]],
  'desk-chair':[[.105,.847],[.529,.990],[.953,.837]],
  'single-bed':[[.028,.842],[.367,.992],[.964,.576]],
  'tv-cabinet':[[.050,.597],[.733,.993],[.937,.811]],
  'vinyl-shelf':[[.048,.747],[.738,.992],[.979,.894]],
+ 'back-vinyl-shelf':[[.050,.838],[.833,.989],[.968,.875]],
  'cafe-settee':[[.049,.884],[.273,.995],[.947,.676]]
 };
 
@@ -47,19 +49,32 @@ export function furnitureCorners(key,{u,v,z=0},[w,d],flipped){
  const area=ab[0]*ac[1]-ab[1]*ac[0];
  const floor=[[.03,.95],[.97,.95],[.97,.05]].map(([x,y])=>
    flipped?[(y-.5)*w,(x-.5)*d]:[(x-.5)*w,(y-.5)*d]);
+ const meanX=(a[0]+b[0]+c[0])/3;
+ const targetX=floor.map(([du,dv])=>(du-dv)/2);
+ const meanTarget=(targetX[0]+targetX[1]+targetX[2])/3;
+ let slope=0,variance=0;
+ for(const [i,mark] of marks.entries()){
+   const dx=mark[0]-meanX;
+   slope+=dx*(targetX[i]-meanTarget);
+   variance+=dx*dx;
+ }
+ slope/=variance;
+ const targetY=floor.map(([du,dv])=>(du+dv)/2);
  return [[0,0],[1,0],[1,1],[0,1]].map(([x,y])=>{
    const dx=x-a[0],dy=y-a[1];
    const s=(dx*ac[1]-dy*ac[0])/area,t=(ab[0]*dy-ab[1]*dx)/area;
-   const du=floor[0][0]+s*(floor[1][0]-floor[0][0])+t*(floor[2][0]-floor[0][0]);
-   const dv=floor[0][1]+s*(floor[1][1]-floor[0][1])+t*(floor[2][1]-floor[0][1]);
-   return [u+(du-dv)/2,v-(du-dv)/2,z-(du+dv)/2];
+   const across=meanTarget+slope*(x-meanX);
+   const down=targetY[0]+s*(targetY[1]-targetY[0])+t*(targetY[2]-targetY[0]);
+   return [u+across,v-across,z-down];
  });
 }
 
 const worktops={
  'writing-desk':[.499,.311],
  'tv-cabinet':[.507,.352],
- 'vinyl-shelf':[.493,.199]
+ 'vinyl-shelf':[.493,.199],
+ 'back-vinyl-shelf':[.502,.157],
+ 'single-bed':[.469,.470]
 };
 
 export function furnitureSurface(key,size,flipped){
