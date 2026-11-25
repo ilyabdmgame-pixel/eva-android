@@ -1369,9 +1369,9 @@ function openTimeline(){
  pullClock();
  const out=showSheet('timeline','Что было');
  const live=timeline.live!==false;
- out.append(label(live?'Фоновая жизнь включена':'Включить фоновую жизнь',
-  live?'Коснись, чтобы остановить Android-службу':'Мир работает, пока открыт рабочий стол','◷',()=>{
-   Desk.enableLife(!live);closeSheet();statusNote(live?'Фоновая служба выключена.':'Фоновая служба включена.');
+ out.append(label(live?'Фоновое расписание включено':'Включить фоновое расписание',
+  live?'Android обновляет события города в фоне':'События обновляются при открытии рабочего стола','◷',()=>{
+   Desk.enableLife(!live);closeSheet();statusNote(live?'Фоновое расписание выключено.':'Фоновое расписание включено.');
  }));
  for(const ev of [...(timeline.events||[])].reverse().slice(0,15)){
    const row=node('div',null,'timeline-row');row.append(node('strong',ev.who+' · '+ev.text));

@@ -21,6 +21,18 @@ public final class Home extends Activity {
     private static final String HOST="eva-life.invalid";
     private static Home visible;
     public static boolean visible(){return visible!=null;}
+    public static void openDefaultHome(Context context){
+        Intent home=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+        ResolveInfo selected=context.getPackageManager().resolveActivity(home,PackageManager.MATCH_DEFAULT_ONLY);
+        ComponentName own=new ComponentName(context,Home.class);
+        boolean active=selected!=null&&selected.activityInfo!=null&&own.equals(
+            new ComponentName(selected.activityInfo.packageName,selected.activityInfo.name));
+        Intent target=active?home.setComponent(own):new Intent(Settings.ACTION_HOME_SETTINGS);
+        try{context.startActivity(target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));}
+        catch(android.content.ActivityNotFoundException error){
+            Toast.makeText(context,"Главный экран Android недоступен",Toast.LENGTH_SHORT).show();
+        }
+    }
     public static boolean enabled(Context context){
         int state=context.getPackageManager().getComponentEnabledSetting(new ComponentName(context,Home.class));
         return state==PackageManager.COMPONENT_ENABLED_STATE_DEFAULT||state==PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
@@ -29,7 +41,7 @@ public final class Home extends Activity {
         context.getPackageManager().setComponentEnabledSetting(new ComponentName(context,Home.class),
             enabled?PackageManager.COMPONENT_ENABLED_STATE_ENABLED:PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
             PackageManager.DONT_KILL_APP);
-        if(!enabled)context.stopService(new Intent(context,LifeService.class));
+        LifeService.updateSchedule(context);
     }
     private final Map<String,ResolveInfo> entries=new HashMap<>();
     private String catalog="[]";
@@ -129,7 +141,7 @@ public final class Home extends Activity {
         @JavascriptInterface public void note(String action,String where){LifeState.localAction(Home.this,action,where);}
         @JavascriptInterface public void enableLife(boolean on){runOnUiThread(()->{
             LifeState.setEnabled(Home.this,on);
-            if(on)startLife();else stopService(new Intent(Home.this,LifeService.class));
+            LifeService.updateSchedule(Home.this);
         });}
         @JavascriptInterface public String apps(){synchronized(entries){return catalog;}}
         @JavascriptInterface public void open(String key){if(find(key)!=null)launch(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(ComponentName.unflattenFromString(key)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));}
@@ -150,10 +162,6 @@ public final class Home extends Activity {
         }
         @JavascriptInterface public void chooseHome(){launch(new Intent(Settings.ACTION_HOME_SETTINGS));}
         @JavascriptInterface public void eva(){launch(new Intent(Home.this,ru.eva.envtest.MainActivity.class));}
-    }
-    private void startLife(){
-        try{startForegroundService(new Intent(this,LifeService.class));}
-        catch(IllegalStateException e){Toast.makeText(this,"Android отложил фоновый запуск",Toast.LENGTH_SHORT).show();}
     }
     public void onCreate(Bundle b){
         super.onCreate(b);getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);getWindow().setStatusBarColor(0x00000000);getWindow().setNavigationBarColor(0x00000000);
@@ -187,7 +195,7 @@ public final class Home extends Activity {
     }
     protected void onNewIntent(Intent i){super.onNewIntent(i);if(web!=null)web.evaluateJavascript("window.closeSheet?.()",null);}
     protected void onResume(){super.onResume();homeActive=true;chat.resume();web.onResume();web.evaluateJavascript("window.setHomeActive?.(true)",null);refresh();}
-    protected void onPostResume(){super.onPostResume();if(LifeState.enabled(this))startLife();}
+    protected void onPostResume(){super.onPostResume();LifeService.updateSchedule(this);}
     protected void onPause(){homeActive=false;chat.pause();web.evaluateJavascript("window.setHomeActive?.(false)",null);web.onPause();super.onPause();}
     public void onBackPressed(){web.evaluateJavascript("window.backLayout?.() || window.closeTown?.() || window.closeSheet?.()",null);}
     protected void onDestroy(){chat.destroy();worker.shutdownNow();web.destroy();web=null;super.onDestroy();}

@@ -190,7 +190,7 @@ function phoneTheme(){
  const city=menuSection(out,'Город');
  city.append(label('Звуки города','Громкость, шаги и окружение','♫',()=>window.openHomeSound()));
  const boot=Desk.bootEnabled();
- const toggle=label('Запуск после перезагрузки',boot?'Включён':'Выключен','↻',()=>{
+ const toggle=label('Расписание после перезагрузки',boot?'Включено':'Выключено','↻',()=>{
    Desk.setBootEnabled(!boot);phoneTheme();
  });
  toggle.setAttribute('aria-pressed',String(boot));city.append(toggle);

@@ -40,8 +40,6 @@ final class LifeState {
     static boolean enabled(Context c) {return prefs(c).getBoolean("live", false);}
     static void setEnabled(Context c,boolean enabled) {prefs(c).edit().putBoolean("live", enabled).commit();}
 
-    static long nextDeadline(long now) {return (Math.floorDiv(now,QUARTER)+1)*QUARTER;}
-
     private static JSONObject event(long at,String who,String where,String text) throws JSONException {
         return new JSONObject().put("at",at).put("who",who).put("where",where).put("text",text);
     }

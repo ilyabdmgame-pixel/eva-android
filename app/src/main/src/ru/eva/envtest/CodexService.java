@@ -12,28 +12,33 @@ public final class CodexService extends Service {
  public volatile String url="",status="Запускаю Еву…";
  private Listener listener;private java.lang.Process process;
  private PetOverlay pet;
+ private boolean notificationShowsPet;
  private static CodexService active;
  private final Handler handler=new Handler(Looper.getMainLooper());
  private final ExecutorService io=Executors.newSingleThreadExecutor();
+ public static boolean running(){return active!=null;}
  public void attach(Listener l){listener=l;l.changed();}
  public void detach(Listener l){if(listener==l)listener=null;}
  private void report(String text){handler.post(()->{status=text;if(listener!=null)listener.changed();});}
  @Override public void onCreate(){super.onCreate();try{
   active=this;
-  startForeground(11,notification());
+  notificationShowsPet=petNotificationEnabled();
+  startForeground(11,notification(notificationShowsPet));
   try{pet=new PetOverlay(this);applyPetPresentation();}catch(RuntimeException error){android.util.Log.w("EvaPet","Could not initialise overlay",error);}
   io.execute(this::startProcess);
  }catch(Exception e){report("Ошибка запуска: "+e.getMessage());}}
- private Notification notification(){
+ private boolean petNotificationEnabled(){
+  return PetOverlay.enabled(this)&&android.provider.Settings.canDrawOverlays(this);
+ }
+ private Notification notification(boolean enabled){
   NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
   Notification.Builder builder;
   if(Build.VERSION.SDK_INT>=26){
    manager.createNotificationChannel(new NotificationChannel("eva_runtime","Среда Eva",NotificationManager.IMPORTANCE_LOW));
    builder=new Notification.Builder(this,"eva_runtime");
   }else builder=new Notification.Builder(this);
-  boolean enabled=PetOverlay.enabled(this)&&android.provider.Settings.canDrawOverlays(this);
   int flags=PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE;
-  builder.setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle("Ева")
+  builder.setSmallIcon(android.R.drawable.stat_notify_chat).setContentTitle("Ева")
     .setContentText(enabled?"Ева может появляться поверх приложений":"Личная помощница работает")
     .setVisibility(Notification.VISIBILITY_PRIVATE).setOngoing(true).setOnlyAlertOnce(true)
     .setContentIntent(PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),flags));
@@ -55,7 +60,10 @@ public final class CodexService extends Service {
   CodexService service=active;
   if(service==null)return;
   service.applyPetPresentation();
-  ((NotificationManager)service.getSystemService(NOTIFICATION_SERVICE)).notify(11,service.notification());
+  boolean enabled=service.petNotificationEnabled();
+  if(enabled==service.notificationShowsPet)return;
+  service.notificationShowsPet=enabled;
+  service.getSystemService(NotificationManager.class).notify(11,service.notification(enabled));
  }
  private void applyPetPresentation(){
   if(pet!=null)pet.setPresentation(MainActivity.petPresentation());

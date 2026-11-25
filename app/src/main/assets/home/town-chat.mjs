@@ -39,7 +39,7 @@ export function townChat({note,quip,world,apply}){
  function tap(){
   if(open||showTimer){close();return;}
   if(!answer)quip();
-  showTimer=setTimeout(()=>{showTimer=0;open=true;layout();post('state');},300);
+  showTimer=setTimeout(()=>{showTimer=0;open=true;layout();post('state',{activate:true});},300);
  }
  function finish(){
   const id=answer?.id;if(!id)return;

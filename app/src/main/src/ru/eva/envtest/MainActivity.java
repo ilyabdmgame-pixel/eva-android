@@ -349,7 +349,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
   }
   public final class EvaBridge {
     @JavascriptInterface public void openHome(){
-      runOnUiThread(()->{if(Home.enabled(MainActivity.this))startActivity(new Intent(MainActivity.this,Home.class));});
+      runOnUiThread(()->{if(Home.enabled(MainActivity.this))Home.openDefaultHome(MainActivity.this);});
     }
     @JavascriptInterface public boolean homeEnabled(){return Home.enabled(MainActivity.this);}
     @JavascriptInterface public void openPetResult(String path){runOnUiThread(()->{

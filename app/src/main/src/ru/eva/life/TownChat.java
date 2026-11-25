@@ -6,6 +6,7 @@ import android.content.pm.*;
 import android.os.*;
 import android.speech.*;
 import android.speech.tts.*;
+import ru.eva.envtest.CodexService;
 import org.json.*;
 import java.util.*;
 
@@ -15,6 +16,7 @@ final class TownChat {
  private final Handler handler=new Handler(Looper.getMainLooper());
  private final Messenger inbox;
  private Messenger channel;
+ private String queuedRequest;
  private boolean active,bound,askingMic;
  private long pollAt;
  private SpeechRecognizer mic;
@@ -39,23 +41,39 @@ final class TownChat {
  }
  private void error(String op,String value){event(op,"error",value);}
  private final ServiceConnection link=new ServiceConnection(){
-  public void onServiceConnected(ComponentName n,IBinder b){channel=new Messenger(b);pollAt=0;request("{\"op\":\"state\"}");}
+  public void onServiceConnected(ComponentName n,IBinder b){
+   channel=new Messenger(b);pollAt=0;
+   String queued=queuedRequest;queuedRequest=null;
+   if(queued!=null)request(queued);
+   request("{\"op\":\"state\"}");
+  }
   public void onServiceDisconnected(ComponentName n){channel=null;pollAt=0;error("state","Связь с чатом прервалась.");}
  };
  void resume(){
   active=true;
+ }
+ private void bind(){
   if(!bound)try{bound=home.bindService(new Intent(home,ru.eva.envtest.TownService.class),link,Context.BIND_AUTO_CREATE);}catch(RuntimeException ignored){}
  }
  void pause(){
   active=false;cancelMic();if(tts!=null)tts.stop();utterance="";
-  if(bound){home.unbindService(link);bound=false;}channel=null;pollAt=0;
+  if(bound){home.unbindService(link);bound=false;}channel=null;queuedRequest=null;pollAt=0;
  }
  void destroy(){if(tts!=null)tts.shutdown();}
  void request(String raw){
   try{
    JSONObject o=new JSONObject(raw);String op=o.getString("op");
    if(!active||!op.matches("state|open|read|send|synthesize"))return;
-   if(channel==null){error(op,"Чат Евы запускается. Попробуй через пару секунд.");return;}
+   if(channel==null){
+    boolean state=op.equals("state");
+    if(state&&!o.optBoolean("activate")&&!CodexService.running())return;
+    bind();
+    if(!state){
+     if(bound&&queuedRequest==null)queuedRequest=raw;
+     else error(op,"Чат Евы запускается. Попробуй через пару секунд.");
+    }
+    return;
+   }
    long now=SystemClock.elapsedRealtime();
    if(op.equals("state")){if(pollAt!=0&&now-pollAt<22000)return;pollAt=now;}
    Message m=Message.obtain();m.replyTo=inbox;Bundle b=new Bundle();b.putString("json",raw);m.setData(b);channel.send(m);

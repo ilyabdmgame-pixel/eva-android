@@ -36,11 +36,20 @@ public final class TownService extends Service {
    try{
     JSONObject o=new JSONObject(request);op=o.getString("op");
     if(!op.matches("state|send|open|read"))throw new IOException();
+    if(!op.equals("state"))awaitRuntime();
     response=post(o);
    }catch(Exception e){try{response.put("error","Чат ещё не на связи. Попробуй через пару секунд.");}catch(JSONException ignored){}}
    try{response.put("op",op);Message back=Message.obtain();Bundle b=new Bundle();b.putString("json",response.toString());back.setData(b);reply.send(back);}catch(Exception ignored){}
   });return true;
  }));
+ private void awaitRuntime() throws InterruptedException{
+  long deadline=SystemClock.elapsedRealtime()+12000;
+  while(SystemClock.elapsedRealtime()<deadline){
+   CodexService service=owner;
+   if(service!=null&&!service.url.isEmpty())return;
+   Thread.sleep(120);
+  }
+ }
  HttpURLConnection local(String path)throws Exception{
   CodexService service=owner;if(service==null)throw new IOException();
   URL u=new URL(service.url);
