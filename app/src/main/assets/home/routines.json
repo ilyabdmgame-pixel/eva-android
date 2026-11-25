@@ -2,7 +2,7 @@
   "eva": {"name":"Ева","entries":[
     [7, "home", 0.38, 0.92, "Утро · Размяться и приготовить завтрак", false, ["stretch", "air", "makeBed", "chop", "cook", "tea", "wash"]],
     [9, "home", 0.38, 0.92, "Уборка · Пол, стол и полки", false, ["sweep", "mop", "wipeDesk", "dust"]],
-    [11, "home", 0.38, 0.92, "За столом · Записи и наброски", false, ["write", "sketch", "kettle"]],
+    [11, "home", 0.38, 0.92, "За столом · Записи и наброски", false, ["write", "computer", "sketch", "kettle"]],
     [13, "home", 0.38, 0.92, "Обед · Кухня и короткий отдых", false, ["fridge", "chop", "cook", "wash", "nap"]],
     [15, "home", 0.38, 0.92, "После обеда · Растения и музыка", false, ["water", "vinyl", "tea", "read"]],
     [18, "home", 0.38, 0.92, "Вечер · Отдохнуть и привести комнату в порядок", false, ["rest", "tv", "fold", "fluff"]],

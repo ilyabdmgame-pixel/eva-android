@@ -6,17 +6,17 @@ import {hitsDoor} from './toys.mjs';
 export function fixtureTop(o){
   return (o.z||0)+(o.surfaceHeight??(o.parts?.length?Math.max(...o.parts.map(p=>p.z+p.h))-(o.z||0):o.visualHeight)??.25);
 }
-export function blocksActor(u,v,fixtures,openDoors,ignore,extra=0){
-  if(!regionAt(u,v)||waterAt(u,v)||solidWall(u,v)||walkingRestricted(u,v))return true;
+export function blocksActor(u,v,fixtures,openDoors,ignore,extra=0,room=false){
+  if(!room&&(!regionAt(u,v)||waterAt(u,v)||solidWall(u,v)||walkingRestricted(u,v)))return true;
   const gap=.12+extra;
   return fixtures.some(o=>o.id!==ignore&&o.solid!==false&&u>o.u-gap&&u<o.u+o.w+gap&&v>o.v-gap&&v<o.v+o.d+gap)||
     openDoors.some(d=>Math.abs(d.u-u)<1.8&&Math.abs(d.v-v)<1.8&&hitsDoor({u,v,z:1},gap,d));
 }
-export function canPlace(u,v,w,d,blocked){
+export function canPlace(u,v,w,d,blocked,room=false){
   const z=surfaceAt(u,v),nx=Math.max(1,Math.ceil(w/.10)),ny=Math.max(1,Math.ceil(d/.10));
   for(let i=0;i<=nx;i++)for(let j=0;j<=ny;j++){
     const x=u+w*i/nx,y=v+d*j/ny;
-    if(streetSurface(x,y)||blocked(x,y)||surfaceAt(x,y)!==z)return false;
+    if(blocked(x,y)||!room&&(streetSurface(x,y)||surfaceAt(x,y)!==z))return false;
   }
   return true;
 }

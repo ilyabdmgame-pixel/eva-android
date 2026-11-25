@@ -5,17 +5,19 @@ const movable=new Set(['stove','basin','shower','fridge','screen','toilet','chai
 export function editableFixture(o){
   return Boolean(o&&!o.z&&(o.roomMovable||o.portable||o.art==='studio-cabinet'||movable.has(o.kind)));
 }
-export function placementIssue(o,p,fixtures,doors,people){
+export function placementIssue(o,p,fixtures,doors,people,room=false){
   const u=p.u,v=p.v,x=u+o.w,y=v+o.d;
   if(!Number.isFinite(u)||!Number.isFinite(v))return 'За краем карты';
   const region=regionAt(u,v),z=surfaceAt(u,v);
-  if(!region||region!==regionAt(x,y))return 'Граница квартала';
+  if(!room&&(!region||region!==regionAt(x,y)))return 'Граница квартала';
   const inside=(a,b,gap)=>a>u-gap&&a<x+gap&&b>v-gap&&b<y+gap;
-  if(people.some(a=>inside(a.u,a.v,.27)))return 'Здесь стоит персонаж';
+  if(o.kind!=='floorDecor'&&people.some(a=>inside(a.u,a.v,.27)))return 'Здесь стоит персонаж';
   for(const f of fixtures){
     if(f.id===o.id)continue;
+    if(room&&(o.kind==='floorDecor')!==(f.kind==='floorDecor'))continue;
     if(x>f.u-.055&&u<f.u+f.w+.055&&y>f.v-.055&&v<f.v+f.d+.055)return 'Здесь уже есть предмет';
   }
+  if(room)return '';
   for(const door of doors){
     const reach=door.width+.24,across=door.width*.5+.23;
     const a=door.vertical?reach:across,b=door.vertical?across:reach;

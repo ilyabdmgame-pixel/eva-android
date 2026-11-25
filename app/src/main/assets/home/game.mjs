@@ -1,6 +1,7 @@
 import {seatMotion,seatSample} from './seat-motion.mjs';
 import {reverseCells} from './reverse-cells.mjs';
 import {actionAnchors} from './action-anchors.mjs';
+import {registeredPose} from './eva-motion.mjs';
 import {restoreTurn,nextTurn,seatFront} from './prop-finish.mjs';
 import {objectLine} from './local-lines.mjs';
 import {propArt} from './prop-art.mjs';
@@ -13,14 +14,15 @@ import {fixtureTop,blocksActor,canPlace,hitsFixture} from './contact.mjs';
 import {activityDuration,activityLine,activitySample,drawRoomActivity,nextActivity,scheduledPeriod} from './room-activities.mjs';
 import {project,worldAtHeight,inView} from './camera.mjs';
 import {createScene} from './render.mjs';
-import {room,roomCenter,roomScale,roomOffset,roomEdge,inRoom,fitsRoom,roomWindowFixture,drawRoom,drawRoomWindow,
-  attachedPosition,attachedFurniture,furnitureOwners as parents,roomFurniture,roomApproach,bedRest} from './room.mjs';
+import {room,roomOffset,roomEdge,roomView,expandedRoom,inRoom,fitsRoom,roomWindowFixture,drawRoom,drawRoomWindow,
+  attachedPosition,attachedFurniture,furnitureOwners as parents,roomFurniture,roomApproach,bedRest,drawBedding} from './room.mjs';
+import {drawComputer,drawFloorDecor,furnishingThumbnail,roomFurnishings} from './room-furnishings.mjs';
 import {windowWeather,windowWeatherMoves} from './window-weather.mjs';
 import {places} from './places.mjs';
 import {startFlight,flightPoint,advanceFlight,drawToy} from './toys.mjs';
 import {gait,heading,walkHeading,orientation,standingPose,evaPose,actionPose} from './orientation.mjs';
 import {createSpeech} from './speech.mjs';
-import {district,districts,regionAt,worldPoint,surfaceAt,solidWall,worldObjects,route,localPath,roundRoute,paceRoute} from './district.mjs';
+import {district,districts,regionAt,worldPoint,worldObjects,route,localPath,roundRoute,paceRoute} from './district.mjs';
 import {initialEconomy,items,fixtureItems,fullness,apply as applyEconomy} from './economy.mjs';
 import {remark} from './remarks.mjs';
 import {seasons,weathers,widgetWeather,cityReading,climateAt,paletteFor} from './weather.mjs';
@@ -44,9 +46,11 @@ if(migrateTown(saved))localStorage.setItem('room',JSON.stringify(saved));
 saved.economy=initialEconomy(saved.economy,saved);
 const start=worldPoint('home',...places.home.start);
 const remembered=saved.lastLocation;
-let eva=remembered&&inRoom(remembered.u,remembered.v,.15)&&!solidWall(remembered.u,remembered.v)?{...remembered}:start;
+let roomExtra=saved.roomExpanded?expandedRoom:0;
+const surfaceAt=()=>0;
+let eva=remembered&&inRoom(remembered.u,remembered.v,.15,roomExtra)?{...remembered}:start;
 const section=room.key;
-let center={...roomCenter};
+let center=roomView(roomExtra).centre;
 const routines=JSON.parse(Desk.routines()).eva;
 const roomActivities=JSON.parse(Desk.roomActivities());
 const currentEntry=at=>scheduledPeriod(routines.entries,at);
@@ -76,10 +80,10 @@ const drawerOpen=id=>saved.drawers?.[id]??(id===1&&Boolean(saved.desk));
 const now=()=>performance.now();
 let fixtures=[];
 const fixtureIds=Object.fromEntries(Object.entries(fixtureItems).map(([id,item])=>[item,Number(id)]));
-const models=worldObjects({});
+const models=[...worldObjects({}),...roomFurnishings];
 const modelsById=new Map(models.map(o=>[o.id,o]));
 const catalogIds=[2,12,21,24,34,61,65,74,79,81,82,87,91,115,300,301,302,303,304,305];
-const catalog=new Map(models.filter(o=>catalogIds.includes(o.id)).map(o=>[o.id,o]));
+const catalog=new Map(models.filter(o=>catalogIds.includes(o.id)||o.category).map(o=>[o.id,o]));
 const roomDefaults=roomFurniture(models);
 function attachedTo(child,parent){
  const original=modelsById.get(parent.id);
@@ -99,7 +103,7 @@ function decorFixture(entry){
  const model=modelsById.get(entry.model);
  if(!model||!Number.isInteger(entry.id)||entry.id<1024||entry.id>65534)return null;
  const object=restoreTurn(model,entry);
- if(!fitsRoom(entry.u,entry.v,object.w,object.d))return null;
+ if(!fitsRoom(entry.u,entry.v,object.w,object.d,roomExtra))return null;
  return {...object,...entry,sector:section,approach:null,decor:true};
 }
 function refreshObjects(){
@@ -110,7 +114,7 @@ function refreshObjects(){
    if(id===7){fixtures.push(roomWindowFixture(base));continue;}
    const candidate=objects.get(id);
    const changed=saved.chairs?.[id];
-   const object=candidate&&changed&&fitsRoom(candidate.u,candidate.v,candidate.w,candidate.d)
+   const object=candidate&&changed&&fitsRoom(candidate.u,candidate.v,candidate.w,candidate.d,roomExtra)
      ?candidate:base;
    const parent={...object,roomMovable:attachedFurniture.has(id)||id===81};
    fixtures.push(parent);
@@ -119,14 +123,14 @@ function refreshObjects(){
    }
  }
  for(const object of objects.values()){
-   if(!roomDefaults.has(object.id)&&fitsRoom(object.u,object.v,object.w,object.d)){
+   if(!roomDefaults.has(object.id)&&fitsRoom(object.u,object.v,object.w,object.d,roomExtra)){
      fixtures.push({...object,roomMovable:true});
    }
  }
  for(const entry of saved.decor){const o=decorFixture(entry);if(o)fixtures.push(o)}
  for(const [i,entry] of saved.economy.placements.entries()){
    const item=items[entry.item],where=regionAt(entry.u,entry.v);
-   if(!item||!where||!fitsRoom(entry.u,entry.v,.25,.25))continue;
+   if(!item||!where||!fitsRoom(entry.u,entry.v,.25,.25,roomExtra))continue;
    const lamp=entry.item==='lamp';
    fixtures.push({...entry,id:160+i,placementId:entry.id,sector:where.key,kind:lamp?'placedLamp':'pickup',name:item.name,
      w:.25,d:.25,solid:lamp,parts:lamp?[
@@ -193,7 +197,7 @@ function pullClock(){
 }
 function appEvent(action){Desk.note(action,section);pullClock()}
 function objectList(){return fixtures.filter(o=>o.kind!=='shell'||!saved.pickedShell);}
-const localUses={shelter:'shelter',chair:'sit',plant:'plant',books:'books',lamp:'lamp',window:'window',bed:'sleep',clock:'clock',lookout:'lookout',fountain:'fountain',flowers:'flowers',stove:'stove',basin:'basin',fridge:'fridge',shower:'shower',screen:'screen',toilet:'toilet',notice:'notice',wallArt:'wallArt'};
+const localUses={shelter:'shelter',chair:'sit',plant:'plant',books:'books',lamp:'lamp',window:'window',bed:'sleep',computer:'useComputer',clock:'clock',lookout:'lookout',fountain:'fountain',flowers:'flowers',stove:'stove',basin:'basin',fridge:'fridge',shower:'shower',screen:'screen',toilet:'toilet',notice:'notice',wallArt:'wallArt'};
 function worldSnapshot(){
  const nearby=objectList().map(o=>({id:o.id,name:o.name,use:localUses[o.kind]||'',distance:Math.round(Math.hypot(o.u+o.w/2-eva.u,o.v+o.d/2-eva.v)*10)/10}))
    .filter(o=>o.distance<=6).sort((a,b)=>a.distance-b.distance).slice(0,18);
@@ -224,12 +228,12 @@ function movedBucket(){
  return Math.hypot(u-at.u,v-at.v)>.65;
 }
 function blocks(u,v,extra=0){
- return !inRoom(u,v,.17+extra)||blocksActor(u,v,fixtures,[],carrying,extra);
+ return !inRoom(u,v,.17+extra,roomExtra)||blocksActor(u,v,fixtures,[],carrying,extra,true);
 }
 function toyBlocked(point,radius){
  const z=point.z;
- return z+.006<surfaceAt(point.u,point.v)||!inRoom(point.u,point.v,radius)||
-   fixtures.some(o=>o.id!==carrying&&hitsFixture(point,radius,o));
+ return z+.006<surfaceAt(point.u,point.v)||!inRoom(point.u,point.v,radius,roomExtra)||
+   fixtures.some(o=>o.id!==carrying&&o.kind!=='floorDecor'&&hitsFixture(point,radius,o));
 }
 function pathTo(target,actor=eva){return localPath(actor,target,blocks)||roundRoute(actor,route(actor,target,blocks),blocks)}
 const ease=x=>x*x*(3-2*x);
@@ -293,9 +297,13 @@ function activityAvailable(key){
 function stopRoomActivity(){
  if(!roomActivity)return;
  if(!roomActivity.started){move=[];onArrival=null;automaticWalk=false;walkSpeed=0;}
+ const pose=roomActivity.sample;
+ if(!reduceMotion&&!seated&&pose&&(pose.motion==='reach'||pose.motion==='stoop')&&pose.amount){
+   releaseMotion={motion:pose.motion,facing:direction,from:pose.amount,start:now()};
+ }
  roomActivity=null;dirty=true;
 }
-function startRoomActivity(key,automatic=false){
+function startRoomActivity(key,automatic=false,fromChat=false){
  const definition=roomActivities[key],fixture=activityFixture(definition);
  if(!fixture&&!definition.spot)return;
  closeSheet();
@@ -303,12 +311,13 @@ function startRoomActivity(key,automatic=false){
  if(saved.sound)prepareSound();
  const spot=definition.spot&&worldPoint(section,...definition.spot);
  const target=fixture?around(fixture):[spot.u,spot.v];
- const state={key,definition,fixture,started:false,elapsed:0};
+ const state={key,definition,fixture,started:false,elapsed:0,fromChat};
  roomActivity=state;
  walkTo(...target,()=>{
    if(roomActivity!==state)return;
    if(Math.hypot(eva.u-target[0],eva.v-target[1])>.29){
      roomActivity=null;nextPastime=now()+12000;
+     if(fromChat)Desk.worldResult?.('Не удалось подойти к компьютеру');
      if(!automatic)statusNote('До места не подойти. Освободи проход.');
      return;
    }
@@ -343,6 +352,7 @@ function finishRoomActivity(state){
    case 'read':saved.page=(saved.page||0)+1;break;
    case 'water':saved.plant=true;break;
    case 'vinyl':saved.record=true;break;
+   case 'computer':saved.computerOn=true;break;
    case 'tv':saved.channel=(saved.channel||0)%2+1;break;
    case 'nap':leaveSeat();break;
    case 'wash': {
@@ -360,6 +370,7 @@ function finishRoomActivity(state){
  saved.roomActivityCounts[key]=count+1;
  say(activityLine(definition,count),key==='sleep'?'curious':'pleased');
  Desk.finishedActivity(key);
+ if(state.fromChat)Desk.worldResult?.('Выполнено: '+definition.title);
  storage();dirty=true;
 }
 function advanceRoomActivity(dt){
@@ -373,6 +384,7 @@ function advanceRoomActivity(dt){
 }
 function perform(o,action,automatic=false,snack=null,fromChat=false){
  stopRoomActivity();
+ if(action==='useComputer'){startRoomActivity('computer',automatic,fromChat);return;}
  if(action==='cancel'){carrying=null;selectTarget=null;dropAim=null;toyAim=null;dirty=true;wake();return}
  closeSheet();
  if(saved.sound)prepareSound();
@@ -431,6 +443,10 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
 
      case 'window':
        saved.window=!saved.window;say(saved.window?'Проветрила. Теперь бардак на свежем воздухе.':'Закрыла. Плед и я снова в тепле.');break;
+     case 'computerPower':
+       saved.computerOn=!saved.computerOn;say(saved.computerOn?'ПК включён. Рабочий стол внутри рабочего стола.':'Монитор погас. Перерыв.');
+       break;
+     case 'lookDecor':say('Осмотрела. Хорошо тут смотрится.');break;
      case 'togglePlaced':
        if(trade('toggle','lamp',{id:o.placementId}))say('Щёлк. Своя лампа. И никто не требует поставить обратно.','pleased');
        break;
@@ -530,6 +546,7 @@ const descriptions={
  table:[['Открыть или закрыть ящик','desk']],cup:[['Взять кружку','cup']],
  window:[['Открыть или закрыть окно','window']],exit:[['Пройти','exit']],
  bed:[['Лечь спать','sleep'],['Присесть на край','sit']],pillow:[['Взбить','pillow']],blanket:[['Поправить','blanket']],
+ computer:[['Поработать за компьютером','useComputer'],['Включить или выключить ПК','computerPower']],
  plant:[['Полить','plant']]
 };
 function actionsFor(o){
@@ -551,7 +568,7 @@ function actionsFor(o){
  if(o.kind==='shelf'&&o.sector==='shop')return [['Купить ленту · 2','buyRibbon'],['Купить бумагу · 2','buyPaper'],
    ['Купить лампу · 9','buyLamp'],['Купить растение · 7','buyPot']];
  if(o.kind==='shelf'&&o.sector==='school')return [['Сдать этюд · +5','sellDrawing']];
- return base||descriptions[o.kind]||activityNames[o.kind];
+ return base||descriptions[o.kind]||activityNames[o.kind]||[['Осмотреть','lookDecor']];
 }
 function select(o){
  const out=showSheet('item',o.name);
@@ -581,7 +598,7 @@ function tapAt(hit,longPress=false){
  if(dropAim){
    const item=dropAim;
    const model=fixtureIds[item]&&districts.flatMap(place=>place.objects).find(o=>o.id===fixtureIds[item]);
-   if(!canPlace(p.u,p.v,model?.w??.25,model?.d??.25,blocks)){
+   if(!canPlace(p.u,p.v,model?.w??.25,model?.d??.25,blocks,true)){
      say('Тут тесно. Выбери свободное место на полу.','wry');return;
    }
    walkTo(p.u-.22,p.v+.16,()=>{
@@ -598,7 +615,7 @@ function tapAt(hit,longPress=false){
  }
  if(selectTarget){
    const o=selectTarget;
-   if(!canPlace(p.u,p.v,o.w,o.d,blocks)){
+   if(!canPlace(p.u,p.v,o.w,o.d,blocks,true)){
      say('Тут не влезет. Выбери свободное место.');return;
    }
    walkTo(p.u-.16,p.v+.32,()=>{
@@ -660,7 +677,7 @@ function backLayout(){
  if(sheet==='palette'){closeSheet();return true}
  if(layout.object){layout.object=null;layout.point=null;layout.issue='';layoutHUD();return true}
  layout=null;$('screen').classList.remove('arranging');$('layout-tools').hidden=true;
- center={...roomCenter};last=now();repaintLayout();return true;
+ center=roomView(roomExtra).centre;last=now();repaintLayout();return true;
 }
 window.backLayout=backLayout;
 $('layout-cancel').onclick=backLayout;
@@ -694,7 +711,14 @@ $('layout-undo').onclick=()=>{
  layoutHUD('Последняя правка отменена');
 };
 function openPalette(){
- const out=showSheet('palette','Добавить предмет'),grid=node('div',null,'item-palette');out.append(grid);
+ const out=showSheet('palette','Добавить предмет'),groups=new Map();
+ const category=o=>o.category||(
+   ['chair','table','shelf'].includes(o.kind)?'Мебель':o.kind==='lamp'?'Свет':
+   domestic[o.kind]?'Быт':'Декор');
+ for(const name of ['Мебель','Свет','Декор','Быт']){
+   const section=menuSection(out,name),grid=node('div',null,'item-palette');
+   section.append(grid);groups.set(name,grid);
+ }
  for(const [model,o] of catalog){
    const b=btn('','',()=>{
      closeSheet();let id=1024;const used=new Set(saved.decor.map(e=>e.id));while(used.has(id))id++;
@@ -704,8 +728,11 @@ function openPalette(){
    const thumb=node('span'),key=[41,42,50].includes(model)?'catalog-'+model:o.art||(o.kind==='seasonTree'?'town-birch':o.poster);
    if(key){const f=propArt[key];thumb.style.backgroundImage='url(/art/'+(f?.[0]||key)+'.png)';
      if(f){const w=f[3]-f[1],h=f[4]-f[2];thumb.style.aspectRatio=String(f[5]);thumb.style.backgroundSize=100/w+'% '+100/h+'%';thumb.style.backgroundPosition=100*f[1]/(1-w)+'% '+100*f[2]/(1-h)+'%'}}
-   else thumb.textContent=o.streetMesh?'▥':'◇';
-   b.append(thumb,node('span',o.name));grid.append(b);
+   else if(o.category){
+     const preview=node('canvas',null,'furnishing-thumb');
+     preview.setAttribute('aria-hidden','true');furnishingThumbnail(preview,o);thumb.append(preview);
+   }else thumb.textContent=o.streetMesh?'▥':'◇';
+   b.append(thumb,node('span',o.name));groups.get(category(o)).append(b);
  }
 }
 $('layout-palette').onclick=openPalette;
@@ -716,9 +743,9 @@ $('layout-delete').onclick=()=>{
  refreshObjects();storage();backLayout();
 };
 function roomPlacementIssue(o,p){
- if(!fitsRoom(p.u,p.v,o.w,o.d))return 'Оставь место у стены';
+ if(!fitsRoom(p.u,p.v,o.w,o.d,roomExtra))return 'Оставь место у стены';
  const children=attachedFurniture.get(o.id)||[];
- return placementIssue(o,p,fixtures.filter(f=>!children.includes(f.id)&&f.kind!=='wallArt'),[],[eva]);
+ return placementIssue(o,p,fixtures.filter(f=>!children.includes(f.id)&&f.kind!=='wallArt'),[],[eva],true);
 }
 function setDestination(p){
  const o=layout.object;
@@ -752,7 +779,8 @@ function layoutPointerMove(event){
  g.dragged=true;
  if(!g.pan){setDestination(floorAt(event).p);return}
  const to=floorAt(event),a=worldAtHeight(view,g.start.x,g.start.y),b=worldAtHeight(view,to.x,to.y);
- const pan=(value,axis)=>Math.max(roomCenter[axis]-1.5,Math.min(roomCenter[axis]+1.5,value));
+ const origin=roomView(roomExtra).centre;
+ const pan=(value,axis)=>Math.max(origin[axis]-1.5,Math.min(origin[axis]+1.5,value));
  center={u:pan(g.center.u+a.u-b.u,'u'),v:pan(g.center.v+a.v-b.v,'v')};repaintLayout();
 }
 let hold=null;
@@ -796,7 +824,7 @@ canvas.addEventListener('contextmenu',event=>{
 });
 
 function paint(t=now()){
- view=renderer.prepare(center,roomScale,roomOffset);
+ view=renderer.prepare(center,roomView(roomExtra).scale,roomOffset);
  paintCount++;
  const playing=roomActivity?.started?roomActivity:null;
  const routinePose=playing?.sample;
@@ -806,7 +834,7 @@ function paint(t=now()){
  motionFrames={};
  renderer.setLightingFocus({...eva,z:.81},climate.daylight);
  renderer.reset();
- renderer.scenery([{key:'room',cacheKey:saved.window?'room-open':'room-closed'}],()=>drawRoom(renderer,saved.window));
+ renderer.scenery([{key:'room',cacheKey:'room-'+roomExtra+'-'+!!saved.window}],()=>drawRoom(renderer,saved.window,roomExtra));
  drawRoomWindow(renderer,paintWindow(t,climate,reduceMotion));
  renderer.sprite(251,'amber-sconce',{u:room.u-2.7,v:room.v-roomEdge+.16,z:1.72},.46,false,{bias:.03});
  const objects=objectList(),heads=new Map();
@@ -849,7 +877,21 @@ function paint(t=now()){
      continue;
    }
    if(o.kind==='window')continue;
+   if(o.kind==='computer'){
+     const typing=playing?.key==='computer';
+     drawComputer(renderer,o,!!saved.computerOn||typing,typing,routinePose?.seconds);
+     continue;
+   }
+   if(o.kind==='floorDecor'){drawFloorDecor(renderer,o);continue;}
    if(playing?.fixture?.id===o.id&&['tea','fluff','fold'].includes(playing.key))continue;
+   if(o.kind==='pillow'||o.kind==='blanket'){
+     const owner=parents.get(o.id);
+     const bed=preview?.id===owner?preview:fixtures.find(item=>item.id===owner);
+     if(bed?.kind==='bed'){
+       drawBedding(renderer,bed,o,o.kind==='blanket'&&saved.blanket);
+       continue;
+     }
+   }
    if(o.kind==='pickup'&&!o.art){
      const p=position3D(o);
      renderer.box(o.id,p,o.w*.64,o.d*.64,o.visualHeight,o.tint||[.66,.65,.52]);
@@ -858,7 +900,7 @@ function paint(t=now()){
    const isLamp=o.kind==='lamp'||o.kind==='placedLamp';
    const lit=isLamp&&lampIsOn(o);
    if(lit){
-     const shade=o.kind==='placedLamp'?.43:o.id===5?1.36:2.22;
+     const shade=o.lightHeight??(o.kind==='placedLamp'?.43:o.id===5?1.36:2.22);
      const shift=o.id===5?.14:0;
      sources.push([o.u+o.w*.5+shift,o.v+o.d*.5,surfaceAt(o.u,o.v)+shade,.42+night*.77]);
    }
@@ -978,7 +1020,8 @@ function paint(t=now()){
    gesture?.motion||releaseMotion?.motion;
  const use=routinePose?.amount??(gesture?gestureAmount(gesture,t):
    releaseMotion?releaseMotion.from*(1-ease(Math.min(1,Math.max(0,(t-releaseMotion.start)/190)))):0);
- const pose=target?actionPose(rest?.facing||releaseMotion?.facing||direction,target,seat?amount:use):
+ const pose=target?registeredPose(actionPose(rest?.facing||releaseMotion?.facing||direction,target,seat?amount:use),
+   seat?amount:use):
    move.length&&!reduceMotion?evaPose(walkFacing,'walk',walkPhase):actionPose(direction,'idle',0,mood);
  const ready=renderer.artReady(pose.key),shown=ready?pose:{...standingPose('eva',direction),height:1.62};
  const at=position3D(eva),opt={...shown};
@@ -997,6 +1040,14 @@ function paint(t=now()){
    }
    if(playing.key==='vinyl'&&routinePose.index>=2)opt.lean=Math.sin(routinePose.seconds*4)*.047;
    if(playing.key==='stretch')opt.lean=(routinePose.amount-.5)*.03;
+   if(playing.key==='tea'&&routinePose.index===1&&opt.grip){
+     const lift=ease(routinePose.amount);
+     opt.grip={...opt.grip,to:[opt.grip.to[0]+(.64-opt.grip.to[0])*lift,
+       opt.grip.to[1]+(.30-opt.grip.to[1])*lift]};
+   }
+   if(playing.key==='computer'&&opt.grip){
+     opt.grip={...opt.grip,to:[opt.grip.to[0],opt.grip.to[1]+routinePose.amount*.16]};
+   }
  }
  const standing=1-ease(amount);
  if(standing>.03)renderer.shadow({...at,z:surfaceAt(at.u,at.v)+.032},.27*standing,.21*standing);
@@ -1018,7 +1069,7 @@ function paint(t=now()){
      point={u:o.u+o.w/2+(top?.shift??0),v:o.v+o.d/2-(top?.shift??0),
        z:surfaceAt(o.u,o.v)+(o.kind==='window'?1.53:top?.height??fixtureTop(o))};
    }
-   drawRoomActivity(renderer,playing.key,routinePose,at,point,direction);
+   drawRoomActivity(renderer,playing.key,routinePose,at,point,direction,head);
  }
  if(flight){
    const point=flightPoint(flight,flight.impact?last:flight.checkedAt);
@@ -1144,6 +1195,7 @@ $('places').onclick=()=>{
    if(!autoFollow)pauseInitiative();
    previousSlot=-1;pullClock();closeSheet();wake();
  }));
+ out.append(label('Обстановка','Размер комнаты и мебель','⌂',openFurnishing));
  out.append(label('Занятия','Уборка, готовка, творчество и отдых','◇',()=>openRoomActivities()));
  out.append(label('Распорядок дня','','◷',()=>{
    const panel=showSheet('schedules','Распорядок Евы');
@@ -1157,6 +1209,27 @@ $('places').onclick=()=>{
    }
  }));
 };
+function openFurnishing(){
+ const out=showSheet('furnishing','Обстановка');
+ const extended=!!roomExtra;
+ out.append(label(extended?'Вернуть обычный размер':'Увеличить комнату',
+   extended?'Расширенная комната':'Добавить место вдоль открытых сторон','⌂',()=>{
+     if(extended&&fixtures.some(o=>o.kind!=='window'&&o.kind!=='wallArt'&&!o.z&&!fitsRoom(o.u,o.v,o.w,o.d))){
+       out.querySelector('.furnishing-note')?.remove();
+       out.append(node('p','Сначала переставь предметы с дополнительной площади.','sub furnishing-note'));
+       return;
+     }
+     closeSheet();pauseInitiative();
+     move=[];onArrival=null;flight=null;carrying=null;selectTarget=null;dropAim=null;toyAim=null;
+     roomExtra=extended?0:expandedRoom;saved.roomExpanded=!extended;
+     center=roomView(roomExtra).centre;
+     if(!inRoom(eva.u,eva.v,.17,roomExtra)){eva={...start};seated=restMotion=null;}
+     refreshObjects();storage();statusNote(extended?'Обычный размер комнаты.':'Дополнительное место готово.');
+     dirty=true;wake();
+   }),
+   label('Переставить мебель','','✥',()=>beginLayout()),
+   label('Каталог мебели','Свет, мебель, декор и бытовые предметы','＋',()=>{beginLayout();openPalette()}));
+}
 function openRoomActivities(program=Object.keys(roomActivities),title='Занятия'){
  const out=showSheet('room-activities',title);
  for(const category of new Set(program.map(key=>roomActivities[key].category))){
@@ -1284,7 +1357,8 @@ window.worldCheck=()=>{
  const close=project(view,{u:1,v:1,z:1.62}).y-project(view,{u:1,v:1}).y;
  const far=project(view,{u:-2,v:-1,z:1.62}).y-project(view,{u:-2,v:-1}).y;
  return {section,climate,lighting,motionFrames,paintCount,activeLights:Array.from(lamps).filter((strength,i)=>i%4===3&&strength>0).length,
-   cameraScale:roomScale,cameraOffset:roomOffset,sound:audioState(),outdoors:false,
+   cameraScale:roomView(roomExtra).scale,cameraOffset:roomOffset,roomExpanded:!!roomExtra,
+   sound:audioState(),outdoors:false,
    anchors:Object.fromEntries(speechAnchors),move:move.length,direction,
    activity:roomActivity?.key||null,activityPhase:roomActivity?.sample?.index??null,
    pose:seated?.sleep?'sleep':seated?'sit':move.length?'walk':roomActivity?.sample?.motion||gesture?.motion||'idle',

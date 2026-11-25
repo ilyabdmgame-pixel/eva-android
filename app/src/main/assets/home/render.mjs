@@ -5,6 +5,7 @@ import {propArt} from './prop-art.mjs';
 import {furnitureCorners,surfaceTriangles} from './occlusion.mjs';
 import {parts} from './painted-parts.mjs';
 import {gait} from './orientation.mjs';
+import {gripGrid} from './eva-motion.mjs';
 
 const vertexSize=10;
 export const cameraScale=.174;
@@ -440,14 +441,25 @@ export function createScene(canvas) {
       }else quad(physical.map(projected),0,[1,1,1],shadowKey,uv);
     }
     const batch=options?.foliage?'leaves:'+sheet:sheet;
+    const grip=options?.grip&&gripGrid(corners,options.grip,flip);
     if(volume){
       if(!batches.has(batch))batches.set(batch,[]);
       const vertices=batches.get(batch);
       for(const [u,v,z,s,t] of volume)vertices.push(u,v,z,1,1,1,s,t,id,0);
+    }else if(grip?.warped){
+      if(!batches.has(batch))batches.set(batch,[]);
+      const vertices=batches.get(batch),[l,t,r,b]=uv;
+      const vertex=(x,y)=>vertices.push(...grip.move(x,y),1,1,1,l+(r-l)*x,t+(b-t)*y,id,0);
+      for(let i=1;i<grip.xs.length;i++)for(let j=1;j<grip.ys.length;j++){
+        const x=grip.xs[i-1],y=grip.ys[j-1],right=grip.xs[i],bottom=grip.ys[j];
+        vertex(x,y);vertex(right,y);vertex(right,bottom);
+        vertex(x,y);vertex(right,bottom);vertex(x,bottom);
+      }
     }else quad(corners,id,[1,1,1],batch,uv);
     const crown=options?.crown?.[0]??crowns[key]??.5;
     const crownX=span*((flip?1-crown:crown)-anchor)+lean;
-    return {u:u+crownX,v:v-crownX,z:top-h*(options?.crown?.[1]??(atlas?.027:0))};
+    return {u:u+crownX,v:v-crownX,z:top-h*(options?.crown?.[1]??(atlas?.027:0)),
+      hand:grip?.hand,otherHand:grip?.other};
   }
   function sleepingSprite(id,{u,v,z},key='eva-asleep'){
     if(!artReady(key))return;

@@ -1,3 +1,4 @@
+import {actionBeat} from './eva-motion.mjs';
 const TAU=2*Math.PI;
 const clamp=x=>Math.max(0,Math.min(1,x));
 const ease=x=>{const t=clamp(x);return t*t*(3-2*t);};
@@ -18,7 +19,8 @@ export function activitySample(activity,elapsed,reduced){
    const phase=clamp((time-passed)/ms);
    const swing=strokes?Math.sin(TAU*strokes*phase):0;
    const cycle=strokes?(1-Math.cos(TAU*strokes*phase))/2:ease(phase);
-   return {motion,amount:mix(from,to,cycle),index,phase,swing,progress:time/duration,seconds:time/1000};
+   const amount=actionBeat(activity.beats,index,time-passed,mix(from,to,cycle));
+   return {motion,amount,index,phase,swing,progress:time/duration,seconds:time/1000};
  }
 }
 
@@ -101,6 +103,11 @@ function floorTool(ctx,mop){
 const oakBrush=[.71,.54,.33];
 
 export const activityEffects={
+ computer({r,s,hand}){
+   if(s.index!==1)return;
+   const mark=at(hand,.022,.016,-.038);
+   block(r,mark,.029,.029,.012,[.62,.72,.67]);
+ },
  stretch({r,s,actor,across}){
    if(s.index!==1&&s.index!==2)return;
    for(const side of [-1,1]){
@@ -148,10 +155,9 @@ export const activityEffects={
    }
  },
  tea(ctx){
-   const {r,s,actor,hand}=ctx;
-   const cup=at(hand,0,0,s.index===1?.25+s.amount*.17:0);
-   if(s.index===1)cup.z=Math.min(cup.z,actor.z+1.31);
-   r.sprite(0,'home-mug',cup,.19,false);
+   const {r,s,hand,top}=ctx;
+   const cup=s.motion==='idle'?at(top,0,0,-.12):at(hand,0,0,-.073);
+   r.sprite(0,'home-mug',cup,.19,ctx.mirrored,{anchor:[.81,.92]});
    vapour(ctx,at(cup,0,0,.11),.08);
  },
  wash(ctx){
@@ -179,12 +185,12 @@ export const activityEffects={
  },
  fluff({r,s,hand}){
    const puff=Math.abs(s.swing);
-   r.sprite(0,'bed-pillow',at(hand,0,0,puff*.16),.27+puff*.045,false);
+   r.sprite(0,'bed-pillow',at(hand,0,0,-.105),.27+puff*.045,false,{anchor:[.67,1]});
  },
  fold({r,s,hand}){
    const width=.48-.22*ease((s.progress-.24)*2.1);
-   block(r,at(hand,0,0,.04+s.amount*.10),width,.24,.065,cloth);
-   line(r,at(hand,-width*.36,.10,.11+s.amount*.10),at(hand,width*.36,.10,.11+s.amount*.10),.023,paper);
+   block(r,at(hand,0,0,-.03),width,.24,.065,cloth);
+   line(r,at(hand,-width*.36,.10,.037),at(hand,width*.36,.10,.037),.023,paper);
  },
  water({r,s,hand,top}){
    const can=at(hand,0,0,.03);
@@ -213,7 +219,11 @@ export const activityEffects={
    if(s.progress>.30)line(r,b,c,.024,ink);
    if(s.progress>.50)line(r,c,d,.024,green);
  },
- read(ctx){book(ctx,at(ctx.hand,0,0,.065));},
+ read(ctx){
+   const p=ctx.otherHand?{u:(ctx.hand.u+ctx.otherHand.u)/2,v:(ctx.hand.v+ctx.otherHand.v)/2,
+     z:(ctx.hand.z+ctx.otherHand.z)/2}:ctx.hand;
+   book(ctx,at(p,0,0,-.037));
+ },
  vinyl({r,s,top,actor,across}){
    for(let i=0;i<6;i++){
      const a=i*TAU/6+s.seconds*5;
@@ -255,11 +265,12 @@ function sleepSigns({r,s,actor,across},count){
  }
 }
 
-export function drawRoomActivity(renderer,key,sample,actor,top,facing){
+export function drawRoomActivity(renderer,key,sample,actor,top,facing,contacts){
  const right=facing.endsWith('left')||facing==='left'?-1:1;
  const across=(p,x)=>at(p,right*x*.62,-right*x*.62);
- const hand=at(across(actor,.16+sample.swing*.11),.11,.14,
+ const hand=contacts?.hand?at(contacts.hand,.012,.012,.012):at(across(actor,.16+sample.swing*.11),.11,.14,
   sample.motion==='sit'?.31:sample.motion==='stoop'?.62:sample.motion==='sleep'?.08:.78+sample.amount*.21);
  const floor=at(actor,.31,.22,-actor.z);
- activityEffects[key]({r:renderer,s:sample,actor,top,hand,floor,across});
+ activityEffects[key]({r:renderer,s:sample,actor,top,hand,floor,across,
+   otherHand:contacts?.otherHand,mirrored:right===-1});
 }

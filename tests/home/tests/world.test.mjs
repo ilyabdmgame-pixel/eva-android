@@ -206,7 +206,8 @@ test('all six walkers have eight painted distance-driven poses in each view',()=
 });
 
 test('every textured prop in each location has an exported image',()=>{
-  const physical=worldObjects({chairs:{}}).filter(o=>!['window','seasonTree'].includes(o.kind));
+  // The room computer is built from geometry and checked in room-rework.test.mjs.
+  const physical=worldObjects({chairs:{}}).filter(o=>!['window','seasonTree','computer'].includes(o.kind));
   const portable=new Set(Object.values(fixtureItems));
   const loose=Object.entries(items).filter(([key])=>!portable.has(key)).map(([,item])=>item);
   for(const object of [...physical,...loose]){

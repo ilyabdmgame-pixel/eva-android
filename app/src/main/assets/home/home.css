@@ -132,3 +132,4 @@ body:has(#sheet:not([hidden])) #layout-tools{visibility:hidden}
 #sheet[data-page=folder] .app span{font-size:11px;line-height:1.2}
 #sheet[data-page=folder-edit] #content>.back-link{margin-top:0}
 .shade{background:linear-gradient(180deg,#28212b59,transparent 34%,transparent 78%,#221c2491)}
+.item-palette .furnishing-thumb{display:block;width:100%;height:100%;object-fit:contain}

@@ -32,6 +32,7 @@ const home=[
   object(6,'Кружка',-.42,-1.70,.17,.16,'cup',[
     part(0,0,.87,.13,.13,.15,[.72,.85,.76]),part(.128,.04,.905,.06,.06,.045,[.72,.85,.76])
   ],{approach:[-.44,-1.11],solid:false,art:'home-mug',z:.87,visualHeight:.13,artBias:.48}),
+  object(27,'Компьютер',-.53,-2.01,1.10,.51,'computer',[],{solid:false,z:.87,visualHeight:.47}),
   chair(2,'Стул',.98,-.23),
   object(3,'Кровать',-2.06,-.68,.88,2.1,'bed',[
     ...legs(.88,2.1,.31),part(0,0,.31,.88,2.1,.14,color.wood,'wood'),
