@@ -1,0 +1,36 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const create=require('../runtime/codex-mobile/town-chat'),petWork=require('../runtime/codex-mobile/pet-work');
+test('one desktop conversation, work, question, completion, voice and retry',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'eva-town-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const cards=petWork(()=>{},root),calls=[];
+ const rpc=async(method,params)=>{calls.push([method,params]);return method==='turn/start'?{turn:{id:'turn-1'}}:{thread:{id:'desktop'}}};
+ const town=create({root,cards,rpc,authenticated:()=>true}),run=town.run;
+ const event=m=>{cards.event(m);town.event(m)};
+ assert.equal((await run({op:'state'})).status,'idle');
+ const request={op:'send',id:'test-retry-1',text:'тест'};
+ assert.equal((await run(request)).status,'working');
+ await run(request);assert.equal(calls.length,2);assert.equal(calls[1][1].sandboxPolicy.type,'readOnly');
+ await assert.rejects(run({...request,id:'test-other-1'}));
+ const params={threadId:'desktop',turnId:'turn-1'};
+ event({id:7,method:'item/tool/requestUserInput',params});assert.equal((await run({op:'state'})).status,'question');
+ await run({op:'open',indicator:true});assert.equal((await run({op:'destination'})).id,'desktop');
+ await run({op:'opened',id:'desktop'});assert.equal(cards.list().length,1);cards.answered(7);
+ event({method:'item/completed',params:{...params,item:{type:'agentMessage',text:'готово'}}});
+ event({method:'turn/completed',params:{...params,turn:{id:'turn-1',status:'completed'}}});
+ const result=await run({op:'state'});assert.equal(result.status,'done');assert.equal(result.answer.text,'готово');assert.equal(result.voice,false);
+ await run({op:'voice',enabled:true});assert.equal((await run({op:'state'})).voice,true);
+ await run({op:'voice',enabled:false});fs.writeFileSync(path.join(root,'voice-settings.json'),JSON.stringify({voiceOutput:'1',voiceName:'silero-kseniya'}));
+ const restored=create({root,cards,rpc,authenticated:()=>true});assert.equal((await restored.run({op:'state'})).voice,true);
+ assert.equal((await restored.run({op:'read',id:'stale'})).status,'done');assert.equal((await restored.run({op:'read',id:'turn-1'})).status,'idle');
+ await restored.run({op:'open'});assert.equal(calls.at(-1)[0],'thread/resume');
+});
+test('a direct follow-up stays yellow until the next turn, including after reading',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'eva-town-q-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const town=create({root,cards:petWork(()=>{},root),authenticated:()=>true,rpc:async()=>({thread:{id:'room'}})});
+ await town.run({op:'open'});
+ const params={threadId:'room',turnId:'t1'};
+ town.event({method:'item/completed',params:{...params,item:{type:'agentMessage',text:'Какую папку открыть?'}}});
+ town.event({method:'turn/completed',params:{...params,turn:{id:'t1',status:'completed'}}});
+ assert.equal((await town.run({op:'read',id:'t1'})).status,'question');
+ town.event({method:'turn/started',params:{threadId:'room',turn:{id:'t2'}}});assert.equal((await town.run({op:'state'})).status,'working');
+});

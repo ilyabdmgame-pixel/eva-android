@@ -1,0 +1,49 @@
+#eva-pet-controls { min-height:44px; margin:8px 0; padding:9px 14px; border:1px solid #74b5a6; border-radius:11px; background:#264442; color:#effaf5; }
+    html.eva-pet-root { background:transparent!important; }
+    body.eva-pet-chat { width:var(--visible-width,100vw); height:var(--visible-height,100dvh); box-sizing:border-box; border-radius:24px; overflow:hidden; background:#18242e; }
+    body.eva-pet-chat #avatar-stage, body.eva-pet-chat #header-toggle,
+    body.eva-pet-chat #top-panel, body.eva-pet-chat #eva-voice-close { display:none!important; }
+    body.eva-pet-chat #eva-pet-header { display:flex; }
+    #eva-pet-header { display:none; flex-shrink:0; align-items:center; gap:8px; padding:4px 9px 4px 15px; min-height:48px; background:#1f3439; color:#dff6ec; border-bottom:1px solid #7bb2a44d; }
+    #eva-pet-header strong { flex:1; font-size:15px; }
+    #eva-pet-header button { width:44px; height:44px; background:transparent; color:inherit; border-radius:9px; padding:0; font-size:20px; }
+    #eva-pet-header button:focus-visible { outline:2px solid #9edfc7; }
+    body.eva-pet-chat #messages { padding-top:8px; }
+    body.eva-pet-chat #form { padding-bottom:8px; }
+    body.eva-pet-chat #work-indicator { max-width:100%; }
+    body.eva-pet-chat #status { padding-inline:12px; }
+#eva-pet-work-cards {display:none;}
+body.eva-pet-chat #eva-pet-work-cards {display:block;flex:none;max-height:32%;overflow:auto;background:#24383d;color:#f3f8f7;}
+#eva-pet-work-cards article {padding:9px 14px;border-bottom:1px solid #537871;}
+#eva-pet-work-cards p {margin:4px 0;font-size:14px;}
+#eva-pet-work-cards button {margin:3px 8px 0 0;max-width:100%;overflow-wrap:anywhere;min-height:40px;}
+#eva-pet-header #eva-pet-games-launcher {width:auto;min-width:46px;min-height:44px;padding:0 8px;font-size:14px;font-weight:650;color:#aff1dc;}
+@media(max-width:350px){#eva-pet-header{gap:2px;padding-inline:7px;}}
+#eva-pet-games {box-sizing:border-box;width:100%;max-width:100%;height:100%;max-height:100%;margin:0;padding:0;border:0;border-radius:20px;background:#16252b;color:#f2f6f4;overflow:auto;font:15px/1.4 system-ui,sans-serif;}
+#eva-pet-games::backdrop {background:#16252b;}
+#eva-pet-games .game-bar {display:flex;align-items:center;gap:6px;justify-content:space-between;padding:6px 14px;border-bottom:1px solid #49615e;}
+#eva-pet-games h2 {font-size:19px;margin:0;letter-spacing:-.02em;}
+#eva-pet-games h2:focus {outline:none;}
+#eva-pet-games button {min-height:44px;min-width:44px;color:inherit;font:inherit;touch-action:manipulation;cursor:pointer;}
+#eva-pet-games button:focus-visible {outline:3px solid #f6cc80;outline-offset:-3px;}
+#eva-pet-games .game-close,#eva-pet-games .game-actions button {padding:8px 12px;background:#2c4144;border-radius:11px;}
+#eva-pet-games .game-stage {display:grid;gap:12px;padding:14px;}
+#eva-pet-games .game-entry {width:100%;display:flex;align-items:center;gap:16px;padding:12px 14px;text-align:left;border:1px solid #557270;background:linear-gradient(120deg,#334e4e,#25383f);border-radius:16px;}
+#eva-pet-games .game-entry img {width:48px;height:52px;object-fit:contain;}
+#eva-pet-games .game-entry strong {display:block;font-size:17px;}
+#eva-pet-games small {font-size:13px;color:#d6e6df;margin-top:3px;}
+#eva-pet-games .game-status {margin:0;color:#e4eeeb;min-height:2.7em;}
+#eva-pet-games .pocket-board {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+#eva-pet-games .pocket-tile {height:clamp(52px,18dvh,84px);display:grid;place-items:center;border-radius:10px 10px 21px 21px;border:1px dashed #bd9a8e;background:#563d42;color:#f6e3d8;font-weight:bold;}
+#eva-pet-games .pocket-tile.shown {background:#385356;border-style:solid;border-color:#839995;}
+#eva-pet-games .pocket-tile img {height:40px;max-width:75%;object-fit:contain;}
+#eva-pet-games .pocket-tile.found {opacity:.75;border-color:#a7e6c7;}
+#eva-pet-games .volley-court {border:1px solid #6e8e81;border-radius:18px;display:grid;justify-items:center;align-content:center;gap:9px;height:clamp(100px,38dvh,185px);background:linear-gradient(160deg,#385c54,#243939);overflow:hidden;}
+#eva-pet-games .volley-court img {height:48px;width:48px;object-fit:contain;}
+#eva-pet-games .volley-court.waiting img {opacity:.4;}
+#eva-pet-games .volley-court.flying {background:#b2f3d2;color:#183732;}
+#eva-pet-games .volley-court.flying img {animation:eva-serve .48s ease-out;}
+@keyframes eva-serve {from{transform:translateX(-65px) rotate(-100deg) scale(.65);}to{transform:none;}}
+@media(prefers-reduced-motion:reduce){#eva-pet-games .volley-court.flying img {animation:none;}}
+#eva-pet-games .game-actions {display:flex;gap:10px;flex-wrap:wrap;}
+#eva-pet-games .game-actions .game-primary {background:#a8e5ce;color:#1d3833;font-weight:650;}

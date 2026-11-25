@@ -1,0 +1,51 @@
+export const propArt = {
+  'writing-desk':['finish-home',0.003423,0.005134,0.316518,0.483705,0.981308],
+  'desk-chair':['finish-home',0.336756,0.005134,0.524107,0.465848,0.609223],
+  'single-bed':['finish-home',0.670089,0.005134,0.972024,0.494866,0.924658],
+  'tv-cabinet':['finish-home',0.003423,0.505134,0.291964,0.891071,1.121739],
+  'bed-pillow':['finish-home',0.336756,0.505134,0.644643,0.828571,1.429066],
+  'bed-throw':['finish-home',0.670089,0.505134,0.991369,0.935714,1.119481],
+  'bistro-table':['finish-interior',0.003423,0.005134,0.220536,0.453571,0.725686],
+  'studio-stool':['finish-interior',0.336756,0.005134,0.514435,0.414509,0.650273],
+  'studio-sink':['finish-interior',0.670089,0.005134,0.923661,0.494866,0.776256],
+  'studio-cabinet':['finish-interior',0.003423,0.505134,0.255506,0.994866,0.771689],
+  'florist-shelf':['finish-interior',0.336756,0.505134,0.605208,0.994866,0.821918],
+  'brass-register':['finish-interior',0.670089,0.505134,0.835119,0.994866,0.504566],
+  'iron-bench':['finish-town',0.003423,0.005134,0.303125,0.453571,1.002494],
+  'street-lantern':['finish-town',0.336756,0.005134,0.408780,0.494866,0.219178],
+  'red-mailbox':['finish-town',0.670089,0.005134,0.801637,0.488170,0.407407],
+  'town-bin':['finish-town',0.003423,0.505134,0.153571,0.950223,0.505025],
+  'herb-bed':['finish-town',0.336756,0.505134,0.620833,0.963616,0.929268],
+  'garden-pot':['finish-town',0.670089,0.505134,0.934077,0.939063,0.912371],
+  'soda-crate':['finish-coast',0.003423,0.005134,0.233185,0.384375,0.908555],
+  'boardwalk-bench':['finish-coast',0.336756,0.005134,0.649107,0.427902,1.108466],
+  'striped-umbrella':['finish-coast',0.670089,0.005134,0.960863,0.484821,0.909091],
+  'closed-umbrella':['finish-coast',0.003423,0.505134,0.088839,0.994866,0.260274],
+  'scallop-shell':['finish-coast',0.336756,0.505134,0.533780,0.759375,1.162996],
+  'seaside-viewer':['finish-coast',0.670089,0.505134,0.836607,0.994866,0.509132],
+  'mooring-post':['finish-details',0.004356,0.006534,0.286364,0.493466,0.868421],
+  'coast-windsock':['finish-details',0.337689,0.006534,0.538258,0.493466,0.616959],
+  'flower-box':['finish-details',0.671023,0.006534,0.990909,0.493466,0.985380],
+  'glazed-hydrangea':['finish-details',0.004356,0.506534,0.305303,0.993466,0.926901],
+  'potted-succulent':['finish-details',0.337689,0.506534,0.515530,0.916761,0.649306],
+  'cafe-bun':['finish-carry',0.005134,0.010268,0.244866,0.445089,1.103093],
+  'soda-bottle':['finish-carry',0.255134,0.010268,0.345312,0.489732,0.373832],
+  'florist-ribbon':['finish-carry',0.505134,0.010268,0.696875,0.489732,0.799065],
+  'sketch-paper':['finish-carry',0.755134,0.010268,0.994866,0.393750,1.251462],
+  'landscape-study':['finish-carry',0.005134,0.510268,0.244866,0.887054,1.273810],
+  'discarded-can':['finish-carry',0.255134,0.510268,0.420089,0.989732,0.686916],
+  'maple-leaf':['finish-carry',0.505134,0.510268,0.744866,0.978571,1.023923],
+  'pinecone':['finish-carry',0.755134,0.510268,0.980357,0.989732,0.939252],
+  'folded-throw':['finish-states',0.339323,0.008984,0.660677,0.360156,1.374302],
+  'amber-sconce':['finish-states',0.005990,0.508984,0.326042,0.991016,0.995935],
+  'desk-drawer':['finish-states',0.672656,0.508984,0.994010,0.926563,1.154930],
+  'attic-rug':['finish-rug',0.009583,0.009583,0.611250,0.990417,0.612766],
+  'florist-table':['finish-wrapping',0.010268,0.010268,0.925000,0.989732,0.933790],
+};
+for(const [kind,w,h] of [['fridge',320,384],['basin',282,360],['screen',331,360]]){
+ for(let i=0;i<9;i++)propArt['use-'+kind+'-'+i]=['use-'+kind,i/9,0,(i+1)/9,1,w/h];
+}
+import {reverseCells} from './reverse-cells.mjs';
+for(const [sheet,[aspect]] of Object.entries(reverseCells)){
+ for(let i=0;i<9;i++)propArt[sheet+'-'+i]=[sheet,i/9,0,(i+1)/9,1,aspect];
+}

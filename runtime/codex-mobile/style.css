@@ -1,0 +1,411 @@
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#10141c;color:#edf2f6}*{box-sizing:border-box}body{margin:0;display:flex;flex-direction:column;height:100dvh}header{height:60px;flex:none;display:flex;align-items:center;gap:14px;padding:0 16px;border-bottom:1px solid #29313b;background:#151c26}header div{flex:1}header strong{font-size:17px}small{display:block;color:#8ea6a7;font-size:11px}button{border:0;cursor:pointer;background:none;color:inherit;font:inherit}header button{font-size:23px}main{flex:1;overflow:auto;padding:22px 16px;scroll-behavior:smooth}.welcome{text-align:center;margin:20vh auto;color:#a5b1bd}.welcome span{font-size:45px;color:#70d4bd}.welcome h1{font-size:23px;color:#ecf5f2}.message{max-width:800px;margin:0 auto 16px;padding:13px 15px;border-radius:17px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}.user{background:#293c43;margin-left:auto;max-width:85%;width:fit-content}.agent{background:#1c2631}.info{color:#a1b2bc;font-size:12px;margin:10px auto;max-width:800px;white-space:pre-wrap}form{display:flex;align-items:end;gap:8px;margin:8px 12px max(12px,env(safe-area-inset-bottom));background:#202b36;border:1px solid #374653;border-radius:22px;padding:8px}textarea{flex:1;resize:none;max-height:140px;background:none;border:0;outline:0;color:#fff;font:inherit;padding:9px 0}.attach,#send,#stop{display:grid;place-items:center;width:37px;height:37px;border-radius:50%;font-size:25px;flex:none}.attach{color:#a8babf}#send{background:#87dfc8;color:#10231d}#stop{background:#b5696c;font-size:15px}#attachments{display:flex;gap:6px;overflow:auto;padding:0 16px;font-size:12px;color:#9ee2d0}#attachments span{background:#28343d;padding:5px;border-radius:8px}aside{position:fixed;z-index:3;top:0;bottom:0;left:0;width:min(85vw,350px);background:#19222d;box-shadow:0 0 0 100vmax #0009;overflow:auto;padding:16px}.asidehead{display:flex;justify-content:space-between;font-weight:bold;margin-bottom:20px}.thread{display:block;text-align:left;width:100%;padding:12px;border-radius:10px;color:#c9d8df;overflow:hidden;text-overflow:ellipsis}.thread:active{background:#30404a}#approval{background:#392e27;padding:12px;margin:0 12px;border-radius:12px;white-space:pre-wrap;max-height:30vh;overflow:auto}#approval button{background:#5c755f;padding:8px 14px;border-radius:8px;margin:8px 8px 0 0}#approval button:last-child{background:#704b4b}
+#mic{font-size:20px;width:32px;height:37px;flex:none}#mic.listening{color:#ff8585;animation:pulse 1s infinite}@keyframes pulse{50%{opacity:.45}}#voice-output{font-size:18px}#voice-output.active{color:#87dfc8}#tasks-panel{position:fixed;z-index:4;inset:0;background:#151c26;padding:16px;overflow:auto;padding-bottom:max(20px,env(safe-area-inset-bottom))}#tasks-panel[hidden]{display:none}.tasks-head{display:flex;justify-content:space-between;align-items:center}.tasks-head h2{font-size:20px}.tasks-head button{font-size:24px}#task-form{display:flex;flex-direction:column;align-items:stretch;margin:12px 0;background:none;padding:0;border:0;border-radius:0}#task-form input{width:100%;background:#263440;border:1px solid #40505c;border-radius:10px;color:#fff;padding:12px;font:inherit}#task-form label{font-size:12px;color:#9dafbb}#task-form button,#notifications{background:#43665e;padding:10px;border-radius:10px}.task-note{color:#9dafbb;font-size:12px}.task-row{display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid #35404b;padding:12px 0}.task-row input{width:21px;height:21px;accent-color:#87dfc8}.task-row div{flex:1;overflow-wrap:anywhere}.task-row small{margin-top:4px}.task-row.done div{text-decoration:line-through;opacity:.55}.task-row button{color:#d4a2a2;padding:3px 8px}
+
+#conversation.active { color:#87dfc8; }
+#voice-settings{position:fixed;z-index:5;inset:0;background:#151c26;padding:16px;overflow:auto}#voice-settings[hidden]{display:none}#voice-settings label{display:block;margin:20px 0;color:#cbd6dc}#voice-settings select,#voice-settings input{display:block;width:100%;margin-top:10px;padding:10px;background:#263440;color:white;border:1px solid #40505c;border-radius:10px}#voice-preview{background:#43665e;padding:10px 20px;border-radius:10px}
+#avatar-stage{height:clamp(120px,24vh,210px);flex:none;position:relative;overflow:hidden;background:radial-gradient(ellipse at 50% 65%,#49373f 0,#21222c 46%,#141923 85%);border-bottom:1px solid #39333a}#avatar-stage[hidden]{display:none}.avatar-glow{position:absolute;left:50%;top:40%;width:170px;height:170px;border-radius:50%;background:#c4848260;filter:blur(35px);transform:translate(-50%,-50%);animation:avatarGlow 5s ease-in-out infinite}.avatar-figure{height:145%;width:auto;aspect-ratio:940/1672;position:absolute;left:50%;top:5%;transform:translateX(-50%);transform-origin:50% 70%;animation:avatarIdle 5s ease-in-out infinite}.avatar-figure img{width:100%;height:100%;object-fit:contain;position:absolute;inset:0}.avatar-talking{opacity:0}.avatar-speaking .avatar-talking{animation:avatarTalk .48s steps(1,end) infinite}.avatar-thinking .avatar-figure{animation:avatarThink 2.2s ease-in-out infinite}.avatar-listening .avatar-glow{background:#8cd3c880}#avatar-state{position:absolute;left:12px;bottom:10px;padding:5px 9px;background:#151922c9;border-radius:20px;color:#e4d4d6;font-size:11px}#avatar-hide{position:absolute;right:10px;top:8px;border-radius:50%;background:#1119239c;width:29px;height:29px}@keyframes avatarIdle{0%,100%{transform:translateX(-50%) translateY(0) rotate(-.4deg)}50%{transform:translateX(-50%) translateY(-3px) rotate(.4deg)}}@keyframes avatarThink{0%,100%{transform:translateX(-50%) rotate(-2deg)}50%{transform:translateX(-50%) rotate(1deg)}}@keyframes avatarTalk{0%,48%{opacity:0}49%,100%{opacity:1}}@keyframes avatarGlow{0%,100%{opacity:.65;transform:translate(-50%,-50%) scale(.95)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.06)}}@media (prefers-reduced-motion:reduce){.avatar-figure,.avatar-glow,.avatar-speaking .avatar-talking{animation:none}.avatar-speaking .avatar-talking{opacity:1}}@media (max-width:420px){header{gap:8px;padding:0 10px}header button{font-size:19px}#voice-output{font-size:17px}}
+.avatar-blink{opacity:0;animation:avatarBlink 6s steps(1,end) infinite}@keyframes avatarBlink{0%,45%,49%,100%{opacity:0}46%,48%{opacity:1}}@media (prefers-reduced-motion:reduce){.avatar-blink{animation:none;opacity:0}}
+/* Irregular blinks and occasional posture changes are scheduled in JavaScript. */
+.avatar-blink{animation:none;opacity:0}.avatar-blink.is-blinking{opacity:1}
+.avatar-figure{transition:transform 1.4s ease}.avatar-stage-activity-look .avatar-figure{animation:avatarLook 4s ease-in-out}.avatar-stage-activity-stretch .avatar-figure{animation:avatarStretch 4.5s ease-in-out}@keyframes avatarLook{0%,100%{transform:translateX(-50%) rotate(0)}40%,65%{transform:translateX(-48%) rotate(3deg)}}@keyframes avatarStretch{0%,100%{transform:translateX(-50%) translateY(0)}45%,65%{transform:translateX(-50%) translateY(-6px) scale(1.025)}}
+@media (prefers-reduced-motion:reduce){.avatar-blink.is-blinking{opacity:0}.avatar-stage-activity-look .avatar-figure,.avatar-stage-activity-stretch .avatar-figure{animation:none}}
+.avatar-thought,.avatar-happy{opacity:0;transition:opacity .28s ease}.avatar-thinking .avatar-thought,.avatar-is-happy .avatar-happy{opacity:1}.avatar-idle{z-index:0}.avatar-thought{z-index:1}.avatar-talking{z-index:2}.avatar-blink{z-index:3}.avatar-happy{z-index:4}.avatar-figure{cursor:pointer}
+.avatar-reading{opacity:0;z-index:5;transition:opacity .7s ease}.avatar-is-reading .avatar-reading{opacity:1}.avatar-is-reading .avatar-figure{animation:avatarIdle 7s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.avatar-is-reading .avatar-figure{animation:none}.avatar-reading{transition:none}}
+/* The still artwork is displayed as separately moving head and torso layers. */
+.avatar-figure,.avatar-thinking .avatar-figure,.avatar-stage-activity-look .avatar-figure,.avatar-stage-activity-stretch .avatar-figure,.avatar-is-reading .avatar-figure{animation:none;transform:translateX(-50%)}
+.avatar-head,.avatar-body{position:absolute;inset:0;transform-origin:50% 43%;will-change:transform}.avatar-head{z-index:2;clip-path:polygon(0 0,100% 0,100% 44%,0 44%);animation:headBreath 6.7s ease-in-out infinite}.avatar-body{z-index:1;clip-path:polygon(0 42%,100% 42%,100% 100%,0 100%);transform-origin:50% 100%;animation:bodyBreath 5.3s ease-in-out infinite}.avatar-reading{z-index:5}
+.avatar-thinking .avatar-head{animation:headThinking 5s ease-in-out infinite}.avatar-stage-activity-look .avatar-head{animation:headLook 4.8s ease-in-out}.avatar-stage-activity-stretch .avatar-body{animation:bodyStretch 4.8s ease-in-out}
+@keyframes headBreath{0%,100%{transform:translateY(0) rotate(-.16deg)}50%{transform:translateY(-.45px) rotate(.16deg)}}@keyframes bodyBreath{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.003)}}@keyframes headThinking{0%,100%{transform:rotate(-.4deg)}50%{transform:rotate(.4deg)}}@keyframes headLook{0%,100%{transform:rotate(0)}40%,65%{transform:rotate(.65deg)}}@keyframes bodyStretch{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.006)}}
+@media (prefers-reduced-motion:reduce){.avatar-head,.avatar-body,.avatar-thinking .avatar-head,.avatar-stage-activity-look .avatar-head,.avatar-stage-activity-stretch .avatar-body{animation:none}}
+/* Full-height portrait behind a scrollable conversation. */
+body{position:relative;isolation:isolate;overflow:hidden}body>header{position:relative;z-index:10;flex:none;background:#151923eb;border-bottom-color:#ffffff14}#avatar-stage{position:absolute;inset:0;width:100%;height:100%;z-index:0;border:0;pointer-events:none;background:radial-gradient(ellipse at 50% 42%,#50404b 0,#282633 48%,#111720 100%)}#avatar-stage::after{content:'';position:absolute;inset:0;z-index:6;pointer-events:none;background:linear-gradient(180deg,#11172018 0%,transparent 32%,#11172045 100%)}#avatar-stage .avatar-figure{height:min(100%,900px);top:2%;left:50%}#avatar-stage .avatar-glow{top:40%;width:65vw;height:65vw;max-width:360px;max-height:360px;opacity:.5}#avatar-state,#avatar-hide{display:none}
+#messages{position:relative;z-index:2;min-height:0;display:flex;flex-direction:column;align-items:stretch;padding:14px 13px 24px;background:transparent;overscroll-behavior:contain}#messages::before{content:'';display:block;min-height:18vh;flex:none}#messages .message{width:fit-content;max-width:min(86%,680px);margin:0 0 18px;padding:12px 15px;line-height:1.5;border:1px solid #ffffff20;box-shadow:0 5px 18px #0004;color:#f8fafb}#messages .agent{align-self:flex-start;background:#192531e8;border-radius:17px 17px 17px 5px}#messages .user{align-self:flex-end;background:#365b58ed;border-radius:17px 17px 5px 17px}#messages .info{align-self:flex-start;max-width:85%;margin:0 0 14px;padding:6px 10px;border-radius:10px;background:#111923d9;color:#d6e5e8}#messages .welcome{margin:7vh auto;color:#e5edef;text-shadow:0 1px 5px #000}#attachments,body>form,#approval{position:relative;z-index:3;flex:none}body>form{background:#19232df5;border-color:#ffffff30;box-shadow:0 4px 24px #0007}#attachments span{background:#23353eea}#sidebar{z-index:20}#tasks-panel,#voice-settings{z-index:21}@media (max-height:500px){#messages::before{min-height:5vh}#messages{padding-bottom:8px}#avatar-stage .avatar-figure{height:110%;top:0}}
+/* Side columns leave the center free for the character. Tap a bubble to widen it. */
+#messages::before{min-height:25vh}#messages .message{max-width:min(34vw,330px);padding:9px 10px;font-size:14px;line-height:1.42;margin-bottom:22px;overflow-wrap:anywhere;cursor:pointer}#messages .message.expanded{max-width:min(86vw,680px);font-size:15px}#messages .info{max-width:min(36vw,340px);font-size:11px;padding:5px 7px}#messages .message:focus-visible{outline:2px solid #a6e9df;outline-offset:2px}@media (max-width:350px){#messages .message{max-width:38vw;font-size:13px}#messages .message.expanded{max-width:86vw;font-size:14px}}
+.avatar-glance{z-index:1;opacity:0;transition:opacity .3s ease}.avatar-is-glancing .avatar-glance{opacity:1}.avatar-thought{z-index:2}.avatar-talking{z-index:3}.avatar-blink{z-index:4}.avatar-happy{z-index:5}@media (prefers-reduced-motion:reduce){.avatar-glance{transition:none}}
+.restore-draft{display:block;margin-top:6px;padding:6px 8px;border-radius:7px;background:#487c74;color:#fff;font-size:12px}
+/* Track the actually visible area when the Android keyboard pans the page. */
+body{position:fixed;top:var(--visible-top,0px);left:var(--visible-left,0px);width:var(--visible-width,100%);height:var(--visible-height,100dvh)}
+body.keyboard-open #avatar-stage .avatar-figure{height:100%;top:0}
+body.keyboard-open #messages{padding-top:6px;padding-bottom:8px}
+body.keyboard-open #messages::before{min-height:4vh}
+#messages .message{transition:opacity .22s ease}#messages .message.expanded{opacity:1!important}
+.avatar-thought,.avatar-happy{transition:opacity .55s ease}.avatar-glance{transition:opacity .4s ease}
+@media (prefers-reduced-motion:reduce){#messages .message,.avatar-thought,.avatar-happy,.avatar-glance{transition:none}}
+/* Wider bubbles keep messages readable; the existing face-aware fade preserves the portrait. */
+#messages .message{max-width:min(72vw,600px);padding:11px 14px;font-size:15px;line-height:1.48;min-width:0}
+#messages .message.expanded{max-width:min(92vw,760px)}
+#messages .info{max-width:min(66vw,480px)}
+@media (max-width:350px){#messages .message{max-width:72vw;font-size:14px}#messages .message.expanded{max-width:92vw}}
+/* Activities use separate head and torso layers, with real action frames. */
+.avatar-pose{position:absolute;inset:0;z-index:6;opacity:0;pointer-events:none;transition:opacity .65s ease-in-out}
+.avatar-is-reading .avatar-pose-reading,.avatar-is-searching .avatar-pose-search,.avatar-is-working .avatar-pose-work{opacity:1}
+.pose-body,.pose-head{position:absolute;inset:0}.pose-body{clip-path:polygon(0 42%,100% 42%,100% 100%,0 100%);transform-origin:50% 100%;animation:bodyBreath 5.3s ease-in-out infinite}.pose-head{clip-path:polygon(0 0,100% 0,100% 44%,0 44%);transform-origin:50% 43%;animation:headBreath 6.7s ease-in-out infinite}
+.pose-alt{opacity:0}.avatar-is-reading .avatar-pose-reading .pose-alt{animation:pageTurn 7s ease-in-out infinite}.avatar-is-working .avatar-pose-work .pose-alt{animation:writingStroke 4.5s ease-in-out infinite}
+.pose-eyeblink{opacity:0;clip-path:polygon(26% 23%,75% 23%,75% 31%,26% 31%)}.avatar-blinking .avatar-pose .pose-eyeblink{opacity:1}
+@keyframes pageTurn{0%,72%,100%{opacity:0}78%,88%{opacity:1}}@keyframes writingStroke{0%,100%{opacity:0}40%,65%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.avatar-pose{transition:none}.pose-body,.pose-head,.avatar-is-reading .avatar-pose-reading .pose-alt,.avatar-is-working .avatar-pose-work .pose-alt{animation:none}.avatar-blinking .avatar-pose .pose-eyeblink{opacity:0}}
+/* Face occlusion uses a local transparent mask; other message areas stay opaque. */
+#messages .message{opacity:1}#messages .message.expanded{-webkit-mask-image:none!important;mask-image:none!important;opacity:1!important}
+/* Blink only the eye region; it must never replace the mouth or expression. */
+.avatar-blink,.avatar-blink-thinking,.avatar-blink-talking{z-index:4;opacity:0;clip-path:polygon(26% 23%,75% 23%,75% 31%,26% 31%);transition:opacity .06s linear}
+.avatar-blink.is-blinking{opacity:0}
+.avatar-blinking:not(.avatar-thinking):not(.avatar-speaking):not(.avatar-is-happy) .avatar-blink{opacity:1}
+.avatar-blinking.avatar-thinking .avatar-blink-thinking,.avatar-blinking.avatar-speaking .avatar-blink-talking{opacity:1}
+.avatar-is-happy .avatar-blink,.avatar-is-happy .avatar-blink-thinking,.avatar-is-happy .avatar-blink-talking{opacity:0}
+.pose-eyeblink{transition:opacity .06s linear}.avatar-speaking .avatar-pose{transition-duration:.12s}
+@keyframes pageTurn{0%,15%,100%{opacity:0}23%,37%{opacity:1}48%{opacity:0}}
+@keyframes writingStroke{0%,12%,100%{opacity:0}28%,56%{opacity:1}68%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.avatar-blink,.avatar-blink-thinking,.avatar-blink-talking,.pose-eyeblink{opacity:0!important;transition:none}}
+/* Compact corner menu and one contextual microphone/stop control. */
+body>header[hidden]{display:none!important}body>header:not([hidden]){position:absolute;top:0;left:0;right:0;z-index:25;overflow-x:auto;scrollbar-width:none;padding-right:54px;box-shadow:0 5px 24px #0007}body>header:not([hidden])::-webkit-scrollbar{display:none}body>header>div{min-width:68px}body>header>button{flex:none}
+#header-toggle{position:absolute;top:max(7px,env(safe-area-inset-top));right:10px;z-index:30;display:grid;place-items:center;width:36px;height:36px;border:1px solid #ffffff38;border-radius:12px;background:#141b27dc;color:#e9edf1;font-size:19px;box-shadow:0 3px 14px #0004}
+#stop[hidden]{display:none!important}#mic.is-stop{border-radius:50%;background:#a84f5d;color:white;font-size:15px}
+
+#models-panel{position:fixed;z-index:40;left:5%;right:5%;top:8%;max-height:80%;overflow:auto;padding:18px;border-radius:20px;background:#15212cf5;color:#fff;box-shadow:0 8px 32px #0009}#models-panel[hidden]{display:none}#models-panel label{display:block;margin:12px 0}#models-panel input,#models-panel select{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border-radius:10px;font-size:16px}#models-panel button{margin:5px;padding:9px;border-radius:10px}
+
+.chat-image-link{display:block;margin-top:8px}.chat-image{display:block;max-width:100%;height:auto;max-height:60vh;object-fit:contain;border-radius:12px;background:#111}.message:has(.chat-image){min-width:min(62vw,320px)}
+
+#notes-panel{position:fixed;z-index:40;inset:5%;overflow:auto;padding:18px;border-radius:20px;background:#15212cf5;color:white}#notes-panel[hidden],#note-form[hidden]{display:none}#notes-panel input,#notes-panel textarea{box-sizing:border-box;width:100%;padding:10px;margin:6px 0;font-size:16px}#notes-panel button{padding:9px;margin:4px}.note-row{padding:10px;border-bottom:1px solid #ffffff30;white-space:pre-wrap;overflow-wrap:anywhere}.note-row small{display:block;opacity:.7}
+
+#work-indicator{position:fixed;z-index:6;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:48vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#263440eF;border:1px solid #40505c;border-radius:20px;padding:6px 11px;color:#cbd6dc;font-size:12px;pointer-events:none}#work-indicator[data-state=working]{color:#87dfc8;border-color:#548c80}#work-indicator[data-state=waiting]{color:#ffda8a;border-color:#c39642}#work-indicator[data-state=offline],#work-indicator[data-state=stopped]{color:#ffb2a8;border-color:#a85c59}#voice-output{position:fixed;z-index:6;top:max(6px,env(safe-area-inset-top));right:10px;width:38px;height:38px;border-radius:50%;background:#263440;border:1px solid #40505c}#voice-output.active{background:#345c55;border-color:#87dfc8}
+
+body>header:not([hidden]){height:auto;min-height:56px;overflow:visible;flex-wrap:wrap;padding:8px 54px 8px 12px;gap:8px}body>header>div{order:-1}#sidebar #new,#sidebar #notes-open{display:block;width:100%;text-align:left;background:#314b49;border-radius:12px;padding:14px;margin:8px 0;font-size:16px}#sidebar #new{font-weight:700;font-size:18px}#models-open{flex:none;width:34px;height:37px;border-radius:10px;background:#34464d;font-size:13px}#form textarea{min-width:0;font-size:16px}#form{gap:4px;margin-left:6px;margin-right:6px}#voice-settings,#tasks-panel{padding-top:max(16px,env(safe-area-inset-top));padding-bottom:max(20px,env(safe-area-inset-bottom))}#messages a{color:#9cebd6;text-decoration:underline}#messages .message{max-width:min(86vw,680px)}
+
+#messages{scroll-behavior:auto}
+#approval button:disabled{opacity:.6}
+
+#sidebar #accessibility-open{display:block;width:100%;text-align:left;background:#314b49;border-radius:12px;padding:14px;margin:8px 0;font-size:16px}
+
+#messages-viewport{position:relative;z-index:2;display:flex;flex:1;min-height:0;overflow:hidden}#messages-viewport #messages{width:100%;min-height:0}
+
+/* Softer expression changes and small motions between the existing drawings. */
+.avatar-thought,.avatar-happy,.avatar-glance{transition:opacity .65s ease-in-out}
+.avatar-pose{transition:opacity .8s ease-in-out}
+.avatar-speaking .avatar-pose{transition-duration:.45s}
+.avatar-blink,.avatar-blink-thinking,.avatar-blink-talking,.pose-eyeblink{transition:opacity .10s ease-in-out}
+.avatar-speaking .avatar-talking{animation:avatarTalkSoft .72s ease-in-out infinite}
+.avatar-listening .avatar-head{animation:headListen 5.8s ease-in-out infinite}
+.avatar-is-happy .avatar-head{animation:headHappy 5.4s ease-in-out infinite}
+@keyframes avatarTalkSoft{0%,100%{opacity:0}18%,42%{opacity:.92}57%,68%{opacity:.15}80%{opacity:.7}}
+@keyframes headListen{0%,100%{transform:rotate(-.15deg) translateY(0)}40%{transform:rotate(.5deg) translateY(-.5px)}70%{transform:rotate(.25deg) translateY(0)}}
+@keyframes headHappy{0%,100%{transform:rotate(0)}35%,65%{transform:rotate(.5deg)}}
+@media (prefers-reduced-motion:reduce){.avatar-speaking .avatar-talking{animation:none;opacity:1}.avatar-listening .avatar-head,.avatar-is-happy .avatar-head{animation:none}.avatar-thought,.avatar-happy,.avatar-glance,.avatar-pose{transition:none}}
+/* New full-portrait keyframes; actions use their own layers and never replace base art. */
+.avatar-extra{position:absolute;inset:0;z-index:8;opacity:0;pointer-events:none}
+.avatar-idle-yawn .avatar-extra-yawn-mid,.avatar-idle-scratch .avatar-extra-scratch-mid{animation:evaPoseMiddle 5.2s ease-in-out both}
+.avatar-idle-yawn .avatar-extra-yawn,.avatar-idle-scratch .avatar-extra-scratch{animation:evaPosePeak 5.2s ease-in-out both}
+.avatar-extra-music{transition:opacity .8s ease-in-out}
+.avatar-is-music .avatar-extra-music{opacity:1}
+@keyframes evaPoseMiddle{0%,100%{opacity:0}12%,20%{opacity:1}35%,65%{opacity:0}80%,88%{opacity:1}}
+@keyframes evaPosePeak{0%,18%,82%,100%{opacity:0}35%,65%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.avatar-extra{animation:none!important;transition:none}.avatar-idle-yawn .avatar-extra,.avatar-idle-scratch .avatar-extra{opacity:0!important}}
+/* Emotion frames derived from the supplied expression references. */
+.avatar-surprised,.avatar-calm{z-index:4;opacity:0;transition:opacity .65s ease-in-out}
+.avatar-is-surprised .avatar-surprised,.avatar-idle-calm .avatar-calm{opacity:1}
+.avatar-idle-calm .avatar-calm{animation:evaCalm 5.2s ease-in-out both}
+@keyframes evaCalm{0%,100%{opacity:0}20%,75%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.avatar-surprised,.avatar-calm{transition:none}.avatar-idle-calm .avatar-calm{animation:none;opacity:0}}
+#sidebar #avatar-preview-open{display:block;width:100%;text-align:left;background:#314b49;border-radius:12px;padding:14px;margin:8px 0;font-size:16px}
+#avatar-preview{position:fixed;z-index:60;bottom:max(10px,env(safe-area-inset-bottom));left:10px;right:10px;max-height:34vh;overflow:auto;background:#151e29f5;border:1px solid #ffffff35;border-radius:18px;padding:12px;box-shadow:0 6px 30px #000a}
+#avatar-preview[hidden]{display:none}.avatar-preview-head{display:flex;justify-content:space-between;align-items:center}.avatar-preview-head button{font-size:22px;padding:4px 10px}#avatar-preview-name{margin:6px 0;color:#9ee2d0}#avatar-preview-buttons{display:flex;gap:6px;flex-wrap:wrap}#avatar-preview-buttons button,#avatar-preview-play{background:#344b4b;border-radius:9px;padding:8px 10px;font-size:14px;margin:3px 0}body.avatar-preview-active #messages-viewport,body.avatar-preview-active #form,body.avatar-preview-active #attachments,body.avatar-preview-active #approval{visibility:hidden}
+
+/* Crossfades between separate expression frames; head breathing supplies motion. */
+.avatar-expression-joy,.avatar-expression-wink,.avatar-expression-excited,.avatar-expression-sly,.avatar-expression-shy,.avatar-expression-pout,.avatar-expression-serious,.avatar-expression-sad{z-index:4;opacity:0;transition:opacity .65s ease-in-out}
+.avatar-expression-joy-active .avatar-expression-joy{opacity:1}
+.avatar-expression-wink-active .avatar-expression-wink{opacity:1}
+.avatar-expression-excited-active .avatar-expression-excited{opacity:1}
+.avatar-expression-sly-active .avatar-expression-sly{opacity:1}
+.avatar-expression-shy-active .avatar-expression-shy{opacity:1}
+.avatar-expression-pout-active .avatar-expression-pout{opacity:1}
+.avatar-expression-serious-active .avatar-expression-serious{opacity:1}
+.avatar-expression-sad-active .avatar-expression-sad{opacity:1}
+@media (prefers-reduced-motion:reduce){.avatar-expression-joy,.avatar-expression-wink,.avatar-expression-excited,.avatar-expression-sly,.avatar-expression-shy,.avatar-expression-pout,.avatar-expression-serious,.avatar-expression-sad{transition:none}}
+/* A small, slow head movement keeps expression previews from becoming rigid. */
+.avatar-expression-joy-active .avatar-head,.avatar-expression-wink-active .avatar-head,.avatar-expression-excited-active .avatar-head,.avatar-expression-sly-active .avatar-head,.avatar-expression-shy-active .avatar-head,.avatar-expression-pout-active .avatar-head,.avatar-expression-serious-active .avatar-head,.avatar-expression-sad-active .avatar-head{animation:evaExpressionBreath 6.8s ease-in-out infinite}
+@keyframes evaExpressionBreath{0%,100%{transform:translateY(0) rotate(-.18deg)}50%{transform:translateY(-.7px) rotate(.22deg)}}
+@media (prefers-reduced-motion:reduce){.avatar-expression-joy-active .avatar-head,.avatar-expression-wink-active .avatar-head,.avatar-expression-excited-active .avatar-head,.avatar-expression-sly-active .avatar-head,.avatar-expression-shy-active .avatar-head,.avatar-expression-pout-active .avatar-head,.avatar-expression-serious-active .avatar-head,.avatar-expression-sad-active .avatar-head{animation:none}}
+/* Coordinated subtle breathing and head sway for expressive states. */
+@keyframes evaExpressionBreath{0%,100%{transform:translateY(0) rotate(-.35deg)}30%{transform:translateY(-1.1px) rotate(.12deg)}65%{transform:translateY(-.5px) rotate(.42deg)}}
+.avatar-expression-joy-active .avatar-body,.avatar-expression-wink-active .avatar-body,.avatar-expression-excited-active .avatar-body,.avatar-expression-sly-active .avatar-body,.avatar-expression-shy-active .avatar-body,.avatar-expression-pout-active .avatar-body,.avatar-expression-serious-active .avatar-body,.avatar-expression-sad-active .avatar-body{animation:bodyBreath 5.8s ease-in-out infinite}
+/* Do not paste a neutral blink over deliberately closed or winking eyes. */
+.avatar-expression-joy-active .avatar-blink,.avatar-expression-wink-active .avatar-blink,.avatar-idle-calm .avatar-blink,.avatar-idle-yawn .avatar-blink{opacity:0!important}
+@media (prefers-reduced-motion:reduce){.avatar-expression-joy-active .avatar-body,.avatar-expression-wink-active .avatar-body,.avatar-expression-excited-active .avatar-body,.avatar-expression-sly-active .avatar-body,.avatar-expression-shy-active .avatar-body,.avatar-expression-pout-active .avatar-body,.avatar-expression-serious-active .avatar-body,.avatar-expression-sad-active .avatar-body{animation:none}}
+/* The existing sideways-eye drawing is clipped to the eye region in compatible previews. */
+.avatar-preview-glance .avatar-glance{z-index:6;clip-path:polygon(26% 23%,75% 23%,75% 31%,26% 31%);opacity:1}
+.avatar-preview-glance.avatar-blinking .avatar-glance{opacity:0}
+@media (prefers-reduced-motion:reduce){.avatar-preview-glance .avatar-glance{opacity:0!important}}
+#thread-status{min-height:1.5em;padding:4px 6px;color:#b8d7d0;font-size:13px;overflow-wrap:anywhere}
+
+/* Keep narration toggle separate from the menu button. */
+#voice-output{left:10px;right:auto;z-index:30}
+#voice-pitch:disabled{opacity:.45}
+/* Panels must sit above global menu and narration controls. */
+#sidebar,#voice-settings,#tasks-panel,#models-panel,#notes-panel{z-index:50}
+#sidebar{padding-top:max(16px,env(safe-area-inset-top));padding-bottom:max(16px,env(safe-area-inset-bottom))}
+#sidebar .asidehead button,.tasks-head button{min-width:44px;min-height:44px;display:grid;place-items:center;flex:none}
+/* Keep the composer compact and file names readable on small displays. */
+#form{align-items:flex-end;max-height:min(38vh,230px)}
+#form textarea{min-height:38px;max-height:min(24vh,140px);overflow-y:auto;line-height:1.35}
+#form textarea{width:0;flex:1 1 0;max-height:min(20vh,110px);overscroll-behavior:contain}
+body.keyboard-open #form textarea{max-height:min(16vh,90px)}
+#attachments{max-height:22vh;overflow-y:auto;overflow-x:hidden;display:flex;flex-wrap:wrap;gap:6px;padding:0 10px}
+#attachments .attachment-chip{display:flex;align-items:center;gap:6px;max-width:100%;min-width:0;padding:4px 6px 4px 9px;border-radius:10px;background:#23353ef2}
+#attachments .attachment-name{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:none;padding:0}
+#attachments .attachment-chip button{flex:none;min-width:34px;min-height:34px;border-radius:8px;background:#ffffff15;color:#fff}
+body.keyboard-open #attachments{max-height:12vh}
+.thread-row{display:flex;align-items:stretch;gap:4px}.thread-row .thread{flex:1;min-width:0}.thread-delete{flex:none;align-self:center;width:44px;height:44px;border-radius:10px;background:#ffffff12;color:#e4edf0;font-size:18px}.delete-dialog{max-width:min(90vw,420px);border:1px solid #52646d;border-radius:18px;background:#19232d;color:#edf2f6;padding:20px}.delete-dialog::backdrop{background:#000a}.delete-dialog button{padding:10px 16px;margin:8px 8px 0 0;border-radius:9px;background:#385b55;color:white}.delete-dialog button:last-child{background:#8c4346}.auto-model-label{display:flex;align-items:center;gap:8px}.auto-model-label input{width:20px;height:20px}
+#models-panel .auto-model-label input{width:20px;height:20px;flex:none;margin:0}
+/* Consistent controls and a compact, dismissible chat drawer. */
+.ui-icon{display:block;width:20px;height:20px;flex:none;pointer-events:none}
+#sidebar-backdrop{position:fixed;inset:0;z-index:49;background:#080d14a8;touch-action:manipulation}
+#sidebar-backdrop[hidden],#avatar-preview-open[hidden]{display:none!important}
+#sidebar{width:min(76vw,300px);max-width:calc(100vw - 48px);background:#17232d;box-shadow:8px 0 32px #0007;border-right:1px solid #ffffff18;padding: max(14px,env(safe-area-inset-top)) 12px max(14px,env(safe-area-inset-bottom));overscroll-behavior:contain}
+#sidebar .asidehead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 0 10px 6px;font-weight:650;font-size:17px;color:#f1f5f4}
+#sidebar .asidehead button,.tasks-head button{width:44px;height:44px;border:1px solid #ffffff18;border-radius:12px;background:#ffffff08;color:#c8d8db}
+#sidebar #new,#sidebar #notes-open{margin:0 0 8px;padding:12px 14px;min-height:46px;border-radius:12px;font-size:15px;line-height:1.3}
+#sidebar #new{background:#72c9b4;color:#102721;font-weight:700}
+#sidebar #notes-open{background:#2d4748;color:#e3f1ed;font-weight:550}
+#thread-status{min-height:0;padding:0;color:#b8d7d0}
+#thread-status:not(:empty){padding:8px 4px}
+#threads{border-top:1px solid #ffffff16;margin-top:12px;padding-top:8px}
+.thread-row{gap:4px;border-radius:12px;margin:2px 0}
+.thread-row:focus-within,.thread-row:active{background:#ffffff0b}
+.thread-row .thread{padding:11px 8px;font-size:14px;line-height:1.35;overflow-wrap:anywhere;color:#cbd9dd}
+.thread-delete{display:grid;place-items:center;width:40px;height:44px;background:transparent;color:#9aafb4}
+.thread-delete .ui-icon{width:17px;height:17px}
+#header-toggle,#voice-output,#top-panel button,#mic,#send,#close,#avatar-hide,.tasks-head button{display:grid;place-items:center}
+#top-panel button{min-width:40px;min-height:40px;border-radius:11px;color:#d4e3e3}
+#top-panel button:active,#voice-output:active,#header-toggle:active{background:#ffffff18}
+#voice-output .ui-icon,#header-toggle .ui-icon{width:19px;height:19px}
+#mic .ui-icon{width:20px;height:20px}
+#send .ui-icon{width:22px;height:22px}
+#form{border-color:#ffffff2a;border-radius:22px;background:#17232df5}
+#models-panel,#voice-settings,#notes-panel,#tasks-panel{background:#17232dfc;border:1px solid #ffffff18;border-radius:20px;color:#e9f1f1}
+.device-settings{margin:18px 0 4px;padding-top:12px;border-top:1px solid #ffffff18;color:#c7d7d7}
+.device-settings summary{cursor:pointer;padding:8px 0}
+.device-settings button{margin:8px 0;padding:11px 14px;border-radius:10px;background:#304b49;color:#e4f3ef}
+:where(button,select,input,textarea,summary):focus-visible{outline:2px solid #87dfc8;outline-offset:2px}
+#sidebar #new,#sidebar #notes-open{display:flex;align-items:center;gap:10px}
+#sidebar #new .ui-icon,#sidebar #notes-open .ui-icon{width:19px;height:19px}
+.thread[aria-current="page"]{background:#47776c44;color:#edfffa}
+.attach{display:grid;place-items:center;width:32px;height:40px;flex:none;cursor:pointer}
+body>header:not([hidden]){flex-wrap:nowrap;gap:2px;padding:6px 52px 6px 48px;min-height:52px;justify-content:space-around}
+body>header>div{display:none}
+body>header>button{min-width:38px;max-width:44px;flex:1}
+#sidebar #models-open{display:block;width:100%;height:auto;margin:0 0 8px;padding:12px 14px;text-align:left;border-radius:12px;background:#2d4748;color:#e3f1ed;font-size:14px}
+#stop:not([hidden]){display:grid;place-items:center;flex:none;width:38px;height:38px;border-radius:11px;background:#64454c;color:#fff}
+#stop[hidden]{display:none!important}
+body.keyboard-open #form{margin-bottom:4px}
+body.keyboard-open #form textarea{max-height:min(14vh,80px);overflow-y:auto}
+
+body.eva-compact #avatar-stage,body.eva-compact #header-toggle,body.eva-compact #top-panel{display:none!important}body.eva-compact{border-radius:24px 24px 0 0;overflow:hidden}body.eva-compact #messages{padding-top:36px}
+
+body.eva-compact #messages,body.eva-compact #form,body.eva-compact #attachments,body.eva-compact #voice-output{display:none!important}body.eva-compact #avatar-stage{display:block!important;opacity:1!important;pointer-events:none}body.eva-compact #avatar-stage .avatar-figure{height:230%;top:-7%}body.eva-compact #avatar-stage .avatar-body,body.eva-compact .avatar-extra,body.eva-compact .avatar-pose{display:none}body.eva-compact #work-indicator{display:block!important;position:absolute;top:auto;bottom:18px;left:50%;transform:translateX(-50%);z-index:30;max-width:80%;text-align:center}body.eva-compact #eva-voice-close{position:absolute;right:14px;top:12px;z-index:40}#eva-voice-close{display:none}body.eva-compact #eva-voice-close{display:block}
+#models-panel #group-settings{margin-top:20px;padding-top:14px;border-top:1px solid #ffffff30}#models-panel #group-settings summary{cursor:pointer;font-weight:600}#models-panel #group-settings input[type=checkbox]{display:inline-block;width:20px;height:20px;margin:0 8px 0 0;vertical-align:middle}#models-panel #group-settings textarea{display:block;box-sizing:border-box;width:100%;padding:10px;border-radius:10px;font:inherit}
+#threads .thread-row{display:flex;align-items:center;width:100%;height:54px;min-height:54px;box-sizing:border-box;gap:6px}#threads .thread-row .thread{display:block;flex:1;min-width:0;height:44px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}#threads .thread-row .thread-delete{flex:0 0 36px;width:36px;height:36px;padding:8px}
+
+#approval.questionnaire{max-height:48vh;background:#202e38}#approval.questionnaire fieldset{border:0;padding:8px 0;margin:0}#approval.questionnaire legend{font-weight:600;padding-top:12px}#approval.questionnaire .question-option{display:block;width:100%;text-align:left;margin:6px 0;background:#344850}#approval.questionnaire .question-option[aria-pressed=true]{background:#548775;outline:2px solid #a7edcf}#approval.questionnaire small{font-size:12px;color:#d1e1dd;margin-top:3px}#approval.questionnaire input{width:100%;padding:10px;border:1px solid #60757c;border-radius:8px;background:#15222b;color:#fff;font:inherit}#approval.questionnaire .question-submit{background:#548775}
+
+/* Круглое окно голосового помощника */
+html.eva-compact-root{background:transparent!important}body.eva-compact{position:relative;width:100vw;height:100vh;margin:0;border-radius:50%;overflow:hidden;background:radial-gradient(circle at 50% 36%,#34434b 0%,#222d39 55%,#141b25 100%);box-shadow:inset 0 0 0 2px #caa88299,inset 0 0 40px #0007}body.eva-compact #avatar-stage{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent;overflow:hidden}body.eva-compact #avatar-stage .avatar-figure{height:185%;top:-5%}body.eva-compact #avatar-glow{opacity:.6}body.eva-compact #avatar-state{display:none}body.eva-compact #work-indicator{bottom:9%;max-width:68%;padding:5px 12px;border-radius:18px;background:#18232be8;color:#eff8f4;font-size:12px}body.eva-compact #eva-voice-close{top:12%;right:14%;width:34px;height:34px;padding:0;border-radius:50%;background:#19252bdd;color:#fff;font-size:21px;line-height:34px}body.eva-compact #messages-viewport,body.eva-compact #approval,body.eva-compact #sidebar,body.eva-compact #sidebar-backdrop{display:none!important}
+
+/* Коррекция круглого голосового окна */
+body.eva-compact #avatar-stage .avatar-figure{height:140%;top:0}body.eva-compact #avatar-stage .avatar-body{display:block}body.eva-compact #eva-voice-close{top:14%;right:15%;width:32px;height:32px;background:#17232bd9}body.eva-compact #work-indicator{bottom:10%;background:#17232be8}body.eva-compact #avatar-stage::after{background:linear-gradient(0deg,#101a2488,transparent 38%)}
+
+.saved-drafts{width:fit-content;max-width:90%;border:1px solid #ffffff20;border-radius:12px;background:#17242cdd;padding:10px}.saved-drafts summary{cursor:pointer;color:#b8e3d7}.saved-draft-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-top:1px solid #ffffff18}.saved-draft-row span{flex:1;min-width:130px}.saved-draft-row button{background:#3f7469;border-radius:8px;padding:6px 9px}.saved-draft-row button:last-child{background:#5d4650}
+
+#eva-voice-next{display:none}body.eva-compact #eva-voice-next:not([hidden]){display:grid;place-items:center;position:absolute;z-index:40;left:50%;bottom:19%;transform:translateX(-50%);width:48px;height:48px;border-radius:50%;background:#35685e;color:#eafff7;box-shadow:0 2px 12px #0008}body.eva-compact #eva-voice-next .ui-icon{width:24px;height:24px}
+
+#eva-wake-settings{margin:18px 0;padding:14px;border:1px solid #ffffff25;border-radius:14px;background:#1b3031}#eva-wake-settings p{font-size:13px;line-height:1.4;color:#c3d9d3}#eva-wake-settings button{padding:10px 13px;border-radius:9px;background:#46786b;color:#fff}
+
+#sidebar #workshop-open{display:flex;align-items:center;gap:10px;width:100%;min-height:46px;margin:0 0 8px;padding:12px 14px;text-align:left;border-radius:12px;background:#2d4748;color:#e3f1ed;font-size:15px;line-height:1.3;font-weight:550}
+#sidebar #workshop-open .ui-icon{width:19px;height:19px}
+
+#limits-card{margin:12px 0;padding:12px 13px;border:1px solid #ffffff1c;border-radius:14px;background:#10212a;color:#dfefeb;font-size:13px}
+.limits-head,.limits-row{display:flex;align-items:center;justify-content:space-between;gap:8px}.limits-head{margin-bottom:8px}.limits-head button{width:32px;height:32px;border:1px solid #ffffff24;border-radius:9px;background:#ffffff0b;color:#a9e4d3;font-size:21px}.limits-head button:disabled{opacity:.5}.limits-row{margin-top:8px}.limits-row strong{color:#a6e5d3}.limits-reset,.limits-hint{display:block;color:#a8babd;font-size:11px;margin-top:3px}.limits-hint{margin-top:10px}
+
+/* A compact menu opens below the always-visible voice and status controls. */
+body>header#top-panel:not([hidden]){position:fixed;top:calc(max(7px,env(safe-area-inset-top)) + 46px);right:10px;left:auto;z-index:25;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;width:min(240px,calc(100vw - 20px));height:auto;min-height:0;padding:6px;overflow:visible;border:1px solid #ffffff24;border-radius:15px;background:#192631f7;box-shadow:0 12px 32px #0009}
+#top-panel>div{display:none}
+#top-panel button{display:flex;flex-direction:row;justify-content:flex-start;align-items:center;gap:7px;width:100%;min-width:0;max-width:none;min-height:44px;padding:8px;border-radius:10px;background:transparent;color:#d8ebe7;font-size:inherit}
+#top-panel button .ui-icon{width:18px;height:18px;flex:none}
+#top-panel .top-label{font-size:12px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#top-panel button:active{background:#8fddc52a}
+
+/* Unified, touch-friendly settings surfaces. */
+#models-panel:not([hidden]),#voice-settings:not([hidden]),#notes-panel:not([hidden]),#tasks-panel:not([hidden]),.eva-account:not([hidden]){position:fixed;inset:auto 12px max(12px,env(safe-area-inset-bottom));top:max(12px,env(safe-area-inset-top));left:50%;right:auto;transform:translateX(-50%);width:min(100% - 24px,480px);max-height:none;overflow-y:auto;overscroll-behavior:contain;padding:16px;background:#17242efc;border:1px solid #ffffff1c;border-radius:20px;box-shadow:0 12px 44px #000a;color:#edf5f3;z-index:50}
+.eva-account:not([hidden]){z-index:60}
+#models-panel[hidden],#voice-settings[hidden],#notes-panel[hidden],#tasks-panel[hidden],.eva-account[hidden]{display:none!important}
+#models-panel .tasks-head,#voice-settings .tasks-head,#notes-panel .tasks-head,#tasks-panel .tasks-head,.eva-account .tasks-head{position:sticky;top:-16px;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-2px 0 14px;padding:2px 0 10px;background:#17242e;box-shadow:0 1px #ffffff12}
+#models-panel .tasks-head h2,#voice-settings .tasks-head h2,#notes-panel .tasks-head h2,#tasks-panel .tasks-head h2,.eva-account .tasks-head strong{margin:0;font-size:19px;line-height:1.25;color:#f3faf8}
+#models-panel .tasks-head button,#voice-settings .tasks-head button,#notes-panel .tasks-head button,#tasks-panel .tasks-head button,.eva-account .tasks-head button{display:grid;place-items:center;flex:none;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;margin:0;border:1px solid #ffffff1b;border-radius:12px;background:#ffffff09;color:#d4e5e0}
+#models-panel label,#voice-settings label,#tasks-panel label{display:block;margin:14px 0 6px;color:#d5e5e1;font-size:14px;line-height:1.35}
+#models-panel :is(select,input:not([type=checkbox]),textarea),#voice-settings select,#notes-panel :is(input,textarea),#tasks-panel input:not([type=checkbox]){display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;min-height:44px;margin:6px 0 0;padding:10px 12px;border:1px solid #ffffff28;border-radius:11px;background:#223440;color:#f2f7f6;font:inherit;font-size:16px}
+#models-panel input[type=checkbox],#voice-settings input[type=checkbox],#tasks-panel input[type=checkbox]{display:inline-block;vertical-align:middle;width:20px;height:20px;min-height:0;margin:0 7px 0 0;padding:0;accent-color:#85d8c0}
+#voice-settings input[type=range]{display:block;width:100%;min-height:36px;margin:8px 0 0;padding:0;border:0;background:transparent;accent-color:#85d8c0}
+#models-panel .auto-model-label{display:flex;align-items:center;gap:8px;padding:12px;border:1px solid #ffffff16;border-radius:11px;background:#ffffff06}
+#models-panel :is(button:not(.tasks-head button),a),#voice-settings :is(button:not(.tasks-head button)),#notes-panel :is(button:not(.tasks-head button)),#tasks-panel :is(button:not(.tasks-head button)),.eva-account :is(button:not(.tasks-head button),a){display:inline-flex;align-items:center;justify-content:center;min-height:44px;max-width:100%;margin:6px 6px 6px 0;padding:9px 13px;border:1px solid #ffffff1b;border-radius:11px;background:#2a4949;color:#e8f7f2;font-size:14px;line-height:1.25;text-decoration:none;white-space:normal;text-align:center;overflow-wrap:anywhere}
+#models-panel button:disabled,#voice-settings button:disabled,#tasks-panel button:disabled{opacity:.5}
+#models-panel .task-note,#voice-settings .task-note,#tasks-panel .task-note{margin:8px 0;color:#a9bdbb;font-size:12px;line-height:1.45}
+#models-panel details,#voice-settings details{margin:14px 0;padding:12px;border:1px solid #ffffff19;border-radius:12px;background:#ffffff05}
+#models-panel summary,#voice-settings summary{min-height:32px;color:#d8ece6;font-weight:600;cursor:pointer}
+#notes-panel #note-form,#tasks-panel #task-form{display:block;margin:10px 0;padding:0;border:0;background:transparent}
+#notes-panel #notes-list,#tasks-panel #tasks-list{margin-top:14px}
+#notes-panel .note-row,#tasks-panel .task-row{padding:12px 2px;border-bottom:1px solid #ffffff18;overflow-wrap:anywhere}
+#tasks-panel .task-row input[type=checkbox]{width:22px;height:22px;flex:none;margin:4px 8px 0 0}
+#notes-panel .note-row button,#tasks-panel .task-row button{min-height:40px;margin:5px 6px 0 0;padding:7px 10px;background:#ffffff0b}
+.eva-account p{color:#bdd0cc;font-size:14px;line-height:1.45}.eva-account .eva-login-code{font-size:20px;letter-spacing:.08em;color:#a9eed9;overflow-wrap:anywhere}
+#sidebar #new,#sidebar #workshop-open,#sidebar #notes-open,#sidebar #models-open{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;margin:0 0 6px;padding:10px 12px;border-radius:11px;font-size:14px;line-height:1.25;text-align:left}
+#sidebar #workshop-open,#sidebar #notes-open,#sidebar #models-open{background:#ffffff09;color:#deeeea}
+#sidebar #new{background:#79ceb6;color:#102721}
+#limits-card{margin:12px 0;padding:11px 12px}
+:focus-visible{outline:2px solid #9be3d0;outline-offset:2px}
+
+/* Hidden controls must remain hidden even when layout rules set display. */
+#models-panel [hidden],#voice-settings [hidden],#notes-panel [hidden],#tasks-panel [hidden],.eva-account [hidden]{display:none!important}
+
+/* Small entrance and depth using the existing layers; no new image requests. */
+body:not(.eva-compact) #avatar-stage:not([hidden]) .avatar-figure{animation:evaArrival 900ms ease-out both}
+@keyframes evaArrival{from{opacity:.35;transform:translateX(-50%) translateY(9px) scale(.985)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+body:not(.eva-compact) .avatar-glow{animation:evaGlow 8s ease-in-out infinite alternate}
+@keyframes evaGlow{from{opacity:.32;transform:scale(.96)}to{opacity:.62;transform:scale(1.04)}}
+@media (prefers-reduced-motion:reduce){body:not(.eva-compact) #avatar-stage:not([hidden]) .avatar-figure,body:not(.eva-compact) .avatar-glow{animation:none!important}}
+.sound-feedback-option{display:flex!important;align-items:center;gap:8px}
+
+/* Newly generated curious expression uses the existing head layer. */
+.avatar-expression-curious{z-index:4;opacity:0;transition:opacity .65s ease-in-out}
+.avatar-expression-curious-active .avatar-expression-curious{opacity:1}
+.avatar-expression-curious-active .avatar-head{animation:evaExpressionBreath 6.8s ease-in-out infinite}
+.avatar-expression-curious-active .avatar-body{animation:bodyBreath 5.8s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.avatar-expression-curious{transition:none}.avatar-expression-curious-active .avatar-head,.avatar-expression-curious-active .avatar-body{animation:none}}
+
+.avatar-expression-laugh{z-index:4;opacity:0;transition:opacity .65s ease-in-out}
+.avatar-expression-laugh-active .avatar-expression-laugh{opacity:1}
+.avatar-expression-laugh-active .avatar-blink{opacity:0!important}
+.avatar-expression-laugh-active .avatar-head{animation:evaLaughSway 3.2s ease-in-out infinite}
+.avatar-expression-curious-active .avatar-head{animation:evaCuriousTilt 4.6s ease-in-out infinite}
+@keyframes evaLaughSway{0%,100%{transform:translateY(0) rotate(-.3deg)}50%{transform:translateY(-1.2px) rotate(.6deg)}}
+@keyframes evaCuriousTilt{0%,100%{transform:rotate(-.3deg)}50%{transform:rotate(1deg)}}
+@media (prefers-reduced-motion:reduce){.avatar-expression-laugh{transition:none}.avatar-expression-laugh-active .avatar-head,.avatar-expression-curious-active .avatar-head{animation:none}}
+
+.eva-poll{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin-top:12px;padding:12px;border:1px solid #ffffff24;border-radius:14px;background:#11212bf0;white-space:normal}.eva-poll strong{font-size:14px;line-height:1.35}.eva-poll button{min-height:44px;padding:9px 12px;border:1px solid #ffffff25;border-radius:10px;text-align:left;background:#ffffff08;color:#e8f3ef;font-size:14px}.eva-poll button[aria-pressed=true]{background:#38675e;border-color:#8fdcc6}.eva-poll input{width:100%;min-height:44px;padding:9px 12px;border:1px solid #ffffff25;border-radius:10px;background:#1e333c;color:#fff;font-size:16px}.eva-poll .eva-poll-submit{background:#72c9b4;color:#102721;text-align:center;font-weight:650}.eva-poll button:disabled{opacity:.6}.eva-poll small{color:#e5c894;line-height:1.35}
+
+.avatar-expression-smile-mid{z-index:4;opacity:0;transition:opacity .65s ease-in-out}.avatar-expression-smile-mid-active .avatar-expression-smile-mid{opacity:1}.avatar-expression-smile-mid-active .avatar-head{animation:evaExpressionBreath 6.8s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.avatar-expression-smile-mid{transition:none}.avatar-expression-smile-mid-active .avatar-head{animation:none}}
+.avatar-expression-thinking-soft{z-index:4;opacity:0;transition:opacity .65s ease-in-out}.avatar-expression-thinking-soft-active .avatar-expression-thinking-soft{opacity:1}.avatar-expression-thinking-soft-active .avatar-head{animation:evaExpressionBreath 6.8s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.avatar-expression-thinking-soft{transition:none}.avatar-expression-thinking-soft-active .avatar-head{animation:none}}
+.avatar-expression-warm-soft{z-index:4;opacity:0;transition:opacity .65s ease-in-out}.avatar-expression-warm-soft-active .avatar-expression-warm-soft{opacity:1}.avatar-expression-warm-soft-active .avatar-head{animation:evaExpressionBreath 6.8s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.avatar-expression-warm-soft{transition:none}.avatar-expression-warm-soft-active .avatar-head{animation:none}}
+
+/* New expression frames are transparent overlays, decoded on demand. */
+.avatar-generated{z-index:4;opacity:0;transition:opacity .5s ease-in-out}
+.avatar-expression-frame-01-active .avatar-expression-frame-01{opacity:1}
+.avatar-expression-frame-02-active .avatar-expression-frame-02{opacity:1}
+.avatar-expression-frame-03-active .avatar-expression-frame-03{opacity:1}
+.avatar-expression-frame-04-active .avatar-expression-frame-04{opacity:1}
+.avatar-expression-frame-05-active .avatar-expression-frame-05{opacity:1}
+.avatar-expression-frame-06-active .avatar-expression-frame-06{opacity:1}
+.avatar-expression-frame-07-active .avatar-expression-frame-07{opacity:1}
+.avatar-expression-frame-08-active .avatar-expression-frame-08{opacity:1}
+.avatar-expression-frame-09-active .avatar-expression-frame-09{opacity:1}
+.avatar-expression-frame-10-active .avatar-expression-frame-10{opacity:1}
+.avatar-expression-frame-11-active .avatar-expression-frame-11{opacity:1}
+.avatar-expression-frame-12-active .avatar-expression-frame-12{opacity:1}
+.avatar-expression-frame-13-active .avatar-expression-frame-13{opacity:1}
+.avatar-expression-frame-14-active .avatar-expression-frame-14{opacity:1}
+.avatar-expression-frame-15-active .avatar-expression-frame-15{opacity:1}
+.avatar-expression-frame-16-active .avatar-expression-frame-16{opacity:1}
+.avatar-expression-frame-17-active .avatar-expression-frame-17{opacity:1}
+.avatar-expression-frame-18-active .avatar-expression-frame-18{opacity:1}
+.avatar-expression-frame-19-active .avatar-expression-frame-19{opacity:1}
+.avatar-expression-frame-20-active .avatar-expression-frame-20{opacity:1}
+.avatar-expression-frame-21-active .avatar-expression-frame-21{opacity:1}
+.avatar-expression-frame-22-active .avatar-expression-frame-22{opacity:1}
+.avatar-expression-frame-23-active .avatar-expression-frame-23{opacity:1}
+.avatar-expression-frame-24-active .avatar-expression-frame-24{opacity:1}
+.avatar-expression-frame-25-active .avatar-expression-frame-25{opacity:1}
+.avatar-expression-frame-26-active .avatar-expression-frame-26{opacity:1}
+.avatar-expression-frame-27-active .avatar-expression-frame-27{opacity:1}
+.avatar-expression-frame-28-active .avatar-expression-frame-28{opacity:1}
+.avatar-expression-frame-29-active .avatar-expression-frame-29{opacity:1}
+.avatar-expression-frame-30-active .avatar-expression-frame-30{opacity:1}
+@media (prefers-reduced-motion:reduce){.avatar-generated{transition:none}}
+
+/* Speech overlays show only the mouth; the original eyes and hair remain stable. */
+.avatar-speech-frame{z-index:7;opacity:0;clip-path:polygon(36% 31%,64% 31%,64% 38%,36% 38%);-webkit-mask-image:radial-gradient(ellipse 14% 3.5% at 50% 34.2%,#000 55%,transparent 100%);mask-image:radial-gradient(ellipse 14% 3.5% at 50% 34.2%,#000 55%,transparent 100%);transition:opacity .10s linear;pointer-events:none}
+.avatar-speech-frame.avatar-speech-visible{opacity:1}
+.avatar-multimouth-ready.avatar-speaking .avatar-talking{animation:none;opacity:0}
+.avatar-expression-speech-01-active .avatar-expression-speech-01{opacity:1}
+.avatar-expression-speech-02-active .avatar-expression-speech-02{opacity:1}
+.avatar-expression-speech-03-active .avatar-expression-speech-03{opacity:1}
+.avatar-expression-speech-04-active .avatar-expression-speech-04{opacity:1}
+.avatar-expression-speech-05-active .avatar-expression-speech-05{opacity:1}
+.avatar-expression-speech-06-active .avatar-expression-speech-06{opacity:1}
+.avatar-expression-speech-07-active .avatar-expression-speech-07{opacity:1}
+.avatar-expression-speech-08-active .avatar-expression-speech-08{opacity:1}
+.avatar-expression-speech-09-active .avatar-expression-speech-09{opacity:1}
+.avatar-expression-speech-10-active .avatar-expression-speech-10{opacity:1}
+.avatar-expression-speech-11-active .avatar-expression-speech-11{opacity:1}
+.avatar-expression-speech-12-active .avatar-expression-speech-12{opacity:1}
+@media (prefers-reduced-motion:reduce){.avatar-speech-frame{transition:none}}
+
+.chat-backup-dialog form{display:grid;gap:10px}.chat-backup-dialog input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #6a7b85;border-radius:10px;color:#fff;background:#101a22;font-size:16px}.chat-backup-dialog input[hidden]{display:none}.chat-backup-dialog p[role=status]{min-height:1.2em;color:#eac892}.chat-backup-dialog button{min-height:44px}
+#sidebar #chat-backup-open{display:block;width:100%;text-align:left;background:#2d4748;color:#e3f1ed;border-radius:12px;padding:12px 14px;margin:0 0 8px;min-height:46px;font-size:15px;line-height:1.3}
+
+#sidebar #work-server-open{display:flex;align-items:center;gap:12px;width:100%;min-height:58px;margin:0 0 8px;padding:10px 14px;border:1px solid #72968666;border-radius:12px;background:#2d4748;color:#e3f1ed;text-align:left}
+#work-server-open .ui-icon{width:21px;height:21px;flex:none}#work-server-open .work-entry-text{display:flex;flex-direction:column;gap:3px;min-width:0}#work-server-open strong{font-size:15px;line-height:1.2}#work-server-open small{font-size:12px;line-height:1.25;color:#b8d3ca}
+
+.chat-image-save{display:inline-block;margin-top:8px;padding:8px 12px;border:1px solid #777;border-radius:8px;background:transparent;color:inherit;font:inherit;cursor:pointer}.chat-image-save:disabled{opacity:.6}
+
+/* Дополнительные кадры эмоций. */
+.avatar-expression-frame-31-active .avatar-expression-frame-31{opacity:1}
+.avatar-expression-frame-32-active .avatar-expression-frame-32{opacity:1}
+.avatar-expression-frame-33-active .avatar-expression-frame-33{opacity:1}
+.avatar-expression-frame-34-active .avatar-expression-frame-34{opacity:1}
+.avatar-expression-frame-35-active .avatar-expression-frame-35{opacity:1}
+.avatar-expression-frame-36-active .avatar-expression-frame-36{opacity:1}
+.avatar-expression-frame-37-active .avatar-expression-frame-37{opacity:1}
+.avatar-expression-frame-38-active .avatar-expression-frame-38{opacity:1}
+
+/* Единый стиль пунктов навигации; создание чата остаётся главным действием. */
+#sidebar :is(#work-server-open,#workshop-open,#chat-backup-open,#notes-open,#models-open){display:flex;align-items:center;gap:10px;width:100%;min-height:46px;margin:0 0 6px;padding:10px 12px;border:1px solid #ffffff16;border-radius:11px;background:#ffffff09;color:#deeeea;font-size:14px;line-height:1.25;text-align:left}
+#sidebar :is(#work-server-open,#workshop-open,#chat-backup-open,#notes-open,#models-open) .ui-icon{width:19px;height:19px;flex:none}
+#sidebar #work-server-open{min-height:58px}
+
+#work-indicator{pointer-events:auto;cursor:pointer;padding-right:22px}
+#work-indicator::after{content:"";position:absolute;right:9px;top:50%;width:5px;height:5px;border-top:1.5px solid currentColor;border-right:1.5px solid currentColor;transform:translateY(-50%) rotate(45deg)}
+#work-indicator:focus-visible,#work-progress-close:focus-visible{outline:2px solid #a1f2dc;outline-offset:3px}
+#work-progress{width:min(430px,calc(100vw - 28px));max-height:78vh;max-height:78dvh;overflow:auto;box-sizing:border-box;border:1px solid #537369;border-radius:24px;padding:18px;color:#edf6f5;background:linear-gradient(150deg,#213438,#151e2a 65%);box-shadow:0 24px 80px #03090bbb}
+#work-progress::backdrop{background:#070c14a8}
+#work-progress header{display:flex;align-items:center;justify-content:space-between;gap:12px;position:static;padding:0;background:none;border:0;box-shadow:none}
+#work-progress h2{font-size:20px;margin:0}
+#work-progress-close{width:44px;height:44px;border-radius:12px;border:1px solid #54706b;color:#edf6f5;background:#293c42;font-size:22px}
+#work-progress p{margin:8px 0;line-height:1.45;color:#bdd0d3;overflow-wrap:anywhere}
+#work-progress-status{font-weight:650}
+#work-progress h3{font-size:14px;margin:18px 0 6px;color:#b9eadf}
+#work-progress ul,#work-progress ol{list-style:none;margin:0;padding:0}
+#work-progress li{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid #53697170;font-size:14px;line-height:1.35;overflow-wrap:anywhere}
+#work-progress li small{color:#bcccd0;text-align:right;flex-shrink:0}
+#work-progress li[data-state=inProgress] small,#work-progress li[data-state=active] small{color:#9ef0d6}
+#work-progress li[data-state=failed] small,#work-progress li[data-state=ended] small{color:#ffc3b7}
+.eva-compact #work-indicator{padding-right:22px}
+#header-toggle{left:max(10px,env(safe-area-inset-left));right:auto}
+body:not(.eva-compact) #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
+#sidebar{width:min(86vw,360px)}
+#chat-tools{margin:8px 0;color:#c3d5d8}
+#chat-tools summary{cursor:pointer;padding:12px 7px;font-size:14px}
+#sidebar #top-panel:not([hidden]){display:grid;position:static;width:auto;height:auto;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;background:transparent;box-shadow:none;border:0;padding:2px}
+#sidebar #top-panel #menu{display:none}
+#threads .thread-row .thread{display:flex;align-items:flex-start;justify-content:center;flex-direction:column;gap:2px;min-height:46px;padding:4px 9px}
+#threads .thread-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+#threads .thread-row .thread[aria-current=page]{background:#8edac41c;box-shadow:inset 3px 0 #8edac4}
+.chat-lamp{display:inline-flex;align-items:center;gap:6px;color:#95e5c9;font-size:12px;line-height:1.2}
+.chat-lamp:before{content:'';width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 5px #89e6bd66}
+.chat-lamp.waiting{color:#ffd18c}
+.chat-lamp[hidden]{display:none}
+#work-server-open .chat-lamp,#workshop-open .chat-lamp{margin-left:auto}
+#threads .thread-row .thread-delete{width:44px;height:44px;flex-basis:44px;background:transparent;color:#a6b9bf}
+
+#eva-mini-listening,#eva-mini-text{display:none}
+body.eva-compact #work-indicator{display:none!important}
+body.eva-compact #eva-mini-listening{display:block;position:absolute;z-index:40;bottom:11%;left:10%;width:80%;text-align:center;color:white;background:#18232bd9;border-radius:12px;font-size:12px;pointer-events:none}
+body.eva-compact #eva-mini-text{display:block;position:absolute;z-index:40;top:14%;left:12%;padding:3px 6px;border-radius:12px;font-size:12px}
+body.eva-compact #eva-voice-next:not([hidden]){bottom:26%;width:36px;height:36px}
