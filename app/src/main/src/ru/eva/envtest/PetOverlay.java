@@ -1075,7 +1075,10 @@ final class PetOverlay {
         if(appScene!=null)PetAppProfiles.seen(appScene.app);
         appPolicy=appScene==null?PetAppProfiles.AUTO:PetAppProfiles.get(context,appScene.app);
         if(!touched){
-            boolean hidden=appPolicy==PetAppProfiles.HIDE;
+            boolean editing=editingInApp();
+            int[] keyboardTarget=editing?appScene.keyboardParking(contentOriginX,contentOriginY,worldWidth,worldHeight,
+                bodyWidth,bodyHeight,x,windowEdges):null;
+            boolean hidden=appPolicy==PetAppProfiles.HIDE||editing&&keyboardTarget==null;
             if(hidden!=appHidden){
                 appHidden=hidden;
                 sprite.setVisibility(hidden?View.INVISIBLE:View.VISIBLE);
@@ -1095,12 +1098,14 @@ final class PetOverlay {
                         if(android.graphics.Rect.intersects(occupied,button)){lastDodgeInput=input;dodgeUntil=now+2700;break;}
                     }
                 }
-                boolean rest=appScene!=null&&(watch||editingInApp()||appPolicy==PetAppProfiles.QUIET||
+                boolean rest=appScene!=null&&(watch||editing||appPolicy==PetAppProfiles.QUIET||
                     !appScene.home&&now<dodgeUntil);
                 if(rest){
-                    int[] target=appScene.parking(contentOriginX,contentOriginY,worldWidth,worldHeight,
+                    int[] target=editing?keyboardTarget:appScene.parking(contentOriginX,contentOriginY,worldWidth,worldHeight,
                         bodyWidth,bodyHeight,watch,x);
-                    if(!parked||(!appParkingMove&&(Math.abs(x-target[0])>dp(4)||Math.abs(y-target[1])>dp(4)))
+                    boolean settledOnChair=editing&&parked&&!appParkingMove&&chair.deployed&&x==target[0];
+                    if(settledOnChair&&y!=target[1])position(x,target[1]);
+                    else if(!parked||(!appParkingMove&&(Math.abs(x-target[0])>dp(4)||Math.abs(y-target[1])>(editing?0:dp(4))))
                         ||appParkingMove&&(target[0]!=targetX||target[1]!=targetY))parkApp(target);
                     else if(!appParkingMove&&afterPacking==null){
                         if(appNeedsSeat()!=(mode==PetMotion.SEATED_PEEK)){

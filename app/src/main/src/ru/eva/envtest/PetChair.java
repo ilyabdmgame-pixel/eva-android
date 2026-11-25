@@ -3,6 +3,8 @@ package ru.eva.envtest;
 /** One reversible timeline: unfold first, put weight on the seat second. */
 final class PetChair {
     static final int OPEN_DURATION=820,CLOSE_DURATION=680;
+    // Lower edge and horizontal span of both feet on the 402 × 540 chair sprite.
+    static final float FLOOR_CONTACT=529f/540f, FOOT_INSET=105f/402f;
     private static final float FOLDED=.42f;
     private long began;
     private float start;

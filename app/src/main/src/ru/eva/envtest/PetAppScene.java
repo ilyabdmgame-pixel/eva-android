@@ -101,16 +101,45 @@ final class PetAppScene {
         }finally{while(!queue.isEmpty())queue.removeFirst().recycle();}
     }
 
-    /** Prefer a clear corner near the bottom, keeping the actual composer and keyboard usable. */
+    int[] keyboardParking(int ox,int oy,int width,int height,int w,int h,int currentX,
+        List<PetWindows.Edge> edges){
+        int[] best=null;
+        boolean hasImeEdge=false;
+        for(PetWindows.Edge edge:edges){
+            if(edge.kind!=PetWindows.IME)continue;
+            hasImeEdge=true;
+            int[] candidate=keyboardCorner(ox,oy,width,height,w,h,currentX,edge.l,edge.t,edge.r);
+            if(candidate!=null&&(best==null||candidate[2]<best[2]))best=candidate;
+        }
+        if(hasImeEdge||keyboard.isEmpty())return best;
+        return keyboardCorner(ox,oy,width,height,w,h,currentX,keyboard.left,keyboard.top,keyboard.right);
+    }
+
+    private int[] keyboardCorner(int ox,int oy,int width,int height,int w,int h,int currentX,
+        int left,int top,int right){
+        int y=PetAppPolicy.keyboardChairY(height,h,top-oy);
+        if(y<0)return null;
+        int[] corners=PetAppPolicy.keyboardChairSpan(width,w,left-ox,right-ox);
+        if(corners==null)return null;
+        int[] best=null;
+        for(int x:corners){
+            Rect body=new Rect(ox+x+w/5,oy+y,ox+x+w-w/5,top);
+            int overlaps=0;
+            for(Rect button:buttons)if(Rect.intersects(body,button))overlaps++;
+            int score=PetAppPolicy.cost(height-h,y,x,currentX,height,overlaps,
+                Rect.intersects(body,editor),false,false);
+            if(best==null||score<best[2])best=new int[]{x,y,score};
+        }
+        return best;
+    }
+
+    /** Prefer a clear corner near the bottom when resting away from the keyboard. */
     int[] parking(int ox,int oy,int width,int height,int w,int h,boolean watch,int currentX){
         int bestScore=Integer.MAX_VALUE,bestX=0,bestY=0;
-        if(watch||!keyboard.isEmpty()){
+        if(watch){
             for(int cx:new int[]{0,Math.max(0,width-w)}){
                 int left=ox+cx+w/5,right=ox+cx+w-w/5;
-                boolean aboveIme=!keyboard.isEmpty()&&left<keyboard.right&&right>keyboard.left&&keyboard.bottom>oy;
-                int cy=PetAppPolicy.imeChairY(height,h,aboveIme,keyboard.top-oy);
-                if(!keyboard.isEmpty()&&!editor.isEmpty()&&left<editor.right&&right>editor.left)
-                    cy=PetAppPolicy.clearEditorY(cy,h,editor.top-oy,editor.bottom-oy);
+                int cy=Math.max(0,height-h);
                 Rect visible=new Rect(left,oy+cy,right,oy+cy+h);
                 int overlaps=0;
                 for(Rect button:buttons)if(Rect.intersects(visible,button))overlaps++;
@@ -140,7 +169,7 @@ final class PetAppScene {
                 int overlaps=0;
                 for(Rect button:buttons)if(Rect.intersects(area,button))overlaps++;
                 int score=PetAppPolicy.cost(low,cy,cx,currentX,height,overlaps,Rect.intersects(area,editor),
-                    Rect.intersects(area,keyboard),watch&&!player.isEmpty()&&area.centerY()<player.centerY());
+                    false,false);
                 if(score<bestScore){bestScore=score;bestX=cx;bestY=cy;}
             }
         }

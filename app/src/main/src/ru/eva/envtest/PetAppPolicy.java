@@ -2,14 +2,16 @@ package ru.eva.envtest;
 
 /** Scores use screen geometry to choose a parking spot. */
 final class PetAppPolicy {
-    static int clearEditorY(int y,int spriteHeight,int editorTop,int editorBottom){
-        if(y>=editorBottom||y+spriteHeight<=editorTop)return y;
-        return Math.max(0,editorTop-spriteHeight);
+    static int keyboardChairY(int height,int spriteHeight,int edgeTop){
+        int y=edgeTop-Math.round(spriteHeight*PetChair.FLOOR_CONTACT);
+        return y>=0&&y+spriteHeight<=height?y:-1;
     }
 
-    static int imeChairY(int height,int spriteHeight,boolean aboveIme,int imeTop){
-        int bottom=Math.max(0,height-spriteHeight);
-        return aboveIme?Math.max(0,Math.min(bottom,imeTop-spriteHeight)):bottom;
+    static int[] keyboardChairSpan(int width,int spriteWidth,int left,int right){
+        int inset=Math.round(spriteWidth*PetChair.FOOT_INSET);
+        int first=Math.max(0,left-inset);
+        int last=Math.min(width-spriteWidth,right-spriteWidth+inset);
+        return first<=last?new int[]{first,last}:null;
     }
 
     static int cost(int low,int y,int x,int previousX,int height,int buttonCount,
