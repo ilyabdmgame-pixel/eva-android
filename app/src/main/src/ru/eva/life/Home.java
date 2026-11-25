@@ -21,6 +21,7 @@ public final class Home extends Activity {
     private final Map<String,ResolveInfo> entries=new HashMap<>();
     private String catalog="[]";
     private WebView web;
+    private boolean homeActive;
     private WeatherWidget weather;
     private TownChat chat;
     void townEvent(JSONObject data){if(web!=null)web.evaluateJavascript("window.townEvent?.("+data.toString()+")",null);}
@@ -33,8 +34,12 @@ public final class Home extends Activity {
     private final android.util.LruCache<String,byte[]> icons=new android.util.LruCache<String,byte[]>(1024*1024){
         protected int sizeOf(String k,byte[] b){return b.length;}
     };
+    private final java.util.concurrent.atomic.AtomicBoolean catalogRefreshing=new java.util.concurrent.atomic.AtomicBoolean();
+
     private void refresh(){
+        if(worker.isShutdown()||!catalogRefreshing.compareAndSet(false,true))return;
         worker.execute(()->{
+          try{
             PackageManager pm=getPackageManager();
             List<ResolveInfo> apps=pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),0);
             apps.sort(new ResolveInfo.DisplayNameComparator(pm));
@@ -46,8 +51,14 @@ public final class Home extends Activity {
                 if(fresh.put(key,app)!=null)continue;
                 try{json.put(new JSONObject().put("key",key).put("name",app.loadLabel(pm).toString()));}catch(JSONException ignored){}
             }
-            synchronized(entries){entries.clear();entries.putAll(fresh);catalog=json.toString();}
-            runOnUiThread(()->{if(web!=null)web.evaluateJavascript("window.refreshApps?.()",null);});
+            final String next=json.toString();
+            boolean changed;
+            synchronized(entries){
+                changed=!next.equals(catalog);
+                entries.clear();entries.putAll(fresh);catalog=next;
+            }
+            if(changed)runOnUiThread(()->{if(web!=null)web.evaluateJavascript("window.refreshApps?.()",null);});
+          }finally{catalogRefreshing.set(false);}
         });
     }
     private ResolveInfo find(String key){synchronized(entries){return entries.get(key);}}
@@ -148,6 +159,9 @@ public final class Home extends Activity {
         web.setWebViewClient(new WebViewClient(){
             public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){return serve(r.getUrl());}
             public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}
+            @Override public void onPageFinished(WebView v,String url){
+                v.evaluateJavascript("window.refreshApps?.(); window.setHomeActive?.("+homeActive+")",null);
+            }
         });
         web.addJavascriptInterface(new Bridge(),"Desk");web.loadUrl("https://"+HOST+"/index.html");
     }
@@ -158,9 +172,9 @@ public final class Home extends Activity {
         if(request==WeatherWidget.BIND||request==WeatherWidget.CONFIGURE)weather.result(request,code);
     }
     protected void onNewIntent(Intent i){super.onNewIntent(i);if(web!=null)web.evaluateJavascript("window.closeSheet?.()",null);}
-    protected void onResume(){super.onResume();chat.resume();web.onResume();web.evaluateJavascript("window.setHomeActive?.(true)",null);refresh();}
+    protected void onResume(){super.onResume();homeActive=true;chat.resume();web.onResume();web.evaluateJavascript("window.setHomeActive?.(true)",null);refresh();}
     protected void onPostResume(){super.onPostResume();if(LifeState.enabled(this))startLife();}
-    protected void onPause(){chat.pause();web.evaluateJavascript("window.setHomeActive?.(false)",null);web.onPause();super.onPause();}
+    protected void onPause(){homeActive=false;chat.pause();web.evaluateJavascript("window.setHomeActive?.(false)",null);web.onPause();super.onPause();}
     public void onBackPressed(){web.evaluateJavascript("window.backLayout?.() || window.closeTown?.() || window.closeSheet?.()",null);}
     protected void onDestroy(){chat.destroy();worker.shutdownNow();web.destroy();web=null;super.onDestroy();}
 }

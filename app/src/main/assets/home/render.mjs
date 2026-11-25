@@ -239,6 +239,14 @@ export function createScene(canvas) {
     try{draw();}finally{isStructure=previous;}
   }
   let view, batches=new Map(), sceneryBuffers=[], wavePhase=0;
+  let uploadBuffer=new Float32Array(4096);
+  function uploadDynamic(vertices){
+    if(uploadBuffer.length<vertices.length)uploadBuffer=new Float32Array(
+      Math.max(vertices.length,uploadBuffer.length*2));
+    uploadBuffer.set(vertices);
+    gl.bufferData(gl.ARRAY_BUFFER,uploadBuffer,gl.STREAM_DRAW,0,vertices.length);
+  }
+
   const resident=new Map();
   function scenery(plots,draw){
     const keep=new Set(plots.map(p=>p.cacheKey??p.key));
@@ -511,7 +519,7 @@ export function createScene(canvas) {
         const key=shell?batch.slice(6):leaves?batch.slice(7):batch;
         gl.uniform1i(uniforms.structure,shell?1:leaves?2:0);
         material(key);
-        gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.DYNAMIC_DRAW);
+        uploadDynamic(vertices);
         gl.drawArrays(gl.TRIANGLES,0,vertices.length/vertexSize);
       }
     }
@@ -544,7 +552,7 @@ export function createScene(canvas) {
       const contact=batch==='shadow';
       gl.uniform1i(uniforms.shadow,contact?1:2);
       if(!contact)gl.bindTexture(gl.TEXTURE_2D,textures.get(batch.slice(5)).t);
-      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.DYNAMIC_DRAW);
+      uploadDynamic(vertices);
       gl.drawArrays(gl.TRIANGLES,0,vertices.length/vertexSize);
     }
     const contact=batches.get('shadow');

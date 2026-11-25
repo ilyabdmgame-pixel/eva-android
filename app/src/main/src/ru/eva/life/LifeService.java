@@ -7,12 +7,15 @@ import android.os.*;
 public final class LifeService extends Service {
     private static final String CHANNEL = "eva-life";
     private static final String STOP = "ru.eva.life.STOP";
-    private final Handler timer = new Handler(Looper.getMainLooper());
+    private HandlerThread worker;
+    private Handler timer;
+    private volatile boolean running;
     private final Runnable activity = new Runnable() {
         public void run() {
+            if(!running)return;
             long now = System.currentTimeMillis();
             LifeState.heartbeat(LifeService.this,now);
-            timer.postDelayed(this,Math.max(1000,LifeState.nextDeadline(now)-now));
+            if(running)timer.postDelayed(this,Math.max(1000,LifeState.nextDeadline(now)-now));
         }
     };
     @Override public int onStartCommand(Intent intent,int flags,int startId) {
@@ -23,6 +26,7 @@ public final class LifeService extends Service {
             return START_NOT_STICKY;
         }
         if (!LifeState.enabled(this)) {stopSelf();return START_NOT_STICKY;}
+        if(running)return START_STICKY;
         NotificationManager notifications = getSystemService(NotificationManager.class);
         notifications.createNotificationChannel(new NotificationChannel(CHANNEL,"Жизнь Евы",NotificationManager.IMPORTANCE_LOW));
         PendingIntent open = PendingIntent.getActivity(this,0,new Intent(this,Home.class),PendingIntent.FLAG_IMMUTABLE);
@@ -33,10 +37,18 @@ public final class LifeService extends Service {
                 .setSmallIcon(android.R.drawable.ic_menu_today).setContentIntent(open).setOngoing(true)
                 .addAction(new Notification.Action.Builder(null,"Остановить фон",stop).build()).build();
         startForeground(19,notification);
-        timer.removeCallbacks(activity);
-        activity.run();
+        worker=new HandlerThread("Eva life",android.os.Process.THREAD_PRIORITY_BACKGROUND);
+        worker.start();
+        timer=new Handler(worker.getLooper());
+        running=true;
+        timer.post(activity);
         return START_STICKY;
     }
-    @Override public void onDestroy(){timer.removeCallbacks(activity);super.onDestroy();}
+    @Override public void onDestroy(){
+        running=false;
+        if(timer!=null)timer.removeCallbacks(activity);
+        if(worker!=null)worker.quitSafely();
+        super.onDestroy();
+    }
     @Override public IBinder onBind(Intent intent){return null;}
 }

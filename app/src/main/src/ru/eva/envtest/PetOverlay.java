@@ -115,7 +115,7 @@ final class PetOverlay {
     private final Runnable appCheck=this::refreshAppScene;
     private PetAppScene appScene;
     private int appPolicy=PetAppProfiles.AUTO,appVisits;
-    private boolean parked,appHidden,appParkingMove;
+    private boolean parked,appHidden,appParkingMove,imePassthrough,imeInset;
     private long nextAppGesture,dodgeUntil,lastDodgeInput;
 
     private List<PetWindows.Edge> windowEdges=Collections.emptyList();
@@ -261,7 +261,7 @@ final class PetOverlay {
             remove();
             return;
         }
-        if(sprite!=null){configurationChanged();return;}
+        if(sprite!=null)return;
         if(frames==null){prepareFrames();return;}
         motionEnabled=Settings.Global.getFloat(context.getContentResolver(),Settings.Global.ANIMATOR_DURATION_SCALE,1f)>0;
         try {
@@ -300,11 +300,16 @@ final class PetOverlay {
             pose.angle=0;
             pose.mirrored=false;
             ladder.attach();
+            sprite.setOnApplyWindowInsetsListener((view,insets)->{
+                if(Build.VERSION.SDK_INT>=30){
+                    imeInset=insets.isVisible(android.view.WindowInsets.Type.ime());
+                    updateImeInteraction(imeInset||EvaAccessibility.petImeVisible());
+                }
+                return insets;
+            });
             windows.addView(sprite,layout);
-            if(anchorsEnabled(context)){
-                EvaAccessibility.setPetWindowsListener(this::windowsChanged);
-                handler.postDelayed(appCheck,350);
-            }
+            EvaAccessibility.setPetWindowsListener(this::windowsChanged);
+            if(anchorsEnabled(context))handler.postDelayed(appCheck,350);
             if(motionEnabled&&gravitySensor!=null){
                 gravity.resetDirection();
                 ignoreGravityUntil=SystemClock.uptimeMillis()+550;
@@ -592,7 +597,7 @@ final class PetOverlay {
         resetChair();
         hideSupportMap();
         handler.removeCallbacks(appCheck);
-        parked=appHidden=appParkingMove=false;
+        parked=appHidden=appParkingMove=imePassthrough=imeInset=false;
         dodgeUntil=0;
         appScene=null;
         EvaAccessibility.setPetWindowsListener(null);
@@ -679,7 +684,7 @@ final class PetOverlay {
         chair.set(false,now,true);
         if(phase<=0)return false;
         afterPacking=resume;
-        handler.postDelayed(finishPacking,(long)Math.ceil(phase*PetChair.DURATION));
+        handler.postDelayed(finishPacking,(long)Math.ceil(phase*PetChair.CLOSE_DURATION));
         sprite.invalidate();
         return true;
     }
@@ -723,7 +728,10 @@ final class PetOverlay {
 
     private void onFrame(long frameTimeNanos){
         if(sprite==null||touched)return;
-        if(lastFrameNanos!=0&&frameTimeNanos-lastFrameNanos<15_000_000){
+        boolean resting=mode==PetMotion.SEATED_PEEK||mode==PetMotion.IDLE_WINK||
+            mode==PetMotion.IDLE_YAWN||mode==PetMotion.LOOK_AROUND;
+        long interval=resting?31_000_000:15_000_000;
+        if(lastFrameNanos!=0&&frameTimeNanos-lastFrameNanos<interval){
             choreographer.postFrameCallback(tick);
             return;
         }
@@ -808,7 +816,7 @@ final class PetOverlay {
             position(crossStart,PetPhysics.fallY(crossStartY,targetY,progress));
         } else if(mode==PetMotion.PERCH_STAND||mode==PetMotion.PERCH_SIT){
             boolean sitting=mode==PetMotion.PERCH_SIT;
-            float contact=PetMotion.riseContact(sitting?1-progress:progress);
+            float contact=PetMotion.riseContact(PetMotion.standingAmount(progress,sitting));
             pose.shiftY=(530f-artwork().area.bottom)/540f*contact;
             position(targetX,Math.round(crossStartY+(targetY-crossStartY)*(sitting?1-contact:contact)));
         } else if(mode==PetMotion.ROPE_DOWN&&ropeDescent!=null){
@@ -1110,7 +1118,7 @@ final class PetOverlay {
                 }
             }
         }
-        if(sprite!=null)handler.postDelayed(appCheck,1800);
+        if(sprite!=null)handler.postDelayed(appCheck,parked?2400:4400);
     }
 
     private void interruptAppMotion(){
@@ -1291,6 +1299,25 @@ final class PetOverlay {
         handler.post(windowRefresh);
     }
 
+    private void updateImeInteraction(boolean ime){
+        if(sprite==null||layout==null||imePassthrough==ime)return;
+        imePassthrough=ime;
+        if(ime){
+            layout.flags|=WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+            float maximum=.8f;
+            if(Build.VERSION.SDK_INT>=31){
+                android.hardware.input.InputManager input=context.getSystemService(android.hardware.input.InputManager.class);
+                if(input!=null)maximum=input.getMaximumObscuringOpacityForTouch();
+            }
+            layout.alpha=Math.min(.76f,maximum);
+            hideSupportMap();
+        }else{
+            layout.flags&=~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+            layout.alpha=1;
+        }
+        if(sprite.isAttachedToWindow())position(x,y,true);
+    }
+
     private void refreshWindowTerrain(){
         if(sprite==null||sprite.getWidth()==0||layout==null)return;
         if(!originReady){
@@ -1299,16 +1326,27 @@ final class PetOverlay {
             contentOriginY=origin[1]-y;
             originReady=true;
         }
-        List<PetWindows.Edge> edges=anchorsEnabled(context)?EvaAccessibility.petWindows(
+        List<PetWindows.Edge> exposed=EvaAccessibility.petWindows(
             Display.DEFAULT_DISPLAY,contentOriginX,contentOriginY,worldWidth,worldHeight,
-            Math.max(2,Math.round(bodyWidth*.2f))):Collections.emptyList();
+            Math.max(2,Math.round(bodyWidth*.2f)));
+        boolean ime=imeInset||EvaAccessibility.petImeVisible();
+        boolean keyboardChanged=ime!=imePassthrough;
+        updateImeInteraction(ime);
+        if(sprite==null)return;
+        boolean anchors=anchorsEnabled(context);
+        List<PetWindows.Edge> edges=anchors?exposed:Collections.emptyList();
+        boolean terrainChanged=!edges.equals(windowEdges);
+        if(anchors&&(keyboardChanged||terrainChanged)){
+            handler.removeCallbacks(appCheck);
+            handler.postDelayed(appCheck,160);
+        }
         if(android.util.Log.isLoggable("EvaPetBounds",android.util.Log.DEBUG)){
             android.util.Log.d("EvaPetBounds","rot="+rotation+" viewport="+contentOriginX+","+contentOriginY+
                 " "+worldWidth+"x"+worldHeight+" down="+physicalDown+" edges="+edges.size()+
                 " firstTop="+(edges.isEmpty()?-1:edges.get(0).t)+" foot="+
                 (contentOriginY+y+Math.round(layout.height*PetHomeMap.SOLE_CONTACT)));
         }
-        if(edges.equals(windowEdges))return;
+        if(!terrainChanged)return;
         windowEdges=edges;
         List<PetHomeMap.Box> previousTerrain=windowTerrain;
         windowTerrain=PetWindowGround.local(edges,contentOriginX,contentOriginY);

@@ -33,6 +33,11 @@ public final class EvaAccessibility extends AccessibilityService {
   private List<PetWindows.Edge> cachedEdges=Collections.emptyList();
   private int cachedDisplay,cachedLeft,cachedTop,cachedWidth,cachedHeight,cachedMinWidth;
   private long validUntil,lastPanelRead,lastImeRead;
+  private boolean visibleIme;
+
+  static boolean petImeVisible(){
+    return instance!=null&&instance.visibleIme;
+  }
   private int panelWindow=-1;
   private Rect panelHost;
   private PetWindows.Edge cachedPanel;
@@ -141,6 +146,7 @@ public final class EvaAccessibility extends AccessibilityService {
         screenTop==service.cachedTop&&width==service.cachedWidth&&height==service.cachedHeight&&
         minWidth==service.cachedMinWidth)return service.cachedEdges;
     service.unfocusedSystemWindows.clear();
+    service.visibleIme=false;
     Rect viewport=new Rect(screenLeft,screenTop,screenLeft+width,screenTop+height);
     List<List<PetWindows.Edge>> layers=new ArrayList<>();
     try{
@@ -154,7 +160,7 @@ public final class EvaAccessibility extends AccessibilityService {
         finally{for(int i=0;i<displays.size();i++)recycleWindows(displays.valueAt(i));}
       }
       else{service.clearPanel();service.clearIme();}
-    }catch(SecurityException|IllegalStateException unavailable){layers.clear();service.clearPanel();service.clearIme();}
+    }catch(SecurityException|IllegalStateException unavailable){layers.clear();service.visibleIme=false;service.clearPanel();service.clearIme();}
     service.cachedEdges=PetWindows.exposed(layers,screenLeft,screenTop,width,height,Math.max(1,minWidth));
     service.cachedDisplay=displayId;service.cachedLeft=screenLeft;service.cachedTop=screenTop;
     service.cachedWidth=width;service.cachedHeight=height;service.cachedMinWidth=minWidth;
@@ -192,6 +198,7 @@ public final class EvaAccessibility extends AccessibilityService {
         if(!rect.isEmpty())parts.add(new PetWindows.Edge(id,kind,rect.left,rect.top,rect.right,rect.bottom));
       }
       if(parts.isEmpty())continue;
+      if(kind==PetWindows.IME)visibleIme=true;
       if(kind==PetWindows.BLOCKER)blocksApp=true;
       if(!blocksApp&&!sawFullIme&&parts.size()==1&&PetWindows.fullLandscapeIme(parts.get(0),
           viewport.left,viewport.top,viewport.right,viewport.bottom)){

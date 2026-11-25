@@ -164,7 +164,12 @@ final class PetMotion {
         return new Position(Math.max(0,Math.min(newX,newMaxX)),Math.max(0,Math.min(newY,newMaxY)));
     }
 
-    static float riseContact(float progress){return ease((progress-.12f)/.50f);}
+    static float standingAmount(float progress,boolean sitting){
+        float amount=ease(sitting?(progress-.08f)/.82f:(progress-.04f)/.86f);
+        return sitting?1-amount:amount;
+    }
+
+    static float riseContact(float progress){return ease((progress-.08f)/.80f);}
 
     // One full cycle of the painted rig travels 104 pixels on its 402-pixel canvas.
     static int crawlCycles(float distance,int bodyWidth){
@@ -203,8 +208,8 @@ final class PetMotion {
             case IDLE_BOOK: return 4900;
             case IDLE_TEA: return 3900;
             case PERCH_LOOK: return 1800;
-            case PERCH_STAND: return 1450;
-            case PERCH_SIT: return 1450;
+            case PERCH_STAND: return 790;
+            case PERCH_SIT: return 930;
             case ROPE_DOWN: return 1800;
             case ROPE_SETTLE: return LOAD_HOLD_MS+RECOVER_MS;
             case MANTLE_DOWN: return 1700;
@@ -334,7 +339,7 @@ final class PetMotion {
             case PERCH_STAND:
             case PERCH_SIT:
                 p.mirrored=left;
-                p.frame=RISE_FRAME+Math.round(23*ease(mode==PERCH_SIT?1-t:t));
+                p.frame=RISE_FRAME+Math.round((GENERATED_FRAMES-1)*standingAmount(t,mode==PERCH_SIT));
                 break;
             case IDLE_BOOK:
             case IDLE_TEA:

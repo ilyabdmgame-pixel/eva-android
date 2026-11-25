@@ -1,3 +1,4 @@
+import {seatMotion,seatSample} from './seat-motion.mjs';
 import {reverseCells} from './reverse-cells.mjs';
 import {nextStation,jobPose} from './workstations.mjs';
 import {actionAnchors} from './action-anchors.mjs';
@@ -65,7 +66,7 @@ function settleResidents(at,resuming=false){
  }
 }
 settleResidents(Date.now());
-let nextAmbientFrame=0,lastPaint=-Infinity,wavesVisible=false,sceneryFading=false,paintCount=0,scheduled=null;
+let nextAmbientFrame=0,wavesVisible=false,sceneryFading=false,paintCount=0,scheduled=null;
 let nextPastime=0,automaticWalk=false;
 saved.pastimeCursor??={};
 let autoFollow=localStorage.getItem('followSchedule')!=='no';
@@ -76,7 +77,7 @@ let climate=climateAt(new Date(),weatherOptions),lastAir=0,lastStepIndex=0,focus
 
 const doors=doorsFor(districts).map(door=>({...door,open:0}));
 const openDoors=doors.map(door=>({...door,open:1}));
-let active=true,move=[],onArrival=null,direction='down-right',seated=null,carrying=null,selectTarget=null,dropAim=null;
+let nativeActive=true,active=!document.hidden,move=[],onArrival=null,direction='down-right',seated=null,carrying=null,selectTarget=null,dropAim=null;
 let reply=null,timeline={},previousSlot=-1,latestClock=0;
 let toyAim=null,flight=null,gesture=null,walkFacing=direction,walkPhase=0,walkSpeed=0,lastFloorQuip=0,floorQuip=0;
 let restMotion=null,releaseMotion=null;
@@ -198,9 +199,10 @@ function useNearby(id,action){
  if(citizens.some(n=>n.sleeping&&n.bed===id))return 'Кровать занята';
  perform(o,action,false,null,true);return 'Выбрано действие «'+action+'», предмет «'+o.name+'»';
 }
-let nextWorldSync=0;
+let nextWorldSync=0,lastSnapshot='';
 function syncWorld(){
- Desk.worldSnapshot?.(JSON.stringify(worldSnapshot()));
+ const snapshot=JSON.stringify(worldSnapshot());
+ if(snapshot!==lastSnapshot){Desk.worldSnapshot?.(snapshot);lastSnapshot=snapshot}
  const raw=Desk.worldTake?.();
  if(raw){try{const cmd=JSON.parse(raw);Desk.worldResult?.('Выбрано: '+cmd.use);const result=useNearby(cmd.id,cmd.use);if(!result.startsWith('Выбрано действие'))Desk.worldResult?.(result)}catch{Desk.worldResult?.('Команда недействительна')}}
 }
@@ -223,21 +225,18 @@ function toyBlocked(point,radius){
 }
 function pathTo(target,actor=eva){return localPath(actor,target,blocks)||roundRoute(actor,route(actor,target,blocks),blocks)}
 const ease=x=>x*x*(3-2*x);
-function restAmount(t){
- if(!restMotion)return 0;
- const {start,from,to}=restMotion;
- const x=reduceMotion?1:Math.min(1,Math.max(0,(t-start)/((restMotion.seat.sleep?850:520)*Math.max(.02,Math.abs(to-from)))));
- return from+(to-from)*ease(x);
-}
 function takeSeat(seat,at){
- restMotion={seat,stand:{...eva},at,from:0,to:1,start:now(),facing:direction};
+ restMotion=seatMotion(seat,{u:eva.u,v:eva.v},at,direction,now());
  seated=seat;eva=at;
 }
 function leaveSeat(){
  if(!seated)return;
- const exit=seated.stand;
- if(restMotion){const from=restAmount(now());Object.assign(restMotion,{from,to:0,start:now(),stand:{u:exit[0],v:exit[1]}});}
- eva={u:exit[0],v:exit[1]};seated=null;
+ const exit={u:seated.stand[0],v:seated.stand[1]};
+ if(restMotion){
+   const time=now(),sample=seatSample(restMotion,time,reduceMotion);
+   restMotion=seatMotion(seated,sample,exit,restMotion.facing,time,sample.amount,0);
+ }
+ eva=exit;seated=null;
 }
 function walkTo(u,v,done,automatic=false){
  automaticWalk=automatic;
@@ -734,7 +733,7 @@ canvas.addEventListener('contextmenu',event=>{
 
 function paint(t=now()){
  view=renderer.prepare(center);
- lastPaint=t;paintCount++;
+ paintCount++;
  sceneryFading=false;
  const terrain=terrainState(climate);
  const style=terrain.season+'-'+(terrain.snow?'snow':terrain.wet?'wet':'dry');
@@ -954,7 +953,8 @@ function paint(t=now()){
    const p={u:bed.u+bed.w*.48,v:bed.v+.29,z:.76};
    renderer.sleepingSprite(person.id,p,'sleep-'+person.key);
  }
- const rest=restMotion,amount=restAmount(t),seat=rest?.seat;
+ const rest=restMotion,sample=rest&&seatSample(rest,t,reduceMotion);
+ const seat=rest?.seat,amount=sample?.amount??0;
  const target=seat?(seat.sleep?'sleep':'sit'):gesture?.motion||releaseMotion?.motion;
  const use=gesture?gestureAmount(gesture,t):releaseMotion?releaseMotion.from*(1-ease(Math.min(1,Math.max(0,(t-releaseMotion.start)/190)))):0;
  const pose=target?actionPose(rest?.facing||releaseMotion?.facing||direction,target,seat?amount:use):
@@ -962,7 +962,7 @@ function paint(t=now()){
  const ready=renderer.artReady(pose.key),shown=ready?pose:{...standingPose('eva',direction),height:1.62};
  const at=position3D(eva),opt={...shown};
  if(seat){
-   at.u=rest.stand.u+(rest.at.u-rest.stand.u)*amount;at.v=rest.stand.v+(rest.at.v-rest.stand.v)*amount;
+   at.u=sample.u;at.v=sample.v;
    at.z=surfaceAt(at.u,at.v)+seat.height*amount;
    if(ready){
      const anchor=actionAnchors[pose.key][seat.sleep?'pillow':'seat'];
@@ -1139,15 +1139,15 @@ function wake(){
  nextFrame=requestAnimationFrame(loop);
 }
 function loop(t){
- $('speech').hidden=Boolean(sheet);
  nextFrame=0;
  if(!active||document.hidden)return;
  const elapsed=Math.max(.001,(t-last)/1000),dt=Math.min(.085,elapsed);last=t;
  if(releaseMotion&&t-releaseMotion.start>=190)releaseMotion=null;
- if(restMotion&&!seated&&restAmount(t)<=0)restMotion=null;
- const settling=restMotion&&Math.abs(restAmount(t)-restMotion.to)>.00001;
+ let rest=restMotion&&seatSample(restMotion,t,reduceMotion);
+ if(rest?.complete&&!seated){restMotion=null;rest=null;dirty=true}
+ const settling=rest&&!rest.complete;
  if(settling||releaseMotion)dirty=true;
- if(t>=nextWorldSync){syncWorld();nextWorldSync=t+2000}
+ if(!sheet&&t>=nextWorldSync){syncWorld();nextWorldSync=t+2200}
  if(t>latestClock){pullClock();latestClock=t+5000;}
  if(!sheet&&!layout){
    updateDoors(dt);advanceWalker(dt);advanceNPC(t,dt);if(!reduceMotion)townLife.tick(Math.min(.35,elapsed),[eva,...citizens.filter(p=>!p.sleeping)],raining(climate.weather));
@@ -1190,7 +1190,7 @@ function loop(t){
      }
    }
  }
- const u=eva.u-center.u,v=eva.v-center.v;
+ const focus=rest||eva,u=focus.u-center.u,v=focus.v-center.v;
  if(!layout&&Math.hypot(u,v)>.006){
    const ease=reduceMotion?1:1-Math.exp(-dt*7.8);
    center.u+=u*ease;center.v+=v*ease;dirty=true;
@@ -1206,36 +1206,53 @@ function loop(t){
  const precipitation=outdoors()&&['rain','storm','snow'].includes(climate.weather)&&!reduceMotion;
  const animated=!sheet&&(wavesVisible||streetMoving||working||precipitation);
  const ambientDue=animated&&t+1>=nextAmbientFrame;
- const paintScene=dirty||sceneryFading||gesture&&!sheet||ambientDue||!sheet&&!reduceMotion&&t-lastPaint>=190;
+ const moving=!sheet&&(move.length||flight||!layout&&Math.hypot(u,v)>.006||
+   citizens.some(p=>p.journey.length&&Math.abs(p.u-eva.u)+Math.abs(p.v-eva.v)<12));
+ const responsive=!sheet&&(releaseMotion||settling||sceneryFading||gesture||moving);
+ const paintScene=dirty||!sheet&&(sceneryFading||Boolean(gesture)||ambientDue);
  if(paintScene){
    paint(t);dirty=false;
-   if(ambientDue){
-     const interval=1000/30;
-     nextAmbientFrame=t+interval-(Math.max(0,t-nextAmbientFrame)%interval);
-   }
+   nextAmbientFrame=t+1000/30;
  }
-
- if(precipitation?paintScene:t>=lastAir){
-   air.draw(t,climate,outdoors());ambience(climate.weather,section,outdoors());
+ if(!sheet&&(precipitation?paintScene:t>=lastAir)){
+   air.draw(t,climate,outdoors());
+   ambience(climate.weather,section,outdoors());
    lastAir=t+(reduceMotion?210:1000/30);
  }
- if(releaseMotion||settling||sceneryFading||gesture&&!sheet||animated||!sheet&&(move.length||flight||!layout&&Math.hypot(u,v)>.006||citizens.some(p=>p.journey.length&&Math.abs(p.u-eva.u)+Math.abs(p.v-eva.v)<12)))wake();
- else if(!nextFrame)timer=setTimeout(()=>wake(),outdoors()||speech.waiting||gesture||mood||reply?45:260);
+ if(responsive)wake();
+ else if(!nextFrame){
+   const delay=sheet?750:animated?Math.max(8,nextAmbientFrame-t-8):
+     speech.waiting||mood||reply?75:300;
+   timer=setTimeout(wake,delay);
+ }
 }
-window.setHomeActive=value=>{
- active=value;town.active(value);audioVisible(value);
+
+window.homeSheetChanged=()=>{
+ $('speech').hidden=Boolean(sheet);
+ if(sheet)air.clear();
+ else{last=now();dirty=true;nextAmbientFrame=0}
+ wake();
+};
+
+function updateHomeVisibility(){
+ const visible=nativeActive&&!document.hidden;
+ if(active===visible)return;
+ active=visible;
+ town.active(active);audioVisible(active);
  if(active){
    if(suspendedAt&&Math.floor(Date.now()/900000)>Math.floor(suspendedAt/900000)){
-     settleResidents(Date.now(),true);
-     reply=null;speech.clear();
+     settleResidents(Date.now(),true);reply=null;speech.clear();
    }
    suspendedAt=0;last=now();pullClock();wake();
+ }else{
+   air.clear();suspendedAt=suspendedAt||Date.now();storage();
+   cancelAnimationFrame(nextFrame);clearTimeout(timer);nextFrame=timer=0;
  }
- else{air.clear();suspendedAt=suspendedAt||Date.now();storage();cancelAnimationFrame(nextFrame);clearTimeout(timer);nextFrame=timer=0}
-};
+}
+window.setHomeActive=value=>{nativeActive=Boolean(value);updateHomeVisibility()};
 window.addEventListener('resize',()=>{dirty=true;wake()});
 canvas.addEventListener('art',()=>{dirty=true;wake()});
-document.addEventListener('visibilitychange',()=>window.setHomeActive(!document.hidden));
+document.addEventListener('visibilitychange',updateHomeVisibility);
 canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();statusNote('Графика приостановлена. Папки доступны.')});
 canvas.addEventListener('webglcontextrestored',()=>location.reload());
 

@@ -300,7 +300,7 @@ public final class PetMotionTest {
         PetMotion.sample(pose,PetMotion.PERCH_STAND,0,true);
         check(pose.frame==PetMotion.RISE_FRAME&&pose.mirrored,"Keep the seated direction when standing up");
         PetMotion.sample(pose,PetMotion.PERCH_STAND,riseDuration,true);
-        check(pose.frame==PetMotion.RISE_FRAME+23&&PetMotion.riseContact(.65f)==1&&PetMotion.riseContact(.08f)==0,
+        check(pose.frame==PetMotion.RISE_FRAME+23&&PetMotion.riseContact(.9f)==1&&PetMotion.riseContact(.08f)==0,
             "Start with hips on the platform and finish extending after the feet are planted");
         PetPlacement dock=PetPlacement.onSurface("launcher:dock",true,52,2188,1148,2445,306,410,894,2035,850);
         check(dock!=null&&dock.seated&&Math.abs(dock.y+410*PetPlacement.SEAT_CONTACT-2188)<1,"Hips must meet the measured dock");

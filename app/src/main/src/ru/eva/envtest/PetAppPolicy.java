@@ -9,6 +9,11 @@ final class PetAppPolicy {
         return Math.max(0,Math.min(bottom,imeTop-soles));
     }
 
+    static int clearEditorY(int y,int spriteHeight,int editorTop,int editorBottom){
+        if(y>=editorBottom||y+spriteHeight<=editorTop)return y;
+        return Math.max(0,editorTop-spriteHeight);
+    }
+
     static int cost(int low,int y,int x,int previousX,int height,int buttonCount,
         boolean overlapsEditor,boolean overlapsKeyboard,boolean abovePlayer){
         int score=(low-y)*2+Math.abs(x-previousX)/9+buttonCount*height*3;

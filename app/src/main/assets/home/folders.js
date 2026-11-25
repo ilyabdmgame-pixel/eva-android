@@ -5,6 +5,22 @@ if(!Array.isArray(groups))groups=[{name:'Работа',keys:[]},{name:'Игры'
 function persistFolders(){localStorage.setItem('folders',JSON.stringify(groups));folderBar()}
 let extras={};
 try{extras=JSON.parse(localStorage.getItem('folderExtras'))||{}}catch{}
+if(!Array.isArray(extras.shortcuts))extras.shortcuts=[];
+extras.shortcuts=extras.shortcuts.filter((item,index,list)=>typeof item?.key==='string'&&
+ list.findIndex(shortcut=>shortcut?.key===item.key)===index);
+function saveDesktop(){localStorage.setItem('folderExtras',JSON.stringify(extras))}
+function homeShortcut(key){return extras.shortcuts.find(item=>item.key===key)}
+function toggleHomeShortcut(key){
+ if(homeShortcut(key))extras.shortcuts=extras.shortcuts.filter(item=>item.key!==key);
+ else extras.shortcuts.push({key});
+ saveDesktop();folderBar();
+}
+function folderForApp(key){return groups.find(folder=>folder.keys.includes(key))}
+function moveToFolder(key,target){
+ for(const folder of groups)folder.keys=folder.keys.filter(item=>item!==key);
+ if(target)target.keys.push(key);
+ persistFolders();
+}
 let folderTiles=[],drag=null,columns=1,rows=1,cellWidth=70,cellHeight=70;
 function arrangeFolders(){
  const bar=$('folders');
@@ -29,20 +45,24 @@ function arrangeFolders(){
    tile.button.style.transform='translate('+x+'px,'+y+'px)';
  }
 }
-function wireFolder(button,owner){
+function wireFolder(button,owner,options){
  const tile={button,owner},bar=$('folders');
  folderTiles.push(tile);
- let suppress=false;
+ let suppress=false,hold=0;
+ const clearHold=()=>{clearTimeout(hold);hold=0};
  button.addEventListener('click',e=>{if(suppress){e.preventDefault();e.stopImmediatePropagation();}},true);
  button.onpointerdown=e=>{
    if(!e.isPrimary||e.button!==0)return;
    suppress=false;drag={id:e.pointerId,x:e.clientX,y:e.clientY};
    button.setPointerCapture(e.pointerId);
+   if(options&&e.pointerType==='touch')hold=setTimeout(()=>{
+     suppress=true;drag=null;options();
+   },480);
  };
  button.onpointermove=e=>{
    if(!drag||drag.id!==e.pointerId)return;
    if(!suppress&&Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<7)return;
-   suppress=true;button.classList.add('moving');
+   clearHold();suppress=true;button.classList.add('moving');
    const r=bar.getBoundingClientRect();
    if(bar.classList.contains('overflow')){
      if(e.clientY>r.bottom-28)bar.scrollTop+=12;
@@ -53,6 +73,7 @@ function wireFolder(button,owner){
    button.style.transform='translate('+x+'px,'+y+'px)';
  };
  function finish(e,commit){
+   clearHold();
    if(!drag||drag.id!==e.pointerId)return;
    if(suppress&&commit){
      const r=bar.getBoundingClientRect(),maxRows=Math.max(rows,Math.ceil(folderTiles.length/columns));
@@ -62,12 +83,14 @@ function wireFolder(button,owner){
      for(const existing of folderTiles)existing.owner.pos=[existing.slot%columns,Math.floor(existing.slot/columns)];
      if(other)other.owner.pos=[tile.slot%columns,Math.floor(tile.slot/columns)];
      owner.pos=[col,row];
-     localStorage.setItem('folders',JSON.stringify(groups));localStorage.setItem('folderExtras',JSON.stringify(extras));
+     localStorage.setItem('folders',JSON.stringify(groups));saveDesktop();
    }
    drag=null;button.classList.remove('moving');arrangeFolders();
    setTimeout(()=>{suppress=false;},0);
  }
  button.onpointerup=e=>finish(e,true);button.onpointercancel=e=>finish(e,false);
+ if(options)button.oncontextmenu=e=>{e.preventDefault();clearHold();if(!suppress)options()};
+
 }
 
 function folderBar(){
@@ -79,7 +102,25 @@ function folderBar(){
   if(!members.length)tile.append(node('i',null,'art-icon folder-art'));else members.slice(0,4).forEach(a=>tile.append(icon(a)));
   b.append(tile,node('span',group.name));bar.append(b);wireFolder(b,group);
  });
- const loose=btn(null,'folder',inbox),tile=node('span',null,'tile');tile.append(node('i',null,'art-icon grid-art'));loose.append(tile,node('span','Без папки'));bar.append(loose);wireFolder(loose,extras.inbox??={});
+ for(const shortcut of extras.shortcuts){
+  const app=apps.find(entry=>entry.key===shortcut.key);
+  if(!app)continue;
+  const button=btn(null,'folder desktop-app',()=>launchApp(app));
+  button.append(icon(app),node('span',app.name));
+  button.setAttribute('aria-label',app.name);
+  const options=()=>appActions(app,closeSheet);
+  button.onkeydown=event=>{
+   if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){
+    event.preventDefault();options();
+   }
+  };
+  bar.append(button);wireFolder(button,shortcut,options);
+ }
+ const loose=btn(null,'folder',()=>{
+  drawerSection='loose';drawer();
+ });
+ const tile=node('span',null,'tile');tile.append(node('i',null,'art-icon grid-art'));
+ loose.append(tile,node('span','Вне папок'));bar.append(loose);wireFolder(loose,extras.inbox??={});
  const add=btn(null,'newfolder',()=>nameFolder(-1));add.append(node('i',null,'art-icon add-art'));add.setAttribute('aria-label','Новая папка');bar.append(add);wireFolder(add,extras.add??={});
  arrangeFolders();
 }
@@ -97,10 +138,10 @@ function folderScreen(i,edit=false){
   grid.replaceChildren();
   const q=search.value.toLocaleLowerCase('ru');
   for(const a of apps){const selected=group.keys.includes(a.key);if(!edit&&!selected)continue;if(!(a.name+' '+a.key).toLocaleLowerCase('ru').includes(q))continue;
-   const b=btn(null,'app',()=>{if(!edit){Desk.open(a.key);return}
-    for(const folder of groups)folder.keys=folder.keys.filter(key=>key!==a.key);
-    if(!selected)group.keys.push(a.key);persistFolders();render()
-   });b.append(icon(a),node('span',(edit&&selected?'✓ ':'')+a.name));b.setAttribute('aria-label',a.name);if(edit)b.setAttribute('aria-pressed',String(selected));grid.append(b)
+   if(!edit){grid.append(appCard(a,()=>folderScreen(i)));continue}
+   const tile=appTile(a,()=>{moveToFolder(a.key,selected?null:group);render()});
+   tile.setAttribute('aria-pressed',String(selected));grid.append(tile);
+
   }
   if(!grid.childElementCount)grid.append(node('p',edit?'Ничего не нашлось':'Пока пусто','sub'));
  }
@@ -108,22 +149,6 @@ function folderScreen(i,edit=false){
  foot.append(btn(edit?'Готово':'Состав папки','',()=>folderScreen(i,!edit)),btn('Переименовать','',()=>nameFolder(i)));
  if(edit&&!group.keys.length)foot.append(btn('Удалить пустую папку','',()=>{groups.splice(i,1);persistFolders();closeSheet()}));
  render()
-}
-
-function inbox(){
- const out=showSheet('inbox','Разобрать приложения'),used=new Set(groups.flatMap(group=>group.keys));
- const search=node('input',null);search.type='search';search.placeholder='Найти среди неразобранных';const grid=node('div',null,'apps');out.append(search,grid);
- function render(){
-  grid.replaceChildren();const q=search.value.toLocaleLowerCase('ru');
-  for(const a of apps.filter(a=>!used.has(a.key)&&(a.name+' '+a.key).toLocaleLowerCase('ru').includes(q))){
-   const b=btn(null,'app',()=>{const dest=showSheet('move',a.name);
-    for(const group of groups)dest.append(label(group.name,'Положить в эту папку','▱',()=>{group.keys.push(a.key);persistFolders();inbox()}));
-    dest.append(label('Открыть приложение','','↗',()=>Desk.open(a.key)));
-   });b.append(icon(a),node('span',a.name));grid.append(b)
-  }
-  if(!grid.childElementCount)grid.append(node('p',q?'Ничего не найдено':'Всё разложено. Красота.','sub'));
- }
- search.oninput=render;render()
 }
 
 new ResizeObserver(()=>{if(!drag&&folderTiles.length)arrangeFolders()}).observe(document.querySelector('header'));

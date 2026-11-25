@@ -4,7 +4,7 @@ export function townChat({note,quip,world,apply}){
  mark=document.getElementById('town-mark'),bubble=document.getElementById('town-answer');
  const labels={working:'Ева работает',done:'Дело готово',question:'Ева ждёт ответа'};
  const post=(op,extra={})=>window.Desk?.town?.(JSON.stringify({op,...extra}));
- let active=true,open=false,head=null,covered=false,roomBusy=false,pending=null,showTimer=0;
+ let active=!document.hidden,open=false,head=null,covered=false,roomBusy=false,pending=null,showTimer=0;
  let status='idle',answer=null,words=[],page='',timer=0,spoken=false,ack='',lastDraft='';
  input.value=sessionStorage.getItem('townDraft')||'';
  function controls(){send.disabled=!input.value.trim()||!!pending||roomBusy;input.readOnly=!!pending;}
@@ -116,11 +116,18 @@ export function townChat({note,quip,world,apply}){
  window.visualViewport?.addEventListener('resize',layout);
  window.visualViewport?.addEventListener('scroll',layout);
  controls();
- setInterval(()=>{if(active&&!document.hidden)post('state');},2000);
+ let pollTimer=0;
+ function poll(){
+  clearTimeout(pollTimer);
+  if(!active||document.hidden)return;
+  post('state');
+  pollTimer=setTimeout(poll,roomBusy||pending?2200:5500);
+ }
+ poll();
  return {tap,anchor,close,get playing(){return !!answer;},active(value){
   if(active===value)return;active=value;
-  if(!value){clearTimeout(timer);clearTimeout(showTimer);showTimer=0;page='';answer=null;spoken=false;pending=null;mic.classList.remove('listening');controls();}
-  else post('state');
+  if(!value){clearTimeout(pollTimer);clearTimeout(timer);clearTimeout(showTimer);showTimer=0;page='';answer=null;spoken=false;pending=null;mic.classList.remove('listening');controls();}
+  else poll();
   layout();
  }};
 }

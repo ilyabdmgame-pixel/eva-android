@@ -27,6 +27,7 @@ public final class EvaVoiceService extends VoiceInteractionService {
  private static volatile long resumeAfter;
  private volatile boolean alive;
  private volatile Thread worker;
+ private String lastStatus;
  private final Handler main=new Handler(Looper.getMainLooper());
  public static boolean enabled(Context c){return c.getSharedPreferences("eva_wake",0).getBoolean("enabled",false);}
  public static void setEnabled(Context c,boolean on){c.getSharedPreferences("eva_wake",0).edit().putBoolean("enabled",on).apply();EvaVoiceService s=instance;if(s!=null&&on)s.startWorker();}
@@ -41,15 +42,19 @@ public final class EvaVoiceService extends VoiceInteractionService {
   try(InputStream in=getAssets().open("vosk-ru-small.zip");ZipInputStream zip=new ZipInputStream(in)){ZipEntry e;byte[] bytes=new byte[32768];while((e=zip.getNextEntry())!=null){File out=new File(base,e.getName());if(!out.getCanonicalPath().startsWith(root))throw new java.io.IOException("Bad model path");if(e.isDirectory()){out.mkdirs();continue;}File parent=out.getParentFile();if(parent!=null)parent.mkdirs();try(FileOutputStream f=new FileOutputStream(out)){int n;while((n=zip.read(bytes))!=-1){count+=n;if(count>200L*1024*1024)throw new java.io.IOException("Model too large");f.write(bytes,0,n);}}}}
   if(!new File(model,"am/final.mdl").isFile())throw new java.io.IOException("Model missing");marker.createNewFile();return model;
  }
- private void status(String text){getSharedPreferences("eva_wake",0).edit().putString("status",text).apply();}
+ private synchronized void status(String text){
+  if(text.equals(lastStatus))return;
+  lastStatus=text;
+  getSharedPreferences("eva_wake",0).edit().putString("status",text).apply();
+ }
  private void runDetector(){Model model=null;try{
   status("Подготовка локальной модели…");model=new Model(prepareModel().getAbsolutePath());
   while(alive&&enabled(this)){
    if(chatActive){status("Голосовой диалог открыт");Thread.sleep(500);continue;}if(android.os.SystemClock.elapsedRealtime()<resumeAfter){Thread.sleep(300);continue;}
    if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){status("Нет разрешения на микрофон");Thread.sleep(3000);continue;}
-   int size=Math.max(AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT),8000);
-   if(size<=0)throw new java.io.IOException("Микрофон недоступен");
-   AudioRecord audio=new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,size*2);
+   int minimum=AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);
+   if(minimum<=0)throw new java.io.IOException("Микрофон недоступен");
+   AudioRecord audio=new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,Math.max(minimum,8000)*2);
    try(Recognizer rec=new Recognizer(model,16000)){rec.setWords(true);rec.setEndpointerDelays(5f,0.15f,10f);
     if(audio.getState()!=AudioRecord.STATE_INITIALIZED)throw new java.io.IOException("Микрофон недоступен");audio.startRecording();if(audio.getRecordingState()!=AudioRecord.RECORDSTATE_RECORDING)throw new java.io.IOException("Запись не началась");status("Ожидаю слово «Ева» локально");short[] buf=new short[1600];boolean hit=false;
     while(alive&&enabled(this)&&!chatActive){int n=audio.read(buf,0,buf.length);if(n<=0)throw new java.io.IOException("Ошибка микрофона");boolean done=rec.acceptWaveForm(buf,n);if(done){JSONObject result=new JSONObject(rec.getResult());org.json.JSONArray words=result.optJSONArray("result");if(words!=null&&words.length()==1){JSONObject word=words.optJSONObject(0);if(word!=null&&"ева".equals(word.optString("word").toLowerCase(Locale.ROOT))){double confidence=word.optDouble("conf",0);if(confidence>=0.55)hit=true;else status("Слышала имя, но не уверена. Скажи ещё раз");}}}if(hit)break;}
