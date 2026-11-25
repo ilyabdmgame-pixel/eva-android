@@ -253,16 +253,16 @@ final class PetOverlay {
     }
 
     private boolean composerVisible;
-    void setPresentation(boolean suspend,boolean composer) {
-        boolean closing=composerVisible&&!composer;
-        composerVisible=composer;
-        suspended=suspend;
+    void setPresentation(PetAppPolicy.Presentation presentation) {
+        boolean wasComposerVisible=composerVisible;
+        composerVisible=presentation==PetAppPolicy.Presentation.ANCHORED_COMPOSER;
+        suspended=presentation==PetAppPolicy.Presentation.HIDDEN;
         sync();
         if(sprite==null)return;
-        if(composer){
+        if(composerVisible){
             handler.removeCallbacks(next);
             choreographer.removeFrameCallback(tick);
-        }else if(closing)returnToFloor();
+        }else if(wasComposerVisible)returnToFloor();
     }
 
     void sync() {

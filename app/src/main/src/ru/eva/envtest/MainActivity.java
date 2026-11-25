@@ -40,6 +40,7 @@ import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 
 public final class MainActivity extends Activity implements CodexService.Listener {
+  private static final PetAppPolicy.ChatVisibility visibleChats=new PetAppPolicy.ChatVisibility();
   private WebView web;
   private boolean assistantVoice=false, petChat=false, resumed=false, pendingPetPermission=false;
   private boolean petComposerDetails;
@@ -67,7 +68,11 @@ public final class MainActivity extends Activity implements CodexService.Listene
   @Override public void onCreate(Bundle b){super.onCreate(b);updateLaunchMode(getIntent());if(isAssist(getIntent()))EvaVoiceService.setChatActive(true);enableFullscreen();getWindow().getDecorView().getViewTreeObserver().addOnGlobalLayoutListener(this::updatePetEditorBounds);getWindow().setStatusBarColor(Color.rgb(21,25,35));setupNativeTts();assistantPending=isAssist(getIntent());startBackend();}
   private boolean isAssist(Intent i){return Intent.ACTION_ASSIST.equals(i.getAction())||Intent.ACTION_VOICE_COMMAND.equals(i.getAction());}
   private boolean petComposer(){return petChat&&petAnchor!=null;}
-  private void syncPet(){if(service!=null)service.refreshPet(resumed,resumed&&petComposer());}
+  static PetAppPolicy.Presentation petPresentation(){return visibleChats.presentation();}
+  private void syncPet(){
+    visibleChats.changeMode(this,petComposer());
+    CodexService.refreshPet();
+  }
   private void updateLaunchMode(Intent i){
     boolean assistant=isAssist(i);
     petChat=PetOverlay.OPEN_CHAT.equals(i.getAction());
@@ -391,6 +396,11 @@ public final class MainActivity extends Activity implements CodexService.Listene
     @JavascriptInterface public void stopSpeech(){runOnUiThread(()->{if(nativeTts!=null)nativeTts.stop();});}
     @JavascriptInterface public void stopRecognition(){runOnUiThread(()->{if(recognizer!=null)recognizer.stopListening();});}
   }
+  @Override protected void onStart(){
+    super.onStart();
+    visibleChats.show(this,petComposer());
+    CodexService.refreshPet();
+  }
   @Override protected void onResume(){
     super.onResume();
     resumed=true;
@@ -404,7 +414,8 @@ public final class MainActivity extends Activity implements CodexService.Listene
   }
   @Override protected void onStop(){
     resumed=false;
-    syncPet();
+    visibleChats.hide(this);
+    CodexService.refreshPet();
     super.onStop();
   }
   @Override protected void onDestroy(){if(assistantVoice||petChat)EvaVoiceService.setChatActive(false);if(service!=null)service.detach(this);if(bound)unbindService(connection);if(nativeTts!=null){nativeTts.shutdown();nativeTts=null;}if(recognizer!=null){recognizer.destroy();recognizer=null;}if(web!=null){web.destroy();web=null;}super.onDestroy();}

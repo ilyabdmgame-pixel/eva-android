@@ -21,7 +21,7 @@ public final class CodexService extends Service {
  @Override public void onCreate(){super.onCreate();try{
   active=this;
   startForeground(11,notification());
-  try{pet=new PetOverlay(this);}catch(RuntimeException error){android.util.Log.w("EvaPet","Could not initialise overlay",error);}
+  try{pet=new PetOverlay(this);applyPetPresentation();}catch(RuntimeException error){android.util.Log.w("EvaPet","Could not initialise overlay",error);}
   io.execute(this::startProcess);
  }catch(Exception e){report("Ошибка запуска: "+e.getMessage());}}
  private Notification notification(){
@@ -51,14 +51,19 @@ public final class CodexService extends Service {
   CodexService service=active;
   if(service!=null)service.handler.post(()->{if(active==service&&service.pet!=null)service.pet.sync();});
  }
- void refreshPet(boolean activityVisible,boolean composerVisible){
-  if(pet!=null)pet.setPresentation(activityVisible&&!composerVisible,composerVisible);
-  ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(11,notification());
+ static void refreshPet(){
+  CodexService service=active;
+  if(service==null)return;
+  service.applyPetPresentation();
+  ((NotificationManager)service.getSystemService(NOTIFICATION_SERVICE)).notify(11,service.notification());
+ }
+ private void applyPetPresentation(){
+  if(pet!=null)pet.setPresentation(MainActivity.petPresentation());
  }
  @Override public int onStartCommand(Intent intent,int flags,int id){
   if(intent!=null&&PetOverlay.STOP.equals(intent.getAction())){
    PetOverlay.setEnabled(this,false);
-   refreshPet(false,false);
+   refreshPet();
   }
   return START_NOT_STICKY;
  }

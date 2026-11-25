@@ -1,7 +1,24 @@
 package ru.eva.envtest;
 
-/** Scores use screen geometry to choose a parking spot. */
+import java.util.IdentityHashMap;
+import java.util.Map;
+
 final class PetAppPolicy {
+    enum Presentation { OVER_APPS, ANCHORED_COMPOSER, HIDDEN }
+
+    static final class ChatVisibility {
+        private final Map<Object,Boolean> visibleWindows=new IdentityHashMap<>();
+
+        void show(Object window,boolean anchoredComposer){visibleWindows.put(window,anchoredComposer);}
+        void changeMode(Object window,boolean anchoredComposer){visibleWindows.replace(window,anchoredComposer);}
+        void hide(Object window){visibleWindows.remove(window);}
+
+        Presentation presentation(){
+            if(visibleWindows.containsValue(Boolean.FALSE))return Presentation.HIDDEN;
+            return visibleWindows.isEmpty()?Presentation.OVER_APPS:Presentation.ANCHORED_COMPOSER;
+        }
+    }
+
     static int keyboardChairY(int height,int spriteHeight,int edgeTop){
         int y=edgeTop-Math.round(spriteHeight*PetChair.FLOOR_CONTACT);
         return y>=0&&y+spriteHeight<=height?y:-1;

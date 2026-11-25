@@ -4,6 +4,7 @@ import java.util.Arrays;
 
 final class PetAppPolicyTest {
     public static void main(String[] args){
+        chatVisibility();
         int floor=Math.round(410*PetChair.FLOOR_CONTACT);
         if(PetAppPolicy.keyboardChairY(2445,410,1441)+floor!=1441||
             PetAppPolicy.keyboardChairY(2445,410,1450)+floor!=1450||
@@ -24,6 +25,34 @@ final class PetAppPolicyTest {
             !PetAppPolicy.watching(true,true,false,false,false)||
             !PetAppPolicy.watching(true,false,true,false,false))
             throw new AssertionError("A video needs visible player and playback evidence");
-        System.out.println("App policy: corner placement, control avoidance, video playback signals");
+        System.out.println("App policy: chat visibility, corner placement, control avoidance, video playback signals");
+    }
+
+    private static void chatVisibility(){
+        PetAppPolicy.ChatVisibility visibility=new PetAppPolicy.ChatVisibility();
+        Object firstChat=new Object();
+        Object secondChat=new Object();
+        visibility.changeMode(firstChat,false);
+        expect(visibility,PetAppPolicy.Presentation.OVER_APPS);
+        visibility.show(firstChat,false);
+        visibility.show(secondChat,false);
+        visibility.hide(firstChat);
+        expect(visibility,PetAppPolicy.Presentation.HIDDEN);
+
+        visibility.changeMode(secondChat,true);
+        expect(visibility,PetAppPolicy.Presentation.ANCHORED_COMPOSER);
+        visibility.show(firstChat,false);
+        expect(visibility,PetAppPolicy.Presentation.HIDDEN);
+        visibility.hide(firstChat);
+        expect(visibility,PetAppPolicy.Presentation.ANCHORED_COMPOSER);
+        visibility.changeMode(secondChat,false);
+        expect(visibility,PetAppPolicy.Presentation.HIDDEN);
+        visibility.hide(secondChat);
+        expect(visibility,PetAppPolicy.Presentation.OVER_APPS);
+    }
+
+    private static void expect(PetAppPolicy.ChatVisibility visibility,PetAppPolicy.Presentation expected){
+        if(visibility.presentation()!=expected)
+            throw new AssertionError("Expected "+expected+", got "+visibility.presentation());
     }
 }
