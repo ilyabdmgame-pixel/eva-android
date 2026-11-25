@@ -1,0 +1,12 @@
+#!/usr/bin/env node
+'use strict';
+const {execFile} = require('child_process');
+const {promisify} = require('util');
+const fs = require('fs');
+const run = promisify(execFile);
+const adb=process.env.EVA_ADB_BIN||'adb';
+async function call(args){try{const {stdout}=await run(adb,args,{timeout:15000,maxBuffer:4*1024*1024});return stdout.trim();}catch(e){throw Error((e.stderr||e.stdout||e.message).toString().trim());}}
+function track(dump){const active=dump.match(/Media button session is ([^\s/]+)\/([^\s]+) \(userId=\d+\)/);const blocks=dump.split(/(?=^    \S)/m);let block=active&&blocks.find(x=>/^    \S/.test(x)&&x.split('\n',1)[0].includes(active[1]+'/'+active[2]+' (userId='));if(!block){const playing=blocks.filter(x=>/^\s*state=PlaybackState \{state=PLAYING\b/m.test(x));if(playing.length===1)block=playing[0]}if(!block)return null;const app=block.match(/^\s*package=(\S+)/m),meta=block.match(/^\s*metadata:.*?description=(.*)$/m),state=block.match(/^\s*state=PlaybackState \{state=([A-Z]+)/m);return {app:app?.[1]||active?.[1]||null,description:meta?.[1]||null,state:state?.[1]||null}}
+
+async function main(){const action=process.argv[2];const keys={next:'KEYCODE_MEDIA_NEXT',previous:'KEYCODE_MEDIA_PREVIOUS',play:'KEYCODE_MEDIA_PLAY',pause:'KEYCODE_MEDIA_PAUSE'};if(!Object.hasOwn(keys,action)||process.argv.length!==3)throw Error('Укажите next, previous, play или pause');let port;try{port=String(JSON.parse(fs.readFileSync('/root/codex-mobile/.adb-device.json','utf8')).port);}catch{}if(!/^\d{1,5}$/.test(port||'')||+port<1||+port>65535)throw Error('Сначала подключите телефон через android-control.js connect ПОРТ');const device='127.0.0.1:'+port;await call(['connect',device]);const prefix=['-s',device];const before=track(await call([...prefix,'shell','dumpsys','media_session']));await call([...prefix,'shell','input','keyevent',keys[action]]);let after=null;for(let i=0;i<4;i++){await new Promise(resolve=>setTimeout(resolve,400));after=track(await call([...prefix,'shell','dumpsys','media_session']));if(before&&after&&before.description!==after.description)break;}console.log(JSON.stringify({action,previous:before,current:after,changed:!!(before&&after&&(before.description!==after.description||before.state!==after.state)),confirmed:!!(after&&((action==='play'&&after.state==='PLAYING')||(action==='pause'&&after.state==='PAUSED')||(['next','previous'].includes(action)&&before&&before.description&&after.description&&before.description!==after.description)))},null,2));}
+main().catch(e=>{console.error('Ошибка: '+e.message);process.exitCode=1;});

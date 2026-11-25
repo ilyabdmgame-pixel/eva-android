@@ -1,0 +1,1 @@
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android" android:sessionService="ru.eva.envtest.EvaSessionService" android:recognitionService="ru.eva.envtest.EvaRecognitionService" android:supportsAssist="true" />

@@ -1,0 +1,10 @@
+'use strict';
+const fs=require('fs'),crypto=require('crypto'),path=require('path');
+const file=process.env.CODEX_TASKS_FILE || path.join(__dirname,'tasks.json');
+function list(){try{const x=JSON.parse(fs.readFileSync(file,'utf8'));if(!Array.isArray(x))throw Error('Неверный формат задач');return x}catch(e){if(e.code==='ENOENT')return [];throw e}}
+function save(tasks){const tmp=file+'.'+process.pid+'.'+crypto.randomBytes(4).toString('hex');try{fs.writeFileSync(tmp,JSON.stringify(tasks,null,2)+'\n',{mode:0o600,flag:'wx'});fs.renameSync(tmp,file)}finally{try{fs.unlinkSync(tmp)}catch{}}}
+function create(input){const title=String(input.title||'').trim();if(!title||title.length>500)throw Error('Название должно содержать от 1 до 500 символов');const due=input.due||null;if(due&&(typeof due!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d{1,3})?)?(?:Z|[+-]\d\d:\d\d)$/.test(due)||!Number.isFinite(Date.parse(due))))throw Error('Дата должна содержать часовой пояс');const tasks=list(), task={id:crypto.randomUUID(),title,due,done:false,createdAt:new Date().toISOString()};tasks.push(task);save(tasks);return task}
+function change(id,done){if(typeof done!=='boolean')throw Error('Неверный статус');const tasks=list(),task=tasks.find(x=>x.id===id);if(!task)throw Error('Задача не найдена');task.done=done;save(tasks);return task}
+function remove(id){const tasks=list(), next=tasks.filter(x=>x.id!==id);if(next.length===tasks.length)throw Error('Задача не найдена');save(next)}
+module.exports={list,create,change,remove};
+if(require.main===module){try{const [cmd,...args]=process.argv.slice(2);if(cmd==='list')console.log(JSON.stringify(list(),null,2));else if(cmd==='add')console.log(JSON.stringify(create({title:args[0],due:args[1]||null}),null,2));else if(cmd==='done')console.log(JSON.stringify(change(args[0],true),null,2));else if(cmd==='undo')console.log(JSON.stringify(change(args[0],false),null,2));else if(cmd==='delete'){remove(args[0]);console.log('Удалено')}else throw Error('Команды: list, add "задача" [дата ISO с часовым поясом], done ID, undo ID, delete ID')}catch(e){console.error(e.message);process.exitCode=1}}

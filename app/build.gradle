@@ -1,0 +1,58 @@
+plugins {
+    id 'com.android.application' version '8.7.3'
+}
+
+def runtimeAssets = layout.buildDirectory.dir('generated/eva/assets')
+def runtimeLibraries = layout.buildDirectory.dir('generated/eva/jniLibs')
+def runtimeInputs = providers.gradleProperty('evaRuntimeDeps')
+    .orElse(rootProject.file('local-runtime').absolutePath)
+
+android {
+    namespace 'ru.eva.envtest'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'org.evaassistant.app'
+        minSdk 26
+        targetSdk 29
+        versionCode 71
+        versionName '0.65'
+        ndk { abiFilters 'arm64-v8a' }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = ['src/main/src']
+            assets.srcDir runtimeAssets
+            jniLibs.srcDir runtimeLibraries
+        }
+    }
+
+    packagingOptions {
+        jniLibs { useLegacyPackaging = true }
+    }
+    androidResources { noCompress += ['pack'] }
+}
+
+dependencies {
+    implementation 'com.alphacephei:vosk-android:0.3.75'
+}
+
+def stageRuntime = tasks.register('stageRuntime', Exec) {
+    workingDir rootProject.projectDir
+    inputs.dir rootProject.file('runtime')
+    inputs.file rootProject.file('tools/stage_runtime.py')
+    inputs.files runtimeInputs.map { fileTree(it) }
+    outputs.dirs runtimeAssets, runtimeLibraries
+    doFirst {
+        commandLine 'python3', 'tools/stage_runtime.py',
+            '--deps', rootProject.file(runtimeInputs.get()),
+            '--output', runtimeAssets.get().asFile.parentFile
+    }
+}
+tasks.named('preBuild') { dependsOn stageRuntime }
