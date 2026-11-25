@@ -5,12 +5,25 @@ import gzip
 import hashlib
 import shutil
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "runtime"
 PACKS = ("rootfs.pack", "vosk-ru-small.zip")
 LIBRARIES = ("libproot.so", "libproot-loader.so", "libtalloc.so", "libandroid-shmem.so")
+
+
+def add_parent_dirs(archive, name, seen):
+    # Android tar expects parent entries to appear before files and links.
+    for parent in reversed(PurePosixPath(name).parents):
+        directory = parent.as_posix()
+        if directory == "." or directory in seen:
+            continue
+        entry = tarfile.TarInfo(directory)
+        entry.type = tarfile.DIRTYPE
+        entry.mode = 0o755
+        archive.addfile(entry)
+        seen.add(directory)
 
 
 def add_file(archive, source, name):
@@ -55,7 +68,9 @@ def stage(deps, output):
     pack = assets / "eva-runtime.pack"
     with pack.open("wb") as destination, gzip.GzipFile(filename="", fileobj=destination, mode="wb", mtime=0) as compressed:
         with tarfile.open(fileobj=compressed, mode="w|") as archive:
+            seen = set()
             for source, name in runtime_files():
+                add_parent_dirs(archive, name, seen)
                 add_file(archive, source, name)
     (assets / "eva-runtime.version").write_text(
         sha256(assets / "rootfs.pack") + "\n" + sha256(pack) + "\n", encoding="ascii"

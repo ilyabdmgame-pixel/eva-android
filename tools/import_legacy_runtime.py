@@ -9,7 +9,7 @@ import tarfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
-from stage_runtime import LIBRARIES
+from stage_runtime import LIBRARIES, add_parent_dirs
 
 OLD_LOADER = b"/data/data/ru.eva.sixchat.petpreview/files/p\0"
 NEW_LOADER = b"/data/data/org.evaassistant.app/files/p\0"
@@ -17,7 +17,7 @@ SYSTEM_TREES = ("usr/bin/", "usr/lib/", "usr/share/nodejs/", "usr/local/bin/", "
 SYSTEM_FILES = {"bin", "lib", "lib64", "etc/ssl/certs/ca-certificates.crt"}
 
 
-def copy_system(archive, apk, asset, seen):
+def copy_system(archive, apk, asset, seen, links):
     with apk.open("assets/" + asset) as compressed, tarfile.open(fileobj=compressed, mode="r|gz") as original:
         for entry in original:
             name = entry.name.removeprefix("./")
@@ -37,11 +37,15 @@ def copy_system(archive, apk, asset, seen):
             entry.uid = entry.gid = entry.mtime = 0
             entry.uname = entry.gname = ""
             entry.pax_headers = {}
+            add_parent_dirs(archive, name, seen)
             seen.add(name)
-            archive.addfile(entry, original.extractfile(entry) if entry.isfile() else None)
+            if entry.issym() or entry.islnk():
+                links.append(entry)
+            else:
+                archive.addfile(entry, original.extractfile(entry) if entry.isfile() else None)
 
 
-def network_defaults(archive):
+def network_defaults(archive, seen):
     files = {
         "etc/hosts": b"127.0.0.1 localhost\n::1 localhost\n",
         "etc/resolv.conf": b"nameserver 1.1.1.1\nnameserver 8.8.8.8\n",
@@ -50,6 +54,7 @@ def network_defaults(archive):
         "etc/group": b"root:x:0:\n",
     }
     for name, data in files.items():
+        add_parent_dirs(archive, name, seen)
         info = tarfile.TarInfo(name)
         info.size = len(data)
         archive.addfile(info, io.BytesIO(data))
@@ -59,12 +64,15 @@ def recover(apk_path, output):
     output.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(apk_path) as apk:
         seen = set()
+        links = []
         with (output / "rootfs.pack").open("wb") as destination:
             with gzip.GzipFile(filename="", fileobj=destination, mode="wb", mtime=0) as compressed:
                 with tarfile.open(fileobj=compressed, mode="w|") as archive:
                     for asset in ("rootfs.pack", "eva.pack"):
-                        copy_system(archive, apk, asset, seen)
-                    network_defaults(archive)
+                        copy_system(archive, apk, asset, seen, links)
+                    network_defaults(archive, seen)
+                    for entry in links:
+                        archive.addfile(entry)
         for name in LIBRARIES:
             data = apk.read("lib/arm64-v8a/" + name)
             if name == "libproot.so":

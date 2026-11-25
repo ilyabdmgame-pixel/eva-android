@@ -37,6 +37,7 @@ gradle :app:assembleDebug
 ```sh
 TZ=Europe/Moscow node --test tests/town-chat.test.cjs tests/home/tests/*.test.mjs tests/pet/*.cjs
 node --test tests/codex-persona.test.cjs
+python3 -m unittest discover -s tests -p 'test_runtime_pack.py'
 ```
 
 Проверки app-server используют локальную имитацию Responses API. Токен OpenAI и подключение к аккаунту для них не требуются. Бинарник Codex можно указать через `EVA_TEST_CODEX`.
