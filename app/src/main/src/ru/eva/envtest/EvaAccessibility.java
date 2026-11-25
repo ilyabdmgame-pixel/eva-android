@@ -1,5 +1,8 @@
 package ru.eva.envtest;
 import android.accessibilityservice.AccessibilityService;
+import android.content.ComponentName;
+import android.content.Context;
+import android.provider.Settings;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
@@ -107,6 +110,27 @@ public final class EvaAccessibility extends AccessibilityService {
     if(instance==this){instance=null;signalWindows();}
   }
   static boolean enabled(){return instance!=null;}
+
+  private static Boolean configured(Context context){
+    String services;
+    try{
+      services=Settings.Secure.getString(context.getContentResolver(),Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+    }catch(SecurityException unreadable){
+      return null;
+    }
+    if(services==null)return false;
+    ComponentName own=new ComponentName(context,EvaAccessibility.class);
+    for(String entry:services.split(":")){
+      if(own.equals(ComponentName.unflattenFromString(entry)))return true;
+    }
+    return false;
+  }
+
+  static JSONObject status(Context context) throws org.json.JSONException{
+    Boolean configured=configured(context);
+    return new JSONObject().put("package",context.getPackageName())
+        .put("configured",configured==null?JSONObject.NULL:configured).put("connected",enabled());
+  }
 
   // Overlay and accessibility callbacks both run on the main looper.
   static void setPetWindowsListener(Runnable listener){
@@ -540,7 +564,20 @@ public final class EvaAccessibility extends AccessibilityService {
   }
 
   private static void collect(AccessibilityNodeInfo node,ArrayList<AccessibilityNodeInfo> out){if(node==null||out.size()>=300)return;out.add(node);for(int i=0;i<node.getChildCount()&&out.size()<300;i++)collect(node.getChild(i),out);}
-  private static ArrayList<AccessibilityNodeInfo> nodes() throws Exception {if(instance==null)throw new Exception("Включите службу Ева в настройках специальных возможностей Android");AccessibilityNodeInfo root=instance.getRootInActiveWindow();if(root==null)throw new Exception("Активный экран недоступен");ArrayList<AccessibilityNodeInfo> list=new ArrayList<>();collect(root,list);return list;}
-  static JSONArray screen() throws Exception {ArrayList<AccessibilityNodeInfo> list=nodes();JSONArray result=new JSONArray();try{for(AccessibilityNodeInfo n:list){if(!n.isVisibleToUser()||n.isPassword())continue;CharSequence label=n.getText(),desc=n.getContentDescription();if((label==null||label.length()==0)&&(desc==null||desc.length()==0))continue;JSONObject item=new JSONObject();item.put("text",label==null?"":label.toString().substring(0,Math.min(500,label.length())));item.put("description",desc==null?"":desc.toString().substring(0,Math.min(500,desc.length())));item.put("clickable",n.isClickable());if(n.getPackageName()!=null)item.put("app",n.getPackageName());result.put(item);}return result;}finally{for(AccessibilityNodeInfo n:list)n.recycle();}}
-  static String click(String label) throws Exception {if(label==null||label.trim().isEmpty())throw new Exception("Укажите текст элемента");ArrayList<AccessibilityNodeInfo> list=nodes();try{AccessibilityNodeInfo match=null;int count=0;for(AccessibilityNodeInfo n:list){if(!n.isVisibleToUser()||n.isPassword())continue;String text=n.getText()==null?"":n.getText().toString(),desc=n.getContentDescription()==null?"":n.getContentDescription().toString();if(label.equals(text)||label.equals(desc)){match=n;count++;}}if(count!=1)throw new Exception(count==0?"Элемент не найден":"Найдено несколько элементов с таким текстом");AccessibilityNodeInfo target=AccessibilityNodeInfo.obtain(match);try{while(target!=null&&!target.isClickable()){AccessibilityNodeInfo parent=target.getParent();target.recycle();target=parent;}if(target==null||!target.performAction(AccessibilityNodeInfo.ACTION_CLICK))throw new Exception("Не удалось нажать элемент");return "Команда нажатия передана приложению.";}finally{if(target!=null)target.recycle();}}finally{for(AccessibilityNodeInfo n:list)n.recycle();}}
+  private static ArrayList<AccessibilityNodeInfo> nodes(Context context) throws Exception {
+    EvaAccessibility service=instance;
+    if(service==null){
+      Boolean configured=configured(context);
+      if(Boolean.TRUE.equals(configured))throw new Exception("Служба этой Евы включена, но Android её не подключил");
+      if(configured==null)throw new Exception("Служба Евы не подключена. Android не предоставил состояние переключателя");
+      throw new Exception("Включи службу «Ева — управление экраном» для этой установки Евы");
+    }
+    AccessibilityNodeInfo root=service.getRootInActiveWindow();
+    if(root==null)throw new Exception("Служба Евы подключена. Активный экран недоступен");
+    ArrayList<AccessibilityNodeInfo> list=new ArrayList<>();
+    collect(root,list);
+    return list;
+  }
+  static JSONArray screen(Context context) throws Exception {ArrayList<AccessibilityNodeInfo> list=nodes(context);JSONArray result=new JSONArray();try{for(AccessibilityNodeInfo n:list){if(!n.isVisibleToUser()||n.isPassword())continue;CharSequence label=n.getText(),desc=n.getContentDescription();if((label==null||label.length()==0)&&(desc==null||desc.length()==0))continue;JSONObject item=new JSONObject();item.put("text",label==null?"":label.toString().substring(0,Math.min(500,label.length())));item.put("description",desc==null?"":desc.toString().substring(0,Math.min(500,desc.length())));item.put("clickable",n.isClickable());if(n.getPackageName()!=null)item.put("app",n.getPackageName());result.put(item);}return result;}finally{for(AccessibilityNodeInfo n:list)n.recycle();}}
+  static String click(Context context,String label) throws Exception {if(label==null||label.trim().isEmpty())throw new Exception("Укажите текст элемента");ArrayList<AccessibilityNodeInfo> list=nodes(context);try{AccessibilityNodeInfo match=null;int count=0;for(AccessibilityNodeInfo n:list){if(!n.isVisibleToUser()||n.isPassword())continue;String text=n.getText()==null?"":n.getText().toString(),desc=n.getContentDescription()==null?"":n.getContentDescription().toString();if(label.equals(text)||label.equals(desc)){match=n;count++;}}if(count!=1)throw new Exception(count==0?"Элемент не найден":"Найдено несколько элементов с таким текстом");AccessibilityNodeInfo target=AccessibilityNodeInfo.obtain(match);try{while(target!=null&&!target.isClickable()){AccessibilityNodeInfo parent=target.getParent();target.recycle();target=parent;}if(target==null||!target.performAction(AccessibilityNodeInfo.ACTION_CLICK))throw new Exception("Не удалось нажать элемент");return "Команда нажатия передана приложению.";}finally{if(target!=null)target.recycle();}}finally{for(AccessibilityNodeInfo n:list)n.recycle();}}
 }
