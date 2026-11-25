@@ -220,6 +220,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
     public void onError(int error){String reason=error==SpeechRecognizer.ERROR_NO_MATCH||error==SpeechRecognizer.ERROR_SPEECH_TIMEOUT?"no-speech":error==SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS?"not-allowed":error==SpeechRecognizer.ERROR_CLIENT?"aborted":"network";sendRecognitionFinish(reason);if(recognizer!=null){recognizer.destroy();recognizer=null;}}
   });Intent intent=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE,recognitionLanguage);intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,true);recognizer.startListening(intent);}
   private String phoneId,phoneAction,phoneArgs,photoId;
+  private static String lastScreenshotRequest;
   private void phoneReply(String id, Object value, String error){try{JSONObject result=new JSONObject();if(error!=null)result.put("error",error);else result.put("result",value);runJs("window.__phoneResult&&window.__phoneResult("+JSONObject.quote(id)+","+JSONObject.quote(result.toString())+")");}catch(Exception ignored){}}
   public final class NativePhoneBridge {
     @JavascriptInterface public void accessibilitySettings(){runOnUiThread(()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));}
@@ -233,6 +234,13 @@ public final class MainActivity extends Activity implements CodexService.Listene
     else if("open-app".equals(action)){String pkg=a.getString(0);if(!pkg.matches("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+"))throw new Exception("Укажите точное имя пакета приложения");Intent launch=getPackageManager().getLaunchIntentForPackage(pkg);if(launch==null)throw new Exception("Приложение не найдено или его нельзя открыть");startActivity(launch);result="Запрос на открытие приложения передан Android.";}
     else if("accessibility-settings".equals(action)){startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));result="Открыты настройки специальных возможностей. Включите Еву вручную.";}
     else if("accessibility-status".equals(action)){result=EvaAccessibility.status(this);}
+    else if("screenshot".equals(action)){
+      if(a.length()!=0)throw new IllegalArgumentException("Снимок экрана не принимает параметры");
+      if(id.equals(lastScreenshotRequest))return;
+      lastScreenshotRequest=id;
+      EvaAccessibility.screenshot(this,(image,error)->runOnUiThread(()->phoneReply(id,image,error)));
+      return;
+    }
     else if("screen".equals(action)){result=EvaAccessibility.screen(this);}
     else if("click".equals(action)){result=EvaAccessibility.click(this,a.getString(0));}
     else if("open-url".equals(action)){Uri link=Uri.parse(a.getString(0));if(!"http".equals(link.getScheme())&&!"https".equals(link.getScheme()))throw new Exception("Поддерживаются только ссылки http и https");startActivity(new Intent(Intent.ACTION_VIEW,link));result="Запрос на открытие ссылки передан Android.";}

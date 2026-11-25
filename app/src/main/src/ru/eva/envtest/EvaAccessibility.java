@@ -7,6 +7,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 import android.view.Display;
+import android.util.Base64;
 import android.os.Handler;
 import android.os.Looper;
 import android.graphics.Region;
@@ -26,6 +27,8 @@ import android.hardware.HardwareBuffer;
 import android.os.SystemClock;
 import java.util.List;
 import java.util.concurrent.ForkJoinPool;
+import java.util.function.BiConsumer;
+import java.io.ByteArrayOutputStream;
 
 public final class EvaAccessibility extends AccessibilityService {
   private static EvaAccessibility instance;
@@ -130,6 +133,43 @@ public final class EvaAccessibility extends AccessibilityService {
     Boolean configured=configured(context);
     return new JSONObject().put("package",context.getPackageName())
         .put("configured",configured==null?JSONObject.NULL:configured).put("connected",enabled());
+  }
+
+  static void screenshot(Context context,BiConsumer<String,String> reply) throws Exception {
+    if(Build.VERSION.SDK_INT<30)throw new Exception("Снимки через службу Евы доступны с Android 11");
+    EvaAccessibility service=requireConnection(context);
+    service.takeScreenshot(Display.DEFAULT_DISPLAY,ForkJoinPool.commonPool(),new TakeScreenshotCallback(){
+      @Override public void onSuccess(ScreenshotResult result){
+        String image;
+        try(HardwareBuffer buffer=result.getHardwareBuffer()){
+          Bitmap hardware=Bitmap.wrapHardwareBuffer(buffer,result.getColorSpace());
+          if(hardware==null)throw new IllegalStateException("Android вернул пустой снимок");
+          try{
+            Bitmap pixels=hardware.copy(Bitmap.Config.ARGB_8888,false);
+            if(pixels==null)throw new IllegalStateException("Не удалось прочитать снимок");
+            try{
+              float scale=Math.min(1f,1920f/Math.max(pixels.getWidth(),pixels.getHeight()));
+              Bitmap scaled=scale<1f?Bitmap.createScaledBitmap(pixels,
+                  Math.max(1,Math.round(pixels.getWidth()*scale)),Math.max(1,Math.round(pixels.getHeight()*scale)),true):pixels;
+              try{
+                ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+                if(!scaled.compress(Bitmap.CompressFormat.JPEG,76,bytes)||bytes.size()>700000)
+                  throw new IllegalStateException("Не удалось подготовить снимок");
+                image=Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP);
+              }finally{if(scaled!=pixels)scaled.recycle();}
+            }finally{pixels.recycle();}
+          }finally{hardware.recycle();}
+        }catch(RuntimeException error){reply.accept(null,"Не удалось обработать снимок экрана");return;}
+        reply.accept(image,null);
+      }
+
+      @Override public void onFailure(int code){
+        String error=code==ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT?"Подожди секунду перед следующим снимком":
+            code==ERROR_TAKE_SCREENSHOT_SECURE_WINDOW?"Android защищает это окно от снимков":
+            "Android не смог сделать снимок экрана ("+code+")";
+        reply.accept(null,error);
+      }
+    });
   }
 
   // Overlay and accessibility callbacks both run on the main looper.
@@ -564,7 +604,7 @@ public final class EvaAccessibility extends AccessibilityService {
   }
 
   private static void collect(AccessibilityNodeInfo node,ArrayList<AccessibilityNodeInfo> out){if(node==null||out.size()>=300)return;out.add(node);for(int i=0;i<node.getChildCount()&&out.size()<300;i++)collect(node.getChild(i),out);}
-  private static ArrayList<AccessibilityNodeInfo> nodes(Context context) throws Exception {
+  private static EvaAccessibility requireConnection(Context context) throws Exception {
     EvaAccessibility service=instance;
     if(service==null){
       Boolean configured=configured(context);
@@ -572,7 +612,11 @@ public final class EvaAccessibility extends AccessibilityService {
       if(configured==null)throw new Exception("Служба Евы не подключена. Android не предоставил состояние переключателя");
       throw new Exception("Включи службу «Ева — управление экраном» для этой установки Евы");
     }
-    AccessibilityNodeInfo root=service.getRootInActiveWindow();
+    return service;
+  }
+
+  private static ArrayList<AccessibilityNodeInfo> nodes(Context context) throws Exception {
+    AccessibilityNodeInfo root=requireConnection(context).getRootInActiveWindow();
     if(root==null)throw new Exception("Служба Евы подключена. Активный экран недоступен");
     ArrayList<AccessibilityNodeInfo> list=new ArrayList<>();
     collect(root,list);
