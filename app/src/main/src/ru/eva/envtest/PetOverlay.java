@@ -663,7 +663,7 @@ final class PetOverlay {
     }
 
     private void setSeatChair(boolean mirrored){
-        boolean needed=!supportedSeat(mirrored);
+        boolean needed=parked&&editingInApp()||!supportedSeat(mirrored);
         if(needed!=chair.deployed){
             chair.set(needed,SystemClock.uptimeMillis(),motionEnabled);
             sprite.invalidate();
@@ -854,7 +854,7 @@ final class PetOverlay {
                 Math.round(crossStartY+(targetY-crossStartY)*ease));
         }
         if(sprite==null)return;
-        if(y>fromY&&!windowTerrain.isEmpty()&&physicalDown==PetGravity.DOWN&&
+        if(!appParkingMove&&y>fromY&&!windowTerrain.isEmpty()&&physicalDown==PetGravity.DOWN&&
             (mode==PetMotion.HOP||mode==PetMotion.GRAVITY_FALL||mode==PetMotion.SHORT_DROP)){
             PetHomeMap.Box hit=PetHomeMap.landing(windowTerrain,x,fromY,layout.width,layout.height,maxY,0,null);
             if(hit!=null&&PetHomeMap.standY(hit,layout.height)<=y){
@@ -1095,7 +1095,7 @@ final class PetOverlay {
                         if(android.graphics.Rect.intersects(occupied,button)){lastDodgeInput=input;dodgeUntil=now+2700;break;}
                     }
                 }
-                boolean rest=appScene!=null&&(watch||appScene.editing||appPolicy==PetAppProfiles.QUIET||
+                boolean rest=appScene!=null&&(watch||editingInApp()||appPolicy==PetAppProfiles.QUIET||
                     !appScene.home&&now<dodgeUntil);
                 if(rest){
                     int[] target=appScene.parking(contentOriginX,contentOriginY,worldWidth,worldHeight,
@@ -1157,12 +1157,22 @@ final class PetOverlay {
         crossStart=x;crossStartY=y;
         targetX=destination[0];targetY=destination[1];
         appParkingMove=true;
+        if(editingInApp()&&Math.abs(targetY-y)>dp(10)){
+            int flight=Math.min(670,PetPhysics.jumpTime(targetY-y,Math.abs(targetX-x),density()));
+            play(PetMotion.HOP,targetX==x?pose.mirrored:targetX<x,
+                PetMotion.TAKEOFF_MS+flight+PetMotion.TOUCHDOWN_MS);
+            return;
+        }
         play(PetMotion.HOME_WALK,targetX<x,Math.max(330,Math.min(1200,
             Math.round((float)Math.hypot(targetX-x,targetY-y)/density()*2.3f))));
     }
 
+    private boolean editingInApp(){
+        return appScene!=null&&appScene.editing;
+    }
+
     private boolean watchingPlayer(){
-        return appScene!=null&&(appScene.video||appPolicy==PetAppProfiles.WATCH);
+        return appScene!=null&&!editingInApp()&&(appScene.video||appPolicy==PetAppProfiles.WATCH);
     }
 
     private void updateAppSeatDirection(){
@@ -1171,14 +1181,15 @@ final class PetOverlay {
     }
 
     private boolean appNeedsSeat(){
-        return watchingPlayer()||appPolicy==PetAppProfiles.QUIET;
+        return editingInApp()||watchingPlayer()||appPolicy==PetAppProfiles.QUIET;
     }
 
     private void displayAppRest(){
         if(sprite==null)return;
         boolean sit=appNeedsSeat();
         mode=sit?PetMotion.SEATED_PEEK:PetMotion.LOOK_AROUND;
-        pose.frame=sit?PetMotion.SEAT_SWING+6:PetMotion.IDLE;
+        pose.frame=sit?PetMotion.SEAT_SWING:PetMotion.IDLE;
+        pose.seatedPivot=sit;
         pose.nextFrame=-1;pose.shiftX=pose.shiftY=pose.angle=0;
         updateAppSeatDirection();
         mood.clear();
@@ -2178,7 +2189,7 @@ final class PetOverlay {
                 return;
             }
             boolean viewing=parked&&!appParkingMove&&!touched&&mode==PetMotion.SEATED_PEEK&&watchingPlayer();
-            if(parked&&!appParkingMove&&mode==PetMotion.SEATED_PEEK&&motionEnabled&&!viewing){
+            if(parked&&!appParkingMove&&mode==PetMotion.SEATED_PEEK&&motionEnabled&&!viewing&&!editingInApp()){
                 long phase=SystemClock.uptimeMillis()%7200;
                 pose.frame=PetMotion.SEAT_SWING+Math.round((1-(float)Math.cos(2*Math.PI*phase/7200))*4);
                 postInvalidateDelayed(240);

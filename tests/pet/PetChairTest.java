@@ -11,7 +11,7 @@ final class PetChairTest {
             float t=chair.phase(1000+i);
             check(PetChair.unfolding(t)>=.999f||PetChair.sitting(t)==0,"Hips descend before the seat opens");
         }
-        long stop=1900;
+        long stop=1000+PetChair.OPEN_DURATION/2;
         float opened=chair.phase(stop);
         chair.set(false,stop,true);
         check(chair.phase(stop)==opened,"Flashed closed on interruption");

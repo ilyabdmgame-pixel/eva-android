@@ -108,7 +108,7 @@ final class PetAppScene {
             for(int cx:new int[]{0,Math.max(0,width-w)}){
                 int left=ox+cx+w/5,right=ox+cx+w-w/5;
                 boolean aboveIme=!keyboard.isEmpty()&&left<keyboard.right&&right>keyboard.left&&keyboard.bottom>oy;
-                int cy=PetAppPolicy.floorY(height,h,aboveIme,keyboard.top-oy);
+                int cy=PetAppPolicy.imeChairY(height,h,aboveIme,keyboard.top-oy);
                 if(!keyboard.isEmpty()&&!editor.isEmpty()&&left<editor.right&&right>editor.left)
                     cy=PetAppPolicy.clearEditorY(cy,h,editor.top-oy,editor.bottom-oy);
                 Rect visible=new Rect(left,oy+cy,right,oy+cy+h);

@@ -1,17 +1,15 @@
 package ru.eva.envtest;
 
-/** Integer scores compare the four available parking spots without reading screen content. */
+/** Scores use screen geometry to choose a parking spot. */
 final class PetAppPolicy {
-    static int floorY(int height,int spriteHeight,boolean aboveIme,int imeTop){
-        int bottom=Math.max(0,height-spriteHeight);
-        if(!aboveIme)return bottom;
-        int soles=Math.round(spriteHeight*PetHomeMap.SOLE_CONTACT);
-        return Math.max(0,Math.min(bottom,imeTop-soles));
-    }
-
     static int clearEditorY(int y,int spriteHeight,int editorTop,int editorBottom){
         if(y>=editorBottom||y+spriteHeight<=editorTop)return y;
         return Math.max(0,editorTop-spriteHeight);
+    }
+
+    static int imeChairY(int height,int spriteHeight,boolean aboveIme,int imeTop){
+        int bottom=Math.max(0,height-spriteHeight);
+        return aboveIme?Math.max(0,Math.min(bottom,imeTop-spriteHeight)):bottom;
     }
 
     static int cost(int low,int y,int x,int previousX,int height,int buttonCount,

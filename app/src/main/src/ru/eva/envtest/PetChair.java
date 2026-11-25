@@ -2,7 +2,7 @@ package ru.eva.envtest;
 
 /** One reversible timeline: unfold first, put weight on the seat second. */
 final class PetChair {
-    static final int OPEN_DURATION=1100,CLOSE_DURATION=850;
+    static final int OPEN_DURATION=820,CLOSE_DURATION=680;
     private static final float FOLDED=.42f;
     private long began;
     private float start;
