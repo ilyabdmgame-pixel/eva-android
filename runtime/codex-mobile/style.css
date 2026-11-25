@@ -415,6 +415,7 @@ body #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
 #sidebar #new.menu-primary .ui-icon{color:currentColor}
 #sidebar :is(.chat-destinations,.menu-items) button:active{background:#3c5663}
 #sidebar #limits-card{margin:9px 3px 12px}
+#sidebar #limits-refresh{display:grid;place-items:center;flex:none;width:44px;height:44px;padding:0}
 @media(max-width:345px){.menu-items,.chat-destinations{grid-template-columns:1fr}}
 
 #composer{position:relative;z-index:3;flex:none;min-width:0}
