@@ -426,3 +426,8 @@ body.eva-compact #eva-voice-next:not([hidden]){bottom:26%;width:36px;height:36px
 #sidebar :is(.chat-destinations,.menu-items) button:active{background:#3c5663}
 #sidebar #limits-card{margin:9px 3px 12px}
 @media(max-width:345px){.menu-items,.chat-destinations{grid-template-columns:1fr}}
+
+#steer{align-self:flex-end;flex:none;min-height:44px;margin:0 max(14px,env(safe-area-inset-right)) 4px 0;padding:0 14px;border-radius:12px;background:#31595b;color:#ecfcf8;font:inherit;font-weight:650}
+#steer:hover:not(:disabled){background:#3e6b6d}
+#steer:disabled{opacity:.65}
+#steer[hidden],body.eva-compact #steer{display:none!important}

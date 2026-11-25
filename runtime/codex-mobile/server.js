@@ -36,7 +36,7 @@ const rpc=createPersonaRpc(requestCodex);
 const petWork=require('./pet-work')(kind=>console.log('EVA_PET_WORK '+kind),'/sdcard/Documents/Codex',path.join(__dirname,'pet-work-results.json'));
 function emit(x){for(const r of clients)r.write('data: '+JSON.stringify(x)+'\n\n')}
 const townChat=require('./town-chat')({rpc,cards:petWork,authenticated:()=>auth.authenticated,root:__dirname});
-readline.createInterface({input:proc.stdout}).on('line',line=>{let m;try{m=JSON.parse(line)}catch{return}if(m.id!=null&&!m.method){const p=pending.get(m.id);if(p){pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)}return} if(m.method){petWork.event(m);townChat.event(m);}if(m.id!=null&&m.method){const request={type:'request',id:m.id,method:m.method,params:m.params};pendingClientRequests.set(String(m.id),request);emit(request);return}if(m.method){authEvent(m.method,m.params||{});emit({type:'event',method:m.method,params:m.params});if(m.method==='turn/completed')chatBackup.schedule()}});
+readline.createInterface({input:proc.stdout}).on('line',line=>{let m;try{m=JSON.parse(line)}catch{return}if(m.id!=null&&!m.method){const p=pending.get(m.id);if(p){pending.delete(m.id);m.error?p.reject(Object.assign(new Error(m.error.message),{rpcCode:m.error.code})):p.resolve(m.result)}return} if(m.method){petWork.event(m);townChat.event(m);}if(m.id!=null&&m.method){const request={type:'request',id:m.id,method:m.method,params:m.params};pendingClientRequests.set(String(m.id),request);emit(request);return}if(m.method){authEvent(m.method,m.params||{});emit({type:'event',method:m.method,params:m.params});if(m.method==='turn/completed')chatBackup.schedule()}});
 proc.on('error',()=>{ready=false;for(const p of pending.values())p.reject(Error('Codex недоступен'));pending.clear();});
 proc.stdin.on('error',()=>{});
 proc.on('exit',()=>{ready=false;emit({type:'error',message:'Codex остановился. Откройте Eva заново.'})});
@@ -52,7 +52,7 @@ const phoneRequests=new Map();
 
 const openWorkshopThread = require('./workshop-thread').createWorkshopOpener(rpc,workshopDir);
 const workshop=require('../eva-workshop/service').create(rpc);
-const allowed=new Set(['thread/list','thread/start','thread/resume','thread/read','thread/delete','turn/start','turn/interrupt','model/list']);
+const allowed=new Set(['thread/list','thread/start','thread/resume','thread/read','thread/delete','turn/start','turn/steer','turn/interrupt','model/list']);
 // Mobile history uses messages and turn state. Tool transcripts can dwarf the conversation.
 function mobileThreadView(result){
  const thread=result?.thread;
@@ -132,7 +132,30 @@ if(req.method==='POST'&&u.pathname==='/speech-silero'){if(!sileroAvailable)retur
 
 if(req.method==='GET'&&u.pathname==='/drafts'){let data=[];try{data=JSON.parse(fs.readFileSync(draftsFile,'utf8'))}catch(e){if(e.code!=='ENOENT')throw e}if(!Array.isArray(data))throw Error('Ошибка файла черновиков');return json(res,200,{drafts:data})}
 if(req.method==='POST'&&['/drafts/save','/drafts/delete'].includes(u.pathname)){const o=JSON.parse((await read(req,131072)).toString()),file=draftsFile;let drafts=[];try{drafts=JSON.parse(fs.readFileSync(file,'utf8'))}catch(e){if(e.code!=='ENOENT')throw e}if(!Array.isArray(drafts))throw Error('Ошибка файла черновиков');if(typeof o.id!=='string'||!/^[-a-zA-Z0-9]{8,80}$/.test(o.id))return json(res,400,{error:'Неверный идентификатор'});drafts=drafts.filter(x=>x.id!==o.id);if(u.pathname==='/drafts/save'){if(typeof o.txt!=='string'||o.txt.length>30000||!Array.isArray(o.files)||o.files.length>20||o.files.some(f=>!f||typeof f.name!=='string'||typeof f.path!=='string'||typeof f.image!=='boolean'))return json(res,400,{error:'Неверный черновик'});if(drafts.length>=100)return json(res,400,{error:'Слишком много черновиков'});drafts.push({id:o.id,txt:o.txt,files:o.files,threadId:typeof o.threadId==='string'?o.threadId:null,createdAt:new Date().toISOString()})}const tmp=file+'.'+crypto.randomBytes(8).toString('hex');try{fs.writeFileSync(tmp,JSON.stringify(drafts),{mode:0o600,flag:'wx'});fs.renameSync(tmp,file)}finally{try{fs.unlinkSync(tmp)}catch{}}return json(res,200,{ok:true})}
-if(req.method==='POST'&&u.pathname==='/rpc'){const o=JSON.parse((await read(req,1024*1024)).toString());if(!allowed.has(o.method))return json(res,403,{error:'Недоступная команда'});if(o.method==='turn/start'&&!auth.authenticated)return json(res,401,{error:'Сначала войдите в аккаунт Codex'});const params=o.params||{};if(typeof params!=='object'||Array.isArray(params))return json(res,400,{error:'Неверные параметры'});if(o.method==='thread/resume'&&(params.path||params.history))return json(res,400,{error:'Укажите идентификатор чата'});if(o.method==='turn/start')params.serviceTierForTurn='default';const result=await rpc(o.method,params);return json(res,200,{result:o.chatView===true&&o.method==='thread/resume'?mobileThreadView(result):result})}
+if(req.method==='POST'&&u.pathname==='/rpc'){
+ const o=JSON.parse((await read(req,1024*1024)).toString());
+ if(!allowed.has(o.method))return json(res,403,{error:'Недоступная команда'});
+ const steer=o.method==='turn/steer';
+ if((steer||o.method==='turn/start')&&!auth.authenticated)
+  return json(res,401,{error:'Сначала войдите в аккаунт Codex'});
+ const params=o.params||{};
+ if(typeof params!=='object'||Array.isArray(params))return json(res,400,{error:'Неверные параметры'});
+ if(o.method==='thread/resume'&&(params.path||params.history))return json(res,400,{error:'Укажите идентификатор чата'});
+ if(o.method==='turn/start')params.serviceTierForTurn='default';
+ try{
+  const result=await rpc(o.method,params);
+  return json(res,200,{result:o.chatView===true&&o.method==='thread/resume'?mobileThreadView(result):result});
+ }catch(error){
+  // Only an explicit rejection from Codex can safely enter the next-turn queue.
+  if(steer&&error.rpcCode===-32600){
+   if(error.message==='no active turn to steer')
+    return json(res,409,{error:'Текущий ответ закончился',code:'turnEnded'});
+   if(/^expected active turn id `[^`]+` but found `[^`]+`$/.test(error.message))
+    return json(res,409,{error:'Текущий ответ сменился',code:'turnChanged'});
+  }
+  throw error;
+ }
+}
 if(req.method==='POST'&&u.pathname==='/answer'){const o=JSON.parse((await read(req,1024*1024)).toString());if(!pendingClientRequests.has(String(o.id)))return json(res,409,{error:'Этот запрос уже обработан или недоступен'});if(o.error)send({id:o.id,error:o.error});else send({id:o.id,result:o.result});pendingClientRequests.delete(String(o.id));petWork.answered(o.id);return json(res,200,{ok:true})}json(res,404,{error:'Не найдено'})}catch(e){if(!res.headersSent)json(res,500,{error:e.message})}});
 // Stable port preserves this installation's WebView settings across restarts.
 const portFile=path.join(__dirname,'server-port.json');let savedPort=0;try{savedPort=JSON.parse(fs.readFileSync(portFile,'utf8')).port;if(!Number.isInteger(savedPort)||savedPort<1024||savedPort>65535)savedPort=0}catch{}

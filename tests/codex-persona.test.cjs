@@ -11,11 +11,12 @@ const { createInterface } = require('node:readline');
 const test = require('node:test');
 const { codexInstructions, createPersonaRpc } = require('../runtime/codex-mobile/persona');
 
-function startResponsesMock(requests) {
+function startResponsesMock(requests, beforeReply) {
   return http.createServer(async (req, res) => {
     const parts = [];
     for await (const chunk of req) parts.push(chunk);
     requests.push(JSON.parse(Buffer.concat(parts)));
+    if (beforeReply) await beforeReply(requests.length);
     const message = {
       id: 'msg_' + requests.length,
       type: 'message',
@@ -63,7 +64,7 @@ async function startCodex(home, baseUrl, t, installPersona = true) {
       if (pending.has(turn.id)) pending.get(turn.id).resolve(turn);
     } else if (!message.method && pending.has(message.id)) {
       const callback = pending.get(message.id);
-      if (message.error) callback.reject(new Error(message.error.message));
+      if (message.error) callback.reject(Object.assign(new Error(message.error.message), { code: message.error.code, data: message.error.data }));
       else callback.resolve(message.result);
     }
   });
@@ -91,6 +92,7 @@ async function startCodex(home, baseUrl, t, installPersona = true) {
   const rpc = installPersona ? createPersonaRpc(request) : request;
   return {
     rpc,
+    completed(turnId) { return turns.get(turnId) || wait(turnId); },
     async say(threadId, text, options = {}) {
       const { turn } = await rpc('turn/start', { threadId, input: [{ type: 'text', text }], ...options });
       assert.equal((turns.get(turn.id) || await wait(turn.id)).status, 'completed');
@@ -155,4 +157,37 @@ test('a chat created before the persona was configured keeps its ID and gains th
   assert.ok(developer.some(item => item.content.some(part => part.text?.includes(codexInstructions))));
   assert.ok(requests[1].input.some(item => item.role === 'user' &&
     item.content.some(part => part.text?.includes('История существующего чата.'))));
+});
+
+test('Codex accepts a correction during an active turn and rejects stale targets', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'eva-steer-'));
+  const requests = [];
+  const {promise: arrived, resolve: markArrived} = Promise.withResolvers();
+  const {promise: held, resolve: release} = Promise.withResolvers();
+  const server = startResponsesMock(requests, count => {
+    if (count === 1) { markArrived(); return held; }
+  });
+  t.after(() => { release(); server.close(); return fs.rm(dir, { recursive: true, force: true }); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const codex = await startCodex(dir, 'http://127.0.0.1:' + server.address().port + '/v1', t);
+  const {thread} = await codex.rpc('thread/start', {cwd: dir, model: 'gpt-5.4'});
+  const {turn} = await codex.rpc('turn/start', {
+    threadId: thread.id, input: [{type: 'text', text: 'Первоначальное задание.'}]
+  });
+  await arrived;
+  const input = [{type: 'text', text: 'Уточнение в работающем чате.'}];
+  await assert.rejects(codex.rpc('turn/steer', {threadId: thread.id, expectedTurnId: 'stale', input}),
+    {code: -32600, message: /^expected active turn id/});
+  const accepted = await codex.rpc('turn/steer', {
+    threadId: thread.id, expectedTurnId: turn.id, clientUserMessageId: 'test-steer-0001', input
+  });
+  assert.equal(accepted.turnId, turn.id);
+  release();
+  assert.equal((await codex.completed(turn.id)).status, 'completed');
+  const resumedInput = requests.slice(1).flatMap(request => request.input).filter(item => item.role === 'user')
+    .flatMap(item => item.content).map(item => item.text).join('\n');
+  assert.match(resumedInput, /Уточнение в работающем чате\./);
+  await assert.rejects(codex.rpc('turn/steer', {threadId: thread.id, expectedTurnId: turn.id, input}),
+    {code: -32600, message: 'no active turn to steer'});
+  await codex.close();
 });

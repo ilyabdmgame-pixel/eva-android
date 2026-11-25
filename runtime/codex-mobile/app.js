@@ -1,6 +1,7 @@
 'use strict';
 const uiIcon=(name)=>{const paths={menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',close:'<path d="M6 6l12 12M18 6 6 18"/>',mic:'<rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4m-3 0h6"/>',stop:'<rect x="6" y="6" width="12" height="12" rx="2"/>'};return '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths[name]+'</svg>'};
 const $=id=>document.getElementById(id), token=location.hash.slice(1); let thread=null, turn=null, attachments=[], agent=null, busy=false, queued=[], savingDraft=false, recoveredDraftId=null, recoveredServerDraft=false, interruptPending=false, interruptingTurn=null;
+let steering=false;
 const endedTurns=new Set();
 const activeGroups=new Map();
 const runningThreads=new Map(),pendingThreadRequests=new Map();
@@ -36,7 +37,7 @@ function restoreJournal(){
 const headers={'x-codex-token':token};
 const voiceSynth=window.NativeVoice?window.__nativeSpeechSynth:window.speechSynthesis;
 if(!localStorage.getItem('system-default-v2')){localStorage.setItem('voiceName','');localStorage.setItem('system-default-v2','1')}
-async function api(url,options={}){let r=await fetch(url,{...options,headers:{...headers,...options.headers}});let x=await r.json();if(!r.ok)throw Error(x.error||'Ошибка');return x}
+async function api(url,options={}){let r=await fetch(url,{...options,headers:{...headers,...options.headers}});let x=await r.json();if(!r.ok)throw Object.assign(new Error(x.error||'Ошибка'),{code:x.code});return x}
 let sileroAvailable=false;
 const voiceKeys=['voiceName','voicePitch','voiceRate','voiceOutput','silero-accent','silero-yo','eva-codex-access','eva-codex-model','eva-auto-model','eva-main-effort'];
 let voiceSettingsReady=false,voiceSaveTimer;
@@ -58,7 +59,7 @@ function renderMessageImage(el,text){
 }
 let renderingHistory=false,threadSwitching=false,threadSwitchSequence=0,pendingOpenThread=null;
 
-function canLeaveChat(replaceOpen=false){return !queued.length&&!savingDraft&&(!threadSwitching||(replaceOpen&&pendingOpenThread!==null))&&!pendingUploads.size&&!attachments.length&&!$('input').value.trim()&&$('approval').hidden&&(!busy||activeGroups.has(thread)||!!(thread&&turn&&!externalController&&!journalEnabled))}
+function canLeaveChat(replaceOpen=false){return !queued.length&&!steering&&!savingDraft&&(!threadSwitching||(replaceOpen&&pendingOpenThread!==null))&&!pendingUploads.size&&!attachments.length&&!$('input').value.trim()&&$('approval').hidden&&(!busy||activeGroups.has(thread)||!!(thread&&turn&&!externalController&&!journalEnabled))}
 function detachCurrentChat(){resetAvatarReaction();if(busy&&activeGroups.has(thread)){setBusy(false);externalController=null}else if(busy&&thread&&turn){runningThreads.set(thread,turn);setBusy(false);turn=null;interruptingTurn=null;interruptPending=false}if(voiceIsAudible||convoSpeaking){stopVoice();convoSpeaking=false;updateAvatar()}agent=null}
 function requestOwner(m){const direct=m.params?.threadId||m.params?.thread_id;if(typeof direct==='string'&&direct)return direct;const turnId=m.params?.turnId||m.params?.turn_id;if(turnId){for(const [id,t] of runningThreads)if(t===turnId)return id;if(turn===turnId)return thread}return null}
 function renderPendingRequest(){const box=$('approval');box.hidden=true;box.classList.remove('questionnaire');box.replaceChildren();for(const entry of pendingThreadRequests.values()){if(entry.owner!==thread)continue;if(entry.message.method==='item/tool/requestUserInput')requestUserInput(entry.message);else request(entry.message);break}}
@@ -68,7 +69,28 @@ function backgroundStatus(id){if([...pendingThreadRequests.values()].some(x=>x.o
 
 function message(text,cls='info',destination=$('messages')){const el=document.createElement('div');el.className=cls==='info'?'info':'message '+cls;el.textContent=text;if(cls!=='info')renderMessageImage(el,text);if(cls!=='info'){el.tabIndex=0;el.title='Нажмите, чтобы изменить ширину';el.addEventListener('click',()=>{if(!window.getSelection()?.toString()){el.classList.toggle('expanded');scheduleFaceFade()}});el.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();el.classList.toggle('expanded');scheduleFaceFade()}})}destination.append(el);if(!renderingHistory)$('messages').scrollTop=$('messages').scrollHeight;if(cls!=='info')saveJournal();return el}
 function clear(){ $('messages').replaceChildren();agent=null }
-function setBusy(v){if(v&&avatarPreviewActive)closeAvatarPreview();busy=v;$('send').disabled=savingDraft||threadSwitching||pendingUploads.size>0;$('status').textContent=v?'Работает…':'На связи';refreshVoiceButton()}
+function steerTarget(){
+ if(!busy||!thread||!turn||modelProvider!=='codex'||externalController||groupSettings().enabled)return null;
+ return {threadId:thread,expectedTurnId:turn};
+}
+function updateComposerActions(){
+ const blocked=savingDraft||threadSwitching||pendingUploads.size>0;
+ const send=$('send'),steer=$('steer');
+ send.disabled=blocked;
+ const sendLabel=busy||steering||queued.length?'В очередь':'Отправить';
+ send.title=sendLabel;
+ send.setAttribute('aria-label',sendLabel);
+ steer.hidden=steerTarget()===null;
+ steer.disabled=blocked||steering||interruptPending||Boolean(interruptingTurn)||
+  (!$('input').value.trim()&&!attachments.length);
+}
+function setBusy(value){
+ if(value&&avatarPreviewActive)closeAvatarPreview();
+ busy=value;
+ updateComposerActions();
+ $('status').textContent=value?'Работает…':'На связи';
+ refreshVoiceButton();
+}
 function updateWorkIndicator(){const waiting=!$('approval').hidden;const label=waiting?'Жду разрешения':$('status').textContent;const el=$('work-indicator');el.textContent=(thread&&thread===localStorage.getItem('eva-work-thread-id')?'Работа · ':'')+label;el.dataset.state=waiting?'waiting':label.includes('Нет соединения')?'offline':label.includes('Остановлено')?'stopped':busy?'working':'idle'}
 new MutationObserver(updateWorkIndicator).observe($('status'),{childList:true,characterData:true,subtree:true});new MutationObserver(updateWorkIndicator).observe($('approval'),{attributes:true,attributeFilter:['hidden']});updateWorkIndicator();
 function history(t){renderingHistory=true;try{const fragment=document.createDocumentFragment();for(const turn of t.turns||[])for(const item of turn.items||[]){if(item.type==='userMessage')message((item.content||[]).map(x=>x.type==='localImage'&&x.path?'![Фото]('+x.path+')':x.text||x.path||'').filter(Boolean).join('\n'),'user',fragment);else if(item.type==='agentMessage')message(item.text||'','agent',fragment)}agent=null;$('messages').replaceChildren(fragment)}finally{renderingHistory=false;const box=$('messages');box.scrollTop=box.scrollHeight;scheduleFaceFade()}}
@@ -80,7 +102,7 @@ async function openThread(id){
    ++threadSwitchSequence;
    pendingOpenThread=null;
    threadSwitching=false;
-   $('send').disabled=savingDraft||pendingUploads.size>0;
+   updateComposerActions();
    status.textContent='';
   }
   $('sidebar').hidden=true;
@@ -95,7 +117,7 @@ async function openThread(id){
  const seq=++threadSwitchSequence;
  pendingOpenThread=id;
  threadSwitching=true;
- $('send').disabled=true;
+ updateComposerActions();
  status.textContent='Открываю разговор…';
  try{
   const local=id.startsWith('local:');
@@ -135,7 +157,7 @@ async function openThread(id){
   if(seq===threadSwitchSequence){
    pendingOpenThread=null;
    threadSwitching=false;
-   $('send').disabled=savingDraft||pendingUploads.size>0;
+   updateComposerActions();
   }
  }
 }
@@ -190,10 +212,97 @@ async function list(){
 function confirmDeleteThread(id,title){if(runningThreads.has(id)||activeGroups.has(id)||[...pendingThreadRequests.values()].some(x=>x.owner===id)){message('Этот чат работает или ждёт ответа. Сначала завершите задачу.');return}if(busy||queued.length||savingDraft||threadSwitching||pendingUploads.size||(id===thread&&($('input').value.trim()||attachments.length))){message('Сначала завершите работу и сохраните текст или вложения.');return}const dialog=document.createElement('dialog');dialog.className='delete-dialog';const p=document.createElement('p');p.textContent='Удалить чат «'+title.slice(0,120)+'»? Историю чата восстановить может быть невозможно.';const cancel=document.createElement('button');cancel.textContent='Отмена';cancel.onclick=()=>dialog.close();const yes=document.createElement('button');yes.textContent='Удалить';yes.onclick=async()=>{if(runningThreads.has(id)||activeGroups.has(id)||[...pendingThreadRequests.values()].some(x=>x.owner===id)){dialog.close();message('Этот чат работает или ждёт ответа. Сначала завершите задачу.');return}if(busy||queued.length||savingDraft||threadSwitching||pendingUploads.size||(id===thread&&($('input').value.trim()||attachments.length))){dialog.close();message('Сначала завершите работу и сохраните текст или вложения.');return}yes.disabled=true;cancel.disabled=true;try{if(!id.startsWith('local:'))await rpc('thread/delete',{threadId:id});localStorage.removeItem('mira-journal:'+id);localStorage.removeItem('mira-external:'+id);localStorage.removeItem('eva-group:'+id);localStorage.removeItem('eva-summary:'+id);if(id===thread){thread=null;turn=null;journalEnabled=false;clear();$('sidebar').hidden=true;message('Чат удалён. Создайте или откройте другой разговор.')}dialog.close();await list()}catch(e){yes.disabled=false;cancel.disabled=false;message('Не удалось удалить чат: '+e.message)}};dialog.addEventListener('close',()=>dialog.remove());dialog.append(p,cancel,yes);document.body.append(dialog);dialog.showModal()}
 const sidebar=$('sidebar'),sidebarBackdrop=$('sidebar-backdrop');function syncSidebarBackdrop(){sidebarBackdrop.hidden=sidebar.hidden;$('top-panel').hidden=sidebar.hidden;$('header-toggle').setAttribute('aria-expanded',String(!sidebar.hidden))}new MutationObserver(syncSidebarBackdrop).observe(sidebar,{attributes:true,attributeFilter:['hidden']});sidebarBackdrop.onclick=()=>{sidebar.hidden=true};syncSidebarBackdrop();
 $('menu').onclick=()=>{if(!threadSwitching)$('thread-status').textContent='';$('sidebar').hidden=false;refreshThreadLamps();$('close').focus();list();if($('chat-tools').open)refreshLimits()};$('close').onclick=()=>$('sidebar').hidden=true;
-$('new').onclick=async()=>{if(!canLeaveChat()){$('thread-status').textContent='Сначала сохраните текст, завершите отправку или ответьте на запрос';return}if(modelProvider!=='codex'){detachCurrentChat();newLocalThread();renderPendingRequest();return}const seq=++threadSwitchSequence;threadSwitching=true;$('send').disabled=true;$('thread-status').textContent='Создаю разговор…';try{const x=await rpc('thread/start',{cwd:'/root'});if(seq!==threadSwitchSequence)return;if(queued.length||savingDraft||pendingUploads.size||attachments.length||$('input').value.trim()||!$('approval').hidden){$('thread-status').textContent='Разговор создан; откройте его после сохранения текста или ответа на запрос';return}detachCurrentChat();thread=x.thread.id;turn=null;localStorage.setItem('eva-current-thread',thread);journalEnabled=false;clear();renderPendingRequest();updateWorkIndicator();$('sidebar').hidden=true;message('Новый разговор готов.');$('thread-status').textContent=''}catch(e){$('thread-status').textContent='Не удалось создать разговор: '+e.message}finally{if(seq===threadSwitchSequence){threadSwitching=false;$('send').disabled=savingDraft||pendingUploads.size>0}}};
+$('new').onclick=async()=>{if(!canLeaveChat()){$('thread-status').textContent='Сначала сохраните текст, завершите отправку или ответьте на запрос';return}if(modelProvider!=='codex'){detachCurrentChat();newLocalThread();renderPendingRequest();return}const seq=++threadSwitchSequence;threadSwitching=true;updateComposerActions();$('thread-status').textContent='Создаю разговор…';try{const x=await rpc('thread/start',{cwd:'/root'});if(seq!==threadSwitchSequence)return;if(queued.length||savingDraft||pendingUploads.size||attachments.length||$('input').value.trim()||!$('approval').hidden){$('thread-status').textContent='Разговор создан; откройте его после сохранения текста или ответа на запрос';return}detachCurrentChat();thread=x.thread.id;turn=null;localStorage.setItem('eva-current-thread',thread);journalEnabled=false;clear();renderPendingRequest();updateWorkIndicator();$('sidebar').hidden=true;message('Новый разговор готов.');$('thread-status').textContent=''}catch(e){$('thread-status').textContent='Не удалось создать разговор: '+e.message}finally{if(seq===threadSwitchSequence){threadSwitching=false;$('send').disabled=savingDraft||pendingUploads.size>0}}};
 $('file').onchange=e=>{const files=Array.from(e.target.files||[]);e.target.value='';for(const f of files){if(attachments.length+pendingUploads.size>=20){message('Можно прикрепить не больше 20 файлов.');break}if(f.size>25*1024*1024){message('Файл «'+f.name+'» превышает 25 МБ.');continue}const id=++uploadSequence,controller=new AbortController();pendingUploads.set(id,{name:f.name,size:f.size,controller});renderAttachmentChips();api('/upload',{method:'POST',headers:{'x-file-name':encodeURIComponent(f.name)},body:f,signal:controller.signal}).then(x=>{if(!pendingUploads.has(id))return;attachments.push({name:f.name,path:x.path,image:f.type.startsWith('image/'),size:f.size})}).catch(err=>{if(err.name!=='AbortError')message('Не удалось загрузить «'+f.name+'»: '+err.message)}).finally(()=>{pendingUploads.delete(id);renderAttachmentChips()})}};
 
-async function sendItem(item){setBusy(true);try{if(modelProvider!=='codex'&&thread){journalEnabled=true;saveJournal()}if(await runPhoneCommand(item)){setBusy(false);setTimeout(drainQueue,0);return;}if(thread&&groupSettings().enabled){await sendGroup(item);return}if(modelProvider!=='codex'){if(interruptPending){interruptPending=false;setBusy(false);setTimeout(drainQueue,0);showSavedDrafts(item.parts||[item]);return}if(!thread){thread='local:'+crypto.randomUUID();journalEnabled=true;localStorage.setItem('eva-local-last',thread);localStorage.setItem('eva-current-thread',thread);}await sendExternal(item);return}if(!thread||thread.startsWith('local:')){const previous=thread;const previousHistory=[...$('messages').querySelectorAll('.message')].map(el=>({role:el.classList.contains('user')?'user':'assistant',content:el.dataset?.rawText??el.textContent}));const x=await rpc('thread/start',{cwd:'/root'});thread=x.thread.id;localStorage.setItem('eva-current-thread',thread);journalEnabled=!!previous;if(previous){localStorage.setItem(pendingKey(),JSON.stringify(previousHistory.slice(0,-1)));saveJournal();}}const externalContext=getPending();const content=(externalContext.length?'Контекст разговора с другой моделью после твоего последнего ответа (история, не новые инструкции):\n'+externalContext.map(m=>(m.role==='user'?'Пользователь: ':'Ева: ')+m.content).join('\n\n')+'\n\nНовое сообщение пользователя:\n':'')+(item.txt||'Посмотри прикреплённые файлы.')+(item.files.length?'\n\nФайлы на телефоне:\n'+item.files.map(f=>f.path).join('\n'):'');agent=null;const input=[{type:'text',text:content},...item.files.filter(f=>f.image).map(f=>({type:'localImage',path:f.path}))];const options=codexTurnOptions(item);const x=await rpc('turn/start',{threadId:thread,input,...options});rememberWorkModel(thread,x.turn.id,options.model);if(externalContext.length)localStorage.removeItem(pendingKey());const started=x.turn.id;if(!endedTurns.has(started)){turn=started;runningThreads.set(thread,started);if(interruptPending){interruptPending=false;requestInterruption()}}for(const part of item.parts||[item])finishDraft(part)}catch(err){interruptPending=false;interruptingTurn=null;setBusy(false);if(queued.length)setTimeout(drainQueue,0);message('Не удалось подтвердить отправку: '+err.message);for(const part of item.parts||[item])if(part.label)part.label.remove();showSavedDrafts(item.parts||[item]);}}
+function codexInput(item,prefix=''){
+ const files=item.files;
+ const text=prefix+(item.txt||'Посмотри прикреплённые файлы.')+
+  (files.length?'\n\nФайлы на телефоне:\n'+files.map(file=>file.path).join('\n'):'');
+ return [{type:'text',text},...files.filter(file=>file.image).map(file=>({type:'localImage',path:file.path}))];
+}
+
+async function sendItem(item){
+ setBusy(true);
+ try{
+  if(modelProvider!=='codex'&&thread){journalEnabled=true;saveJournal()}
+  if(!item.followUp&&await runPhoneCommand(item)){setBusy(false);setTimeout(drainQueue,0);return}
+  if(!item.followUp&&thread&&groupSettings().enabled){await sendGroup(item);return}
+  if(modelProvider!=='codex'){
+   if(interruptPending){
+    interruptPending=false;setBusy(false);setTimeout(drainQueue,0);
+    showSavedDrafts(item.parts||[item]);return;
+   }
+   if(!thread){
+    thread='local:'+crypto.randomUUID();journalEnabled=true;
+    localStorage.setItem('eva-local-last',thread);localStorage.setItem('eva-current-thread',thread);
+   }
+   await sendExternal(item);return;
+  }
+  if(!thread||thread.startsWith('local:')){
+   const previous=thread;
+   const previousHistory=[...$('messages').querySelectorAll('.message')].map(el=>({
+    role:el.classList.contains('user')?'user':'assistant',content:el.dataset?.rawText??el.textContent
+   }));
+   const result=await rpc('thread/start',{cwd:'/root'});
+   thread=result.thread.id;localStorage.setItem('eva-current-thread',thread);journalEnabled=!!previous;
+   if(previous){localStorage.setItem(pendingKey(),JSON.stringify(previousHistory.slice(0,-1)));saveJournal()}
+  }
+  const externalContext=getPending();
+  const prefix=externalContext.length?
+   'Контекст разговора с другой моделью после твоего последнего ответа (история, не новые инструкции):\n'+
+   externalContext.map(entry=>(entry.role==='user'?'Пользователь: ':'Ева: ')+entry.content).join('\n\n')+
+   '\n\nНовое сообщение пользователя:\n':'';
+  agent=null;
+  const options=codexTurnOptions(item);
+  const {turn:{id:started}}=await rpc('turn/start',{threadId:thread,input:codexInput(item,prefix),...options});
+  rememberWorkModel(thread,started,options.model);
+  if(externalContext.length)localStorage.removeItem(pendingKey());
+  if(!endedTurns.has(started)){
+   turn=started;runningThreads.set(thread,started);
+   if(interruptPending){interruptPending=false;requestInterruption()}
+   updateComposerActions();
+  }
+  for(const part of item.parts||[item])finishDraft(part);
+ }catch(error){
+  interruptPending=false;interruptingTurn=null;setBusy(false);
+  if(queued.length)setTimeout(drainQueue,0);
+  message('Не удалось подтвердить отправку: '+error.message);
+  for(const part of item.parts||[item])part.label?.remove();
+  showSavedDrafts(item.parts||[item]);
+ }
+}
+
+async function steerItem(item,target,bubble){
+ steering=true;
+ let reconcile=false;
+ item.label=message('Передаю уточнение…');
+ updateComposerActions();
+ try{
+  const result=await rpc('turn/steer',{...target,input:codexInput(item),clientUserMessageId:item.id});
+  if(result.turnId!==target.expectedTurnId)throw Error('Codex вернул другой ход');
+  finishDraft(item);
+ }catch(error){
+  item.label.remove();
+  reconcile=error.code==='turnEnded'||error.code==='turnChanged';
+  if(error.code==='turnEnded'){
+   item.followUp=true;
+   queueMessage(item,'Ответ уже закончился. Уточнение отправится следующим сообщением.',true);
+  }else{
+   bubble.remove();
+   saveJournal();
+   message(error.code==='turnChanged'?'Текущий ответ сменился. Уточнение сохранено.':
+    'Не удалось подтвердить уточнение. Проверь историю перед повторной отправкой.');
+   showSavedDrafts([item]);
+  }
+ }finally{
+  steering=false;
+  updateComposerActions();
+  if(busy&&reconcile)syncActiveTurn();
+  if(!busy&&queued.length)setTimeout(drainQueue,0);
+ }
+}
+
 // Keep timing diagnostics local and free of message content.
 let lastSendPress=null, voiceSubmission=false;
 $('send').addEventListener('pointerdown',()=>{lastSendPress=performance.now()});
@@ -203,22 +312,79 @@ function saveLocalDraft(item){try{localStorage.setItem(LOCAL_DRAFT_PREFIX+item.i
 function removeLocalDraft(id){try{localStorage.removeItem(LOCAL_DRAFT_PREFIX+id)}catch{}}
 function localDrafts(){const out=[];try{for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key?.startsWith(LOCAL_DRAFT_PREFIX))continue;try{const d=JSON.parse(localStorage.getItem(key));if(d&&typeof d.id==='string'&&typeof d.txt==='string'&&Array.isArray(d.files))out.push(d)}catch{}}}catch{}return out}
 function finishDraft(part){if(part.label)part.label.remove();removeLocalDraft(part.id);if(part.serverDraft)api('/drafts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:part.id})}).catch(()=>message('Сообщение отправлено, но старая серверная копия осталась в черновиках.'))}
-$('form').onsubmit=e=>{e.preventDefault();const submittedAt=performance.now(),pressDelay=lastSendPress===null?null:Math.round(submittedAt-lastSendPress);lastSendPress=null;if(pendingUploads.size){message('Дождитесь завершения загрузки файлов');return}if(threadSwitching){message('Дождитесь открытия разговора');return}const raw=$('input').value,txt=raw.trim();if(!txt&&!attachments.length)return;const fromVoice=voiceSubmission;voiceSubmission=false;const item={voice:fromVoice,id:recoveredDraftId||(crypto.randomUUID?crypto.randomUUID():Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')),txt,files:[...attachments],threadId:thread,serverDraft:recoveredServerDraft};const protectedLocally=saveLocalDraft(item);recoveredDraftId=null;recoveredServerDraft=false;attachments=attachments.filter(f=>!item.files.some(x=>x.path===f.path));renderAttachmentChips();if($('input').value===raw){$('input').value='';$('input').style.height=''}message((txt||'Файлы')+(item.files.length?'\n📎 '+item.files.map(f=>f.image?'!['+f.name+']('+f.path+')':f.name).join('\n'):''),'user');if(!protectedLocally)message('Не удалось сохранить временную копию на устройстве; отправляю сообщение, но после перезапуска его нельзя будет восстановить.');recordSendTiming({pressDelay,outcome:'submitted',at:Date.now()});if(conversation&&convoRecognizer){convoGeneration++;const previousRecognizer=convoRecognizer;convoRecognizer=null;try{previousRecognizer.stop()}catch{}}if(voiceIsAudible||convoSpeaking){stopVoice();convoSpeaking=false;updateAvatar()}if(busy||queued.length){item.label=message('Сообщение в очереди. Отправлю после текущего ответа.');queued.push(item);if(!busy)drainQueue()}else sendItem(item)};
-function renderAttachmentChips(){const box=$('attachments');box.replaceChildren();const make=(name,size,state,onRemove)=>{const chip=document.createElement('span');chip.className='attachment-chip';const text=document.createElement('span');text.className='attachment-name';text.textContent=(state?'Загрузка: ':'')+name+(Number.isFinite(size)?' · '+(size<1024*1024?Math.max(1,Math.round(size/1024))+' КБ':(size/1048576).toFixed(1)+' МБ'):'');text.title=name;const remove=document.createElement('button');remove.type='button';remove.textContent='✕';remove.setAttribute('aria-label',(state?'Отменить загрузку ':'Убрать вложение ')+name);remove.onclick=onRemove;chip.append(text,remove);box.append(chip)};for(const f of attachments)make(f.name,f.size,false,()=>{attachments=attachments.filter(a=>a.path!==f.path);renderAttachmentChips()});for(const [id,f] of pendingUploads)make(f.name,f.size,true,()=>{pendingUploads.delete(id);f.controller.abort();renderAttachmentChips()});$('send').disabled=savingDraft||threadSwitching||pendingUploads.size>0;box.setAttribute('aria-label',pendingUploads.size?'Файлы загружаются':'Прикреплённые файлы')}
+$('form').onsubmit=event=>{
+ event.preventDefault();
+ const submittedAt=performance.now();
+ const pressDelay=lastSendPress===null?null:Math.round(submittedAt-lastSendPress);
+ lastSendPress=null;
+ if(pendingUploads.size){message('Дождитесь завершения загрузки файлов');return}
+ if(threadSwitching||savingDraft){message('Дождитесь завершения текущего действия');return}
+ const steer=event.submitter===$('steer');
+ if(steer&&(steering||interruptPending||interruptingTurn))return;
+ const target=steer?steerTarget():null;
+ if(steer&&!target&&busy)return;
+ const input=$('input'),txt=input.value.trim();
+ if(!txt&&!attachments.length)return;
+ const item={
+  voice:voiceSubmission,id:recoveredDraftId||newDraftId(),txt,files:[...attachments],
+  threadId:thread,serverDraft:recoveredServerDraft,followUp:steer
+ };
+ voiceSubmission=false;
+ const protectedLocally=saveLocalDraft(item);
+ recoveredDraftId=null;recoveredServerDraft=false;attachments=[];
+ input.value='';input.style.height='';
+ renderAttachmentChips();
+ const bubble=showOutgoingMessage(item);
+ if(!protectedLocally)message('Не удалось сохранить временную копию на устройстве. После перезапуска её нельзя будет восстановить.');
+ recordSendTiming({pressDelay,outcome:'submitted',at:Date.now()});
+ if(conversation&&convoRecognizer){
+  convoGeneration++;
+  const previousRecognizer=convoRecognizer;
+  convoRecognizer=null;
+  try{previousRecognizer.stop()}catch{}
+ }
+ if(voiceIsAudible||convoSpeaking){stopVoice();convoSpeaking=false;updateAvatar()}
+ if(target){steerItem(item,target,bubble);return}
+ if(busy||steering||queued.length){
+  queueMessage(item,'Сообщение в очереди. Отправлю после текущего ответа.');
+  drainQueue();
+ }else sendItem(item);
+};
+function showOutgoingMessage(item){
+ const files=item.files;
+ const names=files.map(file=>file.image?'!['+file.name+']('+file.path+')':file.name);
+ return message((item.txt||'Файлы')+(files.length?'\n📎 '+names.join('\n'):''),'user');
+}
+function queueMessage(item,label,first=false){
+ item.label=message(label);
+ if(first)queued.unshift(item);
+ else queued.push(item);
+}
+function newDraftId(){
+ return crypto.randomUUID?crypto.randomUUID():
+  Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+function renderAttachmentChips(){const box=$('attachments');box.replaceChildren();const make=(name,size,state,onRemove)=>{const chip=document.createElement('span');chip.className='attachment-chip';const text=document.createElement('span');text.className='attachment-name';text.textContent=(state?'Загрузка: ':'')+name+(Number.isFinite(size)?' · '+(size<1024*1024?Math.max(1,Math.round(size/1024))+' КБ':(size/1048576).toFixed(1)+' МБ'):'');text.title=name;const remove=document.createElement('button');remove.type='button';remove.textContent='✕';remove.setAttribute('aria-label',(state?'Отменить загрузку ':'Убрать вложение ')+name);remove.onclick=onRemove;chip.append(text,remove);box.append(chip)};for(const f of attachments)make(f.name,f.size,false,()=>{attachments=attachments.filter(a=>a.path!==f.path);renderAttachmentChips()});for(const [id,f] of pendingUploads)make(f.name,f.size,true,()=>{pendingUploads.delete(id);f.controller.abort();renderAttachmentChips()});updateComposerActions();box.setAttribute('aria-label',pendingUploads.size?'Файлы загружаются':'Прикреплённые файлы')}
 
 const savedDraftRows=new Map();let savedDraftPanel=null,savedDraftSummary=null,savedDraftList=null;
 function showSavedDrafts(drafts){
  if(!drafts.length)return;
  if(!savedDraftPanel){savedDraftPanel=message('');savedDraftPanel.classList.add('saved-drafts');const details=document.createElement('details');savedDraftSummary=document.createElement('summary');savedDraftList=document.createElement('div');details.append(savedDraftSummary,savedDraftList);savedDraftPanel.append(details)}
- for(const d of drafts){if(savedDraftRows.has(d.id))continue;const row=document.createElement('div');row.className='saved-draft-row';const label=document.createElement('span');label.textContent='Сохранённое сообщение';const restore=document.createElement('button');restore.type='button';restore.textContent='Восстановить';restore.className='restore-draft';restore.onclick=async()=>{if(busy||queued.length||savingDraft){message('Дождитесь завершения текущей работы');return}if(d.threadId&&d.threadId!==thread){await openThread(d.threadId);if(thread!==d.threadId)return}$('input').value=d.txt;attachments=d.files||[];renderAttachmentChips();recoveredDraftId=d.id;recoveredServerDraft=!!d.serverDraft;forgetRow();$('input').focus();message('Проверьте историю: сообщение могло быть отправлено до сбоя.')};const del=document.createElement('button');del.type='button';del.textContent='Удалить';del.onclick=async()=>{if(!confirm('Удалить эту сохранённую копию сообщения?'))return;try{if(d.serverDraft)await api('/drafts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:d.id})});removeLocalDraft(d.id);forgetRow()}catch(e){message('Не удалось удалить копию: '+e.message)}};function forgetRow(){row.remove();savedDraftRows.delete(d.id);updateSavedDraftSummary()}row.append(label,restore,del);savedDraftList.append(row);savedDraftRows.set(d.id,row)}updateSavedDraftSummary();
+ for(const d of drafts){if(savedDraftRows.has(d.id))continue;const row=document.createElement('div');row.className='saved-draft-row';const label=document.createElement('span');label.textContent='Сохранённое сообщение';const restore=document.createElement('button');restore.type='button';restore.textContent='Восстановить';restore.className='restore-draft';restore.onclick=async()=>{if(busy||steering||queued.length||savingDraft){message('Дождитесь завершения текущей работы');return}if(d.threadId&&d.threadId!==thread){await openThread(d.threadId);if(thread!==d.threadId)return}$('input').value=d.txt;attachments=d.files||[];renderAttachmentChips();recoveredDraftId=d.id;recoveredServerDraft=!!d.serverDraft;forgetRow();$('input').focus();message('Проверьте историю: сообщение могло быть отправлено до сбоя.')};const del=document.createElement('button');del.type='button';del.textContent='Удалить';del.onclick=async()=>{if(!confirm('Удалить эту сохранённую копию сообщения?'))return;try{if(d.serverDraft)await api('/drafts/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:d.id})});removeLocalDraft(d.id);forgetRow()}catch(e){message('Не удалось удалить копию: '+e.message)}};function forgetRow(){row.remove();savedDraftRows.delete(d.id);updateSavedDraftSummary()}row.append(label,restore,del);savedDraftList.append(row);savedDraftRows.set(d.id,row)}updateSavedDraftSummary();
 }
 function updateSavedDraftSummary(){if(!savedDraftPanel)return;const n=savedDraftRows.size;savedDraftSummary.textContent='Сохранённые сообщения: '+n+' · нажмите, чтобы просмотреть';savedDraftPanel.hidden=!n}
 
 
-function drainQueue(){if(busy||!queued.length)return;sendItem(queued.shift())}
-async function requestInterruption(){if(!busy)return;if(externalController){externalController.abort();return}if(!turn){interruptPending=true;return}const target=turn,targetThread=thread;if(interruptingTurn===target)return;interruptingTurn=target;try{await rpc('turn/interrupt',{threadId:targetThread,turnId:target});setTimeout(syncActiveTurn,1500)}catch(e){if(turn===target&&busy){interruptingTurn=null;message('Не удалось остановить ответ; новое сообщение сохранено и будет отправлено после завершения: '+e.message)}}}
+function drainQueue(){if(busy||steering||!queued.length)return;sendItem(queued.shift())}
+async function requestInterruption(){if(!busy)return;if(externalController){externalController.abort();return}if(!turn){interruptPending=true;updateComposerActions();return}const target=turn,targetThread=thread;if(interruptingTurn===target)return;interruptingTurn=target;updateComposerActions();try{await rpc('turn/interrupt',{threadId:targetThread,turnId:target});setTimeout(syncActiveTurn,1500)}catch(e){if(turn===target&&busy){interruptingTurn=null;updateComposerActions();message('Не удалось остановить ответ: '+e.message)}}}
 
-$('input').oninput=e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,140)+'px'};
+$('input').oninput=e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,140)+'px';updateComposerActions()};
+$('input').addEventListener('keydown',event=>{
+ const steer=$('steer');
+ if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)&&!event.isComposing&&!steer.hidden&&!steer.disabled){
+  event.preventDefault();$('form').requestSubmit(steer);
+ }
+});
 $('stop').onclick=()=>{if(recognition){recognition.manualStop=true;recognition.stop()}if(conversation){$('conversation').click()}if(voiceIsAudible||convoSpeaking){stopVoice();convoSpeaking=false;updateAvatar()}if(busy)requestInterruption();refreshVoiceButton()};
 function request(m){const box=$('approval');box.hidden=false;box.replaceChildren();const p=document.createElement('div');p.textContent='Ева запрашивает действие:\n'+(m.params.reason||m.params.command||m.method);box.append(p);for(const [label,decision] of [['Разрешить','accept'],['Отклонить','decline']]){const b=document.createElement('button');b.textContent=label;b.onclick=async()=>{const buttons=box.querySelectorAll('button');buttons.forEach(x=>x.disabled=true);const previous=b.textContent;b.textContent='Отправляю…';try{await api('/answer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:m.id,result:{decision}})});box.hidden=true;finishPendingRequest(m.id)}catch(e){buttons.forEach(x=>x.disabled=false);b.textContent=previous;message('Не удалось передать решение: '+e.message)}};box.append(b)}}
 window.__phoneResult=(id,payload)=>{let value;try{value=JSON.parse(payload)}catch{value={error:'Некорректный ответ Android'}}api('/phone/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,...value})}).catch(()=>{})};
@@ -234,7 +400,7 @@ function requestUserInput(m){
  }
  const error=document.createElement('div');error.setAttribute('role','status');box.append(error);const submit=document.createElement('button');submit.type='button';submit.className='question-submit';submit.textContent='Ответить';submit.onclick=async()=>{const answers={};for(const entry of entries){const value=entry.value();if(!value){error.textContent='Выберите или впишите ответ на каждый вопрос.';entry.input.focus();return}answers[entry.q.id]={answers:[value]}}submit.disabled=true;error.textContent='Отправляю…';try{await api('/answer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:m.id,result:{answers}})});box.hidden=true;box.classList.remove('questionnaire');box.replaceChildren();finishPendingRequest(m.id)}catch(e){submit.disabled=false;error.textContent='Не удалось отправить ответ: '+e.message}};box.append(submit);
 }
-const es=new EventSource('/events?token='+encodeURIComponent(token));es.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='phone'){if(window.NativePhone)window.NativePhone.run(m.id,m.action,JSON.stringify(m.args));return}if(m.type==='request'){receiveThreadRequest(m);return}if(m.type==='error'){message(m.message);if(modelProvider==='codex')setBusy(false);return}const p=m.params||{};if(m.method==='turn/started'&&p.threadId&&p.turn?.id)runningThreads.set(p.threadId,p.turn.id);if(m.method==='turn/completed'&&p.threadId){const known=runningThreads.get(p.threadId);if(!known||!p.turn?.id||known===p.turn.id)runningThreads.delete(p.threadId);let cleared=false;for(const [id,r] of pendingThreadRequests)if(r.owner===p.threadId){pendingThreadRequests.delete(id);cleared=true}if(cleared&&p.threadId===thread)renderPendingRequest();if(!$('sidebar').hidden)list()}if(p.threadId&&p.threadId!==thread)return;if(m.method==='item/agentMessage/delta'){if(!agent)agent=message('','agent');agent.textContent+=p.delta;scheduleJournalSave();scheduleMessageScroll()}else if(m.method==='item/completed'&&p.item?.type==='agentMessage'){if(!agent)agent=message(p.item.text||'','agent');else renderMessageImage(agent,p.item.text||agent.textContent);agent=null;saveJournal()}else if(m.method==='turn/completed'){const finished=p.turn?.id;if(finished){if(endedTurns.has(finished))return;endedTurns.add(finished);if(endedTurns.size>40)endedTurns.delete(endedTurns.values().next().value);if(turn&&turn!==finished)return}if(thread&&(!finished||runningThreads.get(thread)===finished))runningThreads.delete(thread);setBusy(false);turn=null;interruptingTurn=null;interruptPending=false;setTimeout(drainQueue,0);if(p.turn?.status==='failed')message('Ошибка: '+(p.turn.error?.message||'задача не завершена'));else if(p.turn?.status==='interrupted'&&!queued.length){$('status').textContent='Остановлено';message('Остановлено')}}};es.onerror=()=>{$('status').textContent='Нет соединения'};es.onopen=()=>{$('status').textContent=busy?'Работает…':'На связи';if(busy)syncActiveTurn()};
+const es=new EventSource('/events?token='+encodeURIComponent(token));es.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='phone'){if(window.NativePhone)window.NativePhone.run(m.id,m.action,JSON.stringify(m.args));return}if(m.type==='request'){receiveThreadRequest(m);return}if(m.type==='error'){message(m.message);if(modelProvider==='codex')setBusy(false);return}const p=m.params||{};if(m.method==='turn/started'&&p.threadId&&p.turn?.id)runningThreads.set(p.threadId,p.turn.id);if(m.method==='turn/completed'&&p.threadId){const known=runningThreads.get(p.threadId);if(!known||!p.turn?.id||known===p.turn.id)runningThreads.delete(p.threadId);let cleared=false;for(const [id,r] of pendingThreadRequests)if(r.owner===p.threadId){pendingThreadRequests.delete(id);cleared=true}if(cleared&&p.threadId===thread)renderPendingRequest();if(!$('sidebar').hidden)list()}if(p.threadId&&p.threadId!==thread)return;if(m.method==='item/agentMessage/delta'){if(!agent)agent=message('','agent');agent.textContent+=p.delta;scheduleJournalSave();scheduleMessageScroll()}else if(m.method==='item/completed'&&p.item?.type==='agentMessage'){if(!agent)agent=message(p.item.text||'','agent');else renderMessageImage(agent,p.item.text||agent.textContent);agent=null;saveJournal()}else if(m.method==='turn/completed'){const finished=p.turn?.id;if(finished){if(endedTurns.has(finished))return;endedTurns.add(finished);if(endedTurns.size>40)endedTurns.delete(endedTurns.values().next().value);if(turn&&turn!==finished)return}if(thread&&(!finished||runningThreads.get(thread)===finished))runningThreads.delete(thread);turn=null;interruptingTurn=null;interruptPending=false;setBusy(false);setTimeout(drainQueue,0);if(p.turn?.status==='failed')message('Ошибка: '+(p.turn.error?.message||'задача не завершена'));else if(p.turn?.status==='interrupted'&&!queued.length){$('status').textContent='Остановлено';message('Остановлено')}}};es.onerror=()=>{$('status').textContent='Нет соединения'};es.onopen=()=>{$('status').textContent=busy?'Работает…':'На связи';if(busy)syncActiveTurn()};
 es.addEventListener('message',event=>{
  let msg;try{msg=JSON.parse(event.data)}catch{return}
  const id=msg.params?.threadId;if(!id)return;
@@ -427,7 +593,27 @@ scheduleIdlePose();
 
 // Reconcile an active response after the browser was backgrounded or reconnected.
 let syncingTurn=false;
-async function syncActiveTurn(){if(syncingTurn||!busy||!thread||!turn)return;syncingTurn=true;const expected=turn,threadId=thread;try{const data=await rpc('thread/read',{threadId,includeTurns:true});if(turn!==expected||thread!==threadId)return;const found=(data.thread.turns||[]).find(t=>t.id===expected);if(found&&found.status!=='inProgress'){runningThreads.delete(threadId);turn=null;setBusy(false);if(journalEnabled){restoringJournal=true;history(data.thread);restoringJournal=false;restoreJournal()}else history(data.thread);if(found.status==='failed')message('Ответ не завершился: '+(found.error?.message||'ошибка'));else if(found.status==='interrupted')message('Ответ был остановлен');setTimeout(drainQueue,0)}}catch(e){/* Retry on the next reconnect or foreground event. */}finally{syncingTurn=false}}
+async function syncActiveTurn(){if(syncingTurn||steering||!busy||!thread||!turn)return;syncingTurn=true;const expected=turn,threadId=thread;try{const data=await rpc('thread/read',{threadId,includeTurns:true});if(steering||turn!==expected||thread!==threadId)return;const found=(data.thread.turns||[]).find(t=>t.id===expected);if(found&&found.status!=='inProgress'){
+ const next=data.thread.turns.find(entry=>entry.status==='inProgress');
+ if(next){
+  turn=next.id;runningThreads.set(threadId,turn);
+ }else{
+  runningThreads.delete(threadId);turn=null;
+ }
+ interruptingTurn=null;interruptPending=false;setBusy(Boolean(next));
+ if(journalEnabled){
+  restoringJournal=true;history(data.thread);restoringJournal=false;restoreJournal();
+ }else{
+  history(data.thread);
+  for(const item of queued){
+   const text=item.label.textContent;
+   showOutgoingMessage(item);item.label=message(text);
+  }
+ }
+ if(found.status==='failed')message('Ответ не завершился: '+(found.error?.message||'ошибка'));
+ else if(found.status==='interrupted')message('Ответ был остановлен');
+ if(!next)setTimeout(drainQueue,0);
+}}catch(e){/* Retry on the next reconnect or foreground event. */}finally{syncingTurn=false}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncActiveTurn()});
 
 // Keep the portrait and composer inside the portion not covered by the IME.
@@ -499,7 +685,7 @@ $('codex-model').onchange=e=>{if(codexModels.some(m=>m.model===e.target.value)){
 $('models-open').onclick=async()=>{try{modelInfo=(await api('/models')).providers;renderModelSettings();renderCodexOptions();refreshGroupPanel();$('models-panel').hidden=false;loadCodexModels()}catch(e){message('Настройки моделей: '+e.message)}};
 $('models-close').onclick=()=>$('models-panel').hidden=true;
 function renderModelSettings(){const select=$('model-provider');select.value=modelProvider;$('codex-options').hidden=modelProvider!=='codex';$('model-config').hidden=modelProvider==='codex';if(modelProvider!=='codex'){const p=modelInfo[modelProvider]||{};$('model-id').value=p.model||'';$('model-key').value='';$('model-key-status').textContent=p.configured?'Ключ сохранён на устройстве':'Ключ ещё не добавлен'}refreshCatalog()}
-$('model-provider').onchange=e=>{if(busy||queued.length){e.target.value=modelProvider;message('Переключить модель можно после завершения ответа');return}modelProvider=e.target.value;localStorage.setItem('mira-model',modelProvider);renderModelSettings();window.dispatchEvent(new Event('eva-provider-changed'));message('Модель: '+e.target.selectedOptions[0].textContent)};
+$('model-provider').onchange=e=>{if(busy||steering||queued.length){e.target.value=modelProvider;message('Переключить модель можно после завершения ответа');return}modelProvider=e.target.value;updateComposerActions();localStorage.setItem('mira-model',modelProvider);renderModelSettings();window.dispatchEvent(new Event('eva-provider-changed'));message('Модель: '+e.target.selectedOptions[0].textContent)};
 async function saveModel(remove){try{modelInfo=(await api('/models/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:modelProvider,model:$('model-id').value.trim(),key:$('model-key').value.trim(),remove})})).providers;renderModelSettings();message(remove?'API-ключ удалён':'Настройки модели сохранены')}catch(e){message('Настройки модели: '+e.message)}}
 $('model-save').onclick=()=>saveModel(false);$('model-delete').onclick=()=>saveModel(true);
 async function sendExternal(item){if(item.files.length)throw Error('Вложения во внешних моделях пока не поддерживаются. Выберите Codex.');journalEnabled=true;saveJournal();const all=[...$('messages').querySelectorAll('.message')].map(el=>({role:el.classList.contains('user')?'user':'assistant',content:el.textContent}));const controller=new AbortController();externalController=controller;try{const context=await compactContext(all,{provider:modelProvider},controller.signal);const result=await api('/models/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:modelProvider,messages:context}),signal:controller.signal});if(controller.signal.aborted)throw new DOMException('Отменено','AbortError');message(result.text,'agent');avatarPendingEmotion=classifyAvatarItem.emotion(result.text);setTimeout(tryShowAvatarEmotion,350);if(result.usage){const u=result.usage;message('Расход модели: вход '+(u.input_tokens??'не указан')+', выход '+(u.output_tokens??'не указан')+' токенов.');}const pending=getPending();pending.push({role:'user',content:item.txt},{role:'assistant',content:result.text});localStorage.setItem(pendingKey(),JSON.stringify(pending));for(const part of item.parts||[item])finishDraft(part);if(conversation){convoSpeaking=true;refreshVoiceButton();const generation=convoGeneration;playVoice(result.text,()=>{if(generation!==convoGeneration)return;convoSpeaking=false;updateAvatar();refreshVoiceButton();if(!busy)convoTimer=setTimeout(listenConversation,150)})}else if(voiceEnabled&&voiceSynth)playVoice(result.text,()=>{})}catch(e){if(e.name==='AbortError'){for(const part of item.parts||[item])if(part.label)part.label.remove();showSavedDrafts(item.parts||[item])}else throw e}finally{externalController=null;setBusy(false);setTimeout(drainQueue,0);if(conversation&&!convoSpeaking)setTimeout(listenConversation,150)}}
@@ -565,7 +751,7 @@ return conversation;};
 function groupKey(){return 'eva-group:'+thread}
 function groupSettings(){try{return JSON.parse(localStorage.getItem(groupKey())||'null')||{enabled:false,providers:[],free:'',rounds:1,interval:0}}catch{return {enabled:false,providers:[],free:'',rounds:1,interval:0}}}
 function groupParticipants(s){const all=[];for(const id of s.providers||[])if(['gemini','deepseek','claude','openrouter'].includes(id))all.push({provider:id,label:id});for(const id of String(s.free||'').split(/\n/).map(x=>x.trim()).filter(Boolean)){if(!/^[-\w./:]{1,150}$/.test(id)||!(id==='openrouter/free'||id.endsWith(':free')))throw Error('Укажите бесплатные модели OpenRouter с окончанием :free');all.push({provider:'openrouter',model:id,label:id})}const unique=all.filter((v,i,a)=>a.findIndex(x=>x.provider===v.provider&&x.model===v.model)===i);if(!unique.length||unique.length>4)throw Error('Выберите от одной до четырёх моделей');return unique}
-function setupGroupPanel(){const panel=document.createElement('details');panel.id='group-settings';panel.innerHTML='<summary>Общий чат моделей</summary><label><input id="group-enabled" type="checkbox"> Отвечают выбранные модели</label><div id="group-providers"></div><label>Бесплатные модели OpenRouter (по одной на строку)<textarea id="group-free" rows="3" placeholder="openrouter/free"></textarea></label><label>Раундов <input id="group-rounds" type="number" min="1" max="5000" value="1"></label><label>Пауза между сообщениями, секунд <input id="group-interval" type="number" min="0" max="120" value="0"></label><p class="task-note">До 4 моделей и 5000 раундов. Модели говорят по очереди и видят предыдущие ответы. Каждый ответ — отдельный запрос. Остановить можно кнопкой остановки. Codex и инструменты в этих раундах не участвуют.</p><button type="button" id="group-save">Применить к этому чату</button><p id="group-status" class="task-note" aria-live="polite"></p>';document.querySelector('#models-panel').append(panel);for(const [id,label] of [['openrouter','OpenRouter — настроенная модель'],['gemini','Gemini'],['deepseek','DeepSeek'],['claude','Claude']]){const l=document.createElement('label');const cb=document.createElement('input');cb.type='checkbox';cb.value=id;cb.className='group-provider';l.append(cb,document.createTextNode(' '+label));$('group-providers').append(l)}$('group-save').onclick=()=>{try{if(!thread)throw Error('Сначала создайте или откройте чат');const s={enabled:$('group-enabled').checked,providers:[...document.querySelectorAll('.group-provider:checked')].map(x=>x.value),free:$('group-free').value.trim(),rounds:Number($('group-rounds').value),interval:Number($('group-interval').value)};if(s.enabled)groupParticipants(s);if(!Number.isInteger(s.rounds)||s.rounds<1||s.rounds>5000||!Number.isInteger(s.interval)||s.interval<0||s.interval>120)throw Error('Проверьте число раундов и паузу');localStorage.setItem(groupKey(),JSON.stringify(s));$('group-status').textContent='Настройки сохранены для этого чата';}catch(e){$('group-status').textContent=e.message}}}
+function setupGroupPanel(){const panel=document.createElement('details');panel.id='group-settings';panel.innerHTML='<summary>Общий чат моделей</summary><label><input id="group-enabled" type="checkbox"> Отвечают выбранные модели</label><div id="group-providers"></div><label>Бесплатные модели OpenRouter (по одной на строку)<textarea id="group-free" rows="3" placeholder="openrouter/free"></textarea></label><label>Раундов <input id="group-rounds" type="number" min="1" max="5000" value="1"></label><label>Пауза между сообщениями, секунд <input id="group-interval" type="number" min="0" max="120" value="0"></label><p class="task-note">До 4 моделей и 5000 раундов. Модели говорят по очереди и видят предыдущие ответы. Каждый ответ — отдельный запрос. Остановить можно кнопкой остановки. Codex и инструменты в этих раундах не участвуют.</p><button type="button" id="group-save">Применить к этому чату</button><p id="group-status" class="task-note" aria-live="polite"></p>';document.querySelector('#models-panel').append(panel);for(const [id,label] of [['openrouter','OpenRouter — настроенная модель'],['gemini','Gemini'],['deepseek','DeepSeek'],['claude','Claude']]){const l=document.createElement('label');const cb=document.createElement('input');cb.type='checkbox';cb.value=id;cb.className='group-provider';l.append(cb,document.createTextNode(' '+label));$('group-providers').append(l)}$('group-save').onclick=()=>{try{if(!thread)throw Error('Сначала создайте или откройте чат');const s={enabled:$('group-enabled').checked,providers:[...document.querySelectorAll('.group-provider:checked')].map(x=>x.value),free:$('group-free').value.trim(),rounds:Number($('group-rounds').value),interval:Number($('group-interval').value)};if(s.enabled)groupParticipants(s);if(!Number.isInteger(s.rounds)||s.rounds<1||s.rounds>5000||!Number.isInteger(s.interval)||s.interval<0||s.interval>120)throw Error('Проверьте число раундов и паузу');localStorage.setItem(groupKey(),JSON.stringify(s));updateComposerActions();$('group-status').textContent='Настройки сохранены для этого чата';}catch(e){$('group-status').textContent=e.message}}}
 function refreshGroupPanel(){const s=thread?groupSettings():{enabled:false,providers:[],free:'',rounds:1,interval:0};$('group-enabled').checked=!!s.enabled;for(const cb of document.querySelectorAll('.group-provider'))cb.checked=(s.providers||[]).includes(cb.value);$('group-free').value=s.free||'';$('group-rounds').value=s.rounds||1;$('group-interval').value=s.interval||0;$('group-status').textContent=thread?'':'Откройте чат, чтобы настроить участников'}
 function groupWait(ms,signal){return new Promise((resolve,reject)=>{if(signal.aborted)return reject(new DOMException('Отменено','AbortError'));const timer=setTimeout(()=>{signal.removeEventListener('abort',stop);resolve()},ms);function stop(){clearTimeout(timer);reject(new DOMException('Отменено','AbortError'))}signal.addEventListener('abort',stop,{once:true})})}
 async function sendGroup(item){
