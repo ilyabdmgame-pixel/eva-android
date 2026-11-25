@@ -119,3 +119,21 @@ body:has(#sheet:not([hidden])) #layout-tools{visibility:hidden}
 .app[aria-pressed=true]{background:#cedfdc;box-shadow:inset 0 0 0 2px #42716d;border-radius:12px}
 #close{width:44px;height:44px;flex:none}
 @media (max-width:340px){.apps{grid-template-columns:repeat(3,minmax(0,1fr))}#sheet{padding-inline:13px}}
+
+.sheet-buttons{display:flex;gap:2px;flex:none}
+#sheet-options{width:44px;height:44px;background:transparent;display:grid;place-items:center}
+#sheet-options::before{content:"";width:4px;height:4px;border-radius:50%;background:currentColor;box-shadow:-6px 0,6px 0}
+#sheet[data-page=folder]{
+ inset:auto 12px max(12px,env(safe-area-inset-bottom));
+ width:min(calc(100% - 24px),420px);margin-inline:auto;max-height:64%;
+ padding:6px 10px 10px;border-radius:20px;
+}
+#sheet[data-page=folder] .grip{display:none}
+#sheet[data-page=folder] .sheethead{margin:0 2px 4px;gap:4px}
+#sheet[data-page=folder] .sheethead h1{font:650 18px/1.25 Roboto,system-ui,sans-serif;margin:0 4px;overflow-wrap:anywhere}
+#sheet[data-page=folder] #close{background:transparent;font-size:21px}
+#sheet[data-page=folder] .apps{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+#sheet[data-page=folder] .app-card>.app{min-height:62px;padding:4px 2px;gap:4px;align-content:center}
+#sheet[data-page=folder] .app img{width:34px;height:34px;object-fit:contain}
+#sheet[data-page=folder] .app span{font-size:11px;line-height:1.2}
+#sheet[data-page=folder-edit] #content>.back-link{margin-top:0}

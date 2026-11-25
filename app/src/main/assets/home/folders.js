@@ -131,24 +131,47 @@ function nameFolder(i){
  input.onkeydown=e=>{if(e.key==='Enter')save()};out.append(input,btn('Сохранить','pill',save));input.focus();
 }
 function folderScreen(i,edit=false){
+ if(edit){editFolder(i);return}
  const group=groups[i],out=showSheet('folder',group.name);
+ const options=$('sheet-options');
+ options.hidden=false;options.onclick=()=>folderMenu(i);
+ const members=apps.filter(app=>group.keys.includes(app.key));
+ if(!members.length){out.append(btn('Добавить приложения','back-link',()=>editFolder(i)));return}
+ const grid=node('div',null,'apps');
+ for(const app of members)grid.append(appCard(app,()=>folderScreen(i),false));
+ out.append(grid);
+}
+function folderMenu(i){
+ const group=groups[i],out=showSheet('folder-options',group.name);
+ out.append(btn('Изменить состав','row',()=>editFolder(i)),btn('Переименовать','row',()=>nameFolder(i)));
+ const members=apps.filter(app=>group.keys.includes(app.key));
+ if(members.length)out.append(btn('Действия с приложением','row',()=>{
+  const list=showSheet('folder-apps','Действия с приложением');
+  for(const app of members)list.append(btn(app.name,'row',()=>appActions(app,()=>folderScreen(i))));
+  list.append(btn('Назад','back-link',()=>folderMenu(i)));
+ }));
+ if(!group.keys.length)out.append(btn('Удалить пустую папку','row',()=>{groups.splice(i,1);persistFolders();closeSheet()}));
+ out.append(btn('Назад','back-link',()=>folderScreen(i)));
+}
+function editFolder(i){
+ const group=groups[i],out=showSheet('folder-edit',group.name);
  const search=node('input',null);search.type='search';search.placeholder='Найти приложение';
- const grid=node('div',null,'apps'),foot=node('div',null,'foot');
+ search.setAttribute('aria-label','Найти приложение');
+ const grid=node('div',null,'apps');
  function render(){
   grid.replaceChildren();
-  const q=search.value.toLocaleLowerCase('ru');
-  for(const a of apps){const selected=group.keys.includes(a.key);if(!edit&&!selected)continue;if(!(a.name+' '+a.key).toLocaleLowerCase('ru').includes(q))continue;
-   if(!edit){grid.append(appCard(a,()=>folderScreen(i)));continue}
-   const tile=appTile(a,()=>{moveToFolder(a.key,selected?null:group);render()});
+  const q=search.value.trim().toLocaleLowerCase('ru');
+  for(const app of apps){
+   if(!(app.name+' '+app.key).toLocaleLowerCase('ru').includes(q))continue;
+   const selected=group.keys.includes(app.key);
+   const tile=appTile(app,()=>{moveToFolder(app.key,selected?null:group);render()});
    tile.setAttribute('aria-pressed',String(selected));grid.append(tile);
-
   }
-  if(!grid.childElementCount)grid.append(node('p',edit?'Ничего не нашлось':'Пока пусто','sub'));
+  if(!grid.childElementCount)grid.append(node('p','Ничего не нашлось','sub'));
  }
- search.oninput=render;out.append(foot);if(edit)out.append(search);out.append(grid);
- foot.append(btn(edit?'Готово':'Состав папки','',()=>folderScreen(i,!edit)),btn('Переименовать','',()=>nameFolder(i)));
- if(edit&&!group.keys.length)foot.append(btn('Удалить пустую папку','',()=>{groups.splice(i,1);persistFolders();closeSheet()}));
- render()
+ search.oninput=render;
+ out.append(btn('Готово','back-link',()=>folderScreen(i)),search,grid);
+ render();
 }
 
 new ResizeObserver(()=>{if(!drag&&folderTiles.length)arrangeFolders()}).observe(document.querySelector('header'));

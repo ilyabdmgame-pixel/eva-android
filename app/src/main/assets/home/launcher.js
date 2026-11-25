@@ -12,6 +12,9 @@ function showSheet(id,title){
  window.closeTown?.();
  if(!sheet){sheetOpener=document.activeElement;$('screen').inert=true}
  sheet=id;
+ $('sheet').dataset.page=id;
+ $('sheet-options').hidden=true;
+ $('sheet-options').onclick=null;
  $('scrim').hidden=$('sheet').hidden=false;
  $('title').textContent=title;
  $('content').scrollTop=0;
@@ -66,11 +69,9 @@ function appTile(app,activate){
  tile.setAttribute('aria-label',app.name);
  return tile;
 }
-function appCard(app,back){
+function appCard(app,back,showOptionsButton=true){
  const card=node('div',null,'app-card');
  const tile=appTile(app,()=>launchApp(app));
- const options=btn('⋯','app-options',()=>appActions(app,back));
- options.setAttribute('aria-label','Действия · '+app.name);
  let hold=0,press=null;
  const stopHold=()=>{clearTimeout(hold);hold=0;press=null};
  const showOptions=()=>{stopHold();if(tile.isConnected)appActions(app,back)};
@@ -85,7 +86,17 @@ function appCard(app,back){
  };
  tile.onpointerup=tile.onpointercancel=tile.onpointerleave=stopHold;
  tile.oncontextmenu=event=>{event.preventDefault();showOptions()};
- card.append(tile,options);
+ tile.onkeydown=event=>{
+  if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){
+   event.preventDefault();showOptions();
+  }
+ };
+ card.append(tile);
+ if(showOptionsButton){
+  const options=btn('⋯','app-options',showOptions);
+  options.setAttribute('aria-label','Действия · '+app.name);
+  card.append(options);
+ }
  return card;
 }
 function appActions(app,back){
