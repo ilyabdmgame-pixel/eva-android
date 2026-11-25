@@ -9,6 +9,12 @@ const codexInstructions = [
   'Пользуйся только доступными инструментами. Действуй на телефоне по соответствующей просьбе пользователя. Не выдавай передачу команды за подтверждение её результата.'
 ].join('\n\n');
 
+const voiceInstructions = 'Этот ответ будут слушать. Сохрани голос Евы и скажи главное короткими фразами. Когда нужны команды, ссылки или таблицы, объясни их смысл простой фразой и приведи детали по делу.';
+
+function forReply(instructions, spoken) {
+  return spoken === true ? instructions + '\n\n' + voiceInstructions : instructions;
+}
+
 function withPersona(params = {}) {
   return { ...params, developerInstructions: codexInstructions };
 }
@@ -29,6 +35,7 @@ function createPersonaRpc(request) {
     }
 
     if (method === 'turn/start') {
+      const { spoken, ...turnParams } = params;
       const remembered = threads.get(params.threadId);
       let model = params.model || remembered?.model;
       if (!model) {
@@ -38,10 +45,10 @@ function createPersonaRpc(request) {
       if (!model) throw new Error('Codex не сообщил модель для этого чата.');
       const effort = params.effort ?? remembered?.effort ?? null;
       const options = {
-        ...params,
+        ...turnParams,
         collaborationMode: {
           mode: 'default',
-          settings: { model, reasoning_effort: effort, developer_instructions: codexInstructions }
+          settings: { model, reasoning_effort: effort, developer_instructions: forReply(codexInstructions, spoken) }
         }
       };
       const result = await request(method, options);
@@ -55,4 +62,4 @@ function createPersonaRpc(request) {
   };
 }
 
-module.exports = { persona, codexInstructions, createPersonaRpc };
+module.exports = { persona, codexInstructions, forReply, createPersonaRpc };

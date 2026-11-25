@@ -76,7 +76,8 @@ module.exports=function townChat({rpc,cards,authenticated,root,questionPending=(
        const options={approvalPolicy:full?'never':'on-request',sandboxPolicy:{type:full?'dangerFullAccess':'readOnly'}};
        if(s['eva-codex-model'])options.model=s['eva-codex-model'];
        if(['minimal','low','medium','high','xhigh'].includes(s['eva-main-effort']))options.effort=s['eva-main-effort'];
-       const params={...options,threadId:id,input:[{type:'text',text:o.text.trim()}],serviceTierForTurn:'default'};
+       const params={...options,threadId:id,input:[{type:'text',text:o.text.trim()}],serviceTierForTurn:'default',
+         spoken:voiceMode||s.voiceOutput==='1'};
        let r;
        try{r=await rpc('turn/start',params)}
        catch(e){

@@ -120,7 +120,7 @@ test('Codex receives Eva instructions and earlier messages after resuming a save
   const restarted = await startCodex(dir, url, t);
   const resumed = await restarted.rpc('thread/resume', { threadId: thread.id });
   assert.equal(resumed.thread.id, thread.id);
-  await restarted.say(thread.id, 'Это второе сообщение.');
+  await restarted.say(thread.id, 'Это второе сообщение.', {spoken:true});
   await restarted.close();
   assert.equal(requests.length, 2);
   for (const request of requests) {
@@ -130,6 +130,9 @@ test('Codex receives Eva instructions and earlier messages after resuming a save
       .map(item => item.text).join('\n');
     assert.ok(developerText.includes(codexInstructions));
   }
+  assert.doesNotMatch(JSON.stringify(requests[0].input), /Этот ответ будут слушать/);
+  assert.ok(requests[1].input.some(item => item.role === 'developer' &&
+    item.content.some(part => part.text?.includes('Этот ответ будут слушать'))));
   const resumedInput = requests[1].input.filter(item => item.role === 'user')
     .flatMap(item => item.content).map(item => item.text).join('\n');
   assert.match(resumedInput, /Это первое сообщение\./);

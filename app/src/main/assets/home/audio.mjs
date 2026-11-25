@@ -55,14 +55,17 @@ export function sound(kind){
  const interval=['radio','record'].includes(kind)?.19:.11;
  for(const [i,hz] of list.entries())note(hz,context.currentTime+.01+i*interval,interval,kind==='radio'?.075:.045,kind==='radio'?'triangle':'sine');
 }
-export function ambience(weather,zone,outside){
+export function ambience(weather,zone,outside,open=false){
  if(!enabled||!visible||context?.state!=='running')return;
- const key=(outside?weather:'inside')+'/'+zone;
+ const key=weather+'/'+zone+'/'+outside+'/'+open;
  const t=context.currentTime;
  if(key!==profile){
    profile=key;
    const coast=['beach','promenade','pier','headland'].includes(zone);
-   const state=!outside?[470,.013]:weather==='storm'?[1900,.76]:weather==='rain'?[2350,.65]:
+   const state=!outside?({
+     rain:open?[1380,.24]:[470,.06],storm:open?[1110,.33]:[410,.09],
+     wind:open?[580,.14]:[380,.03]
+   }[weather]||[470,.013]):weather==='storm'?[1900,.76]:weather==='rain'?[2350,.65]:
      weather==='wind'?[640,.31]:coast?[780,.44]:weather==='snow'?[580,.14]:[830,.12];
    bedFilter.frequency.setTargetAtTime(state[0],t,.8);bedLevel.gain.setTargetAtTime(state[1],t,1.10);
    chirpAt=t+3;

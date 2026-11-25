@@ -60,15 +60,12 @@ final class LifeState {
         long before = state.optLong("slot",slot-1);
         JSONArray previous = state.optJSONArray("events");
         JSONArray events = previous == null ? new JSONArray() : previous;
+        JSONObject person = routines(c).getJSONObject("eva");
         for(long i=Math.max(before+1,slot-LIMIT+1);i<=slot;i++) {
             long at = i*QUARTER;
-            String[] keys={"eva","ren","mio","asya","nika","kir"};
-            for(String key:keys){
-                JSONObject person=routines(c).getJSONObject(key);
-                JSONArray current=entry(person,hour(at));
-                if(current==entry(person,hour(at-QUARTER)) && !(before==slot-1 && previous==null))continue;
-                events=append(events,event(at,person.getString("name"),current.getString(1),current.getString(4)));
-            }
+            JSONArray current=entry(person,hour(at));
+            if(current==entry(person,hour(at-QUARTER)) && !(before==slot-1 && previous==null))continue;
+            events=append(events,event(at,person.getString("name"),current.getString(1),current.getString(4)));
         }
         if(before<slot) {
             state.put("slot",slot).put("events",events).put("at",now);
@@ -95,7 +92,7 @@ final class LifeState {
             case "snack": line="Сделала перерыв и перекусила"; break;
             case "lamp": line="Щёлкнула лампой. Уют даётся по талонам"; break;
             case "sit": line="Заняла стул. Ноги сами сказали спасибо"; break;
-            case "move": line="Переставила стул. Архитектору пельменей"; break;
+            case "move": line="Переставила мебель. Архитектору пельменей"; break;
             case "dialog": line="Перекинулась парой фраз с Рэном"; break;
             case "cargo": line="Помогла разгрузить ящики на причале"; break;
             case "forage": line="Подобрала находку для кармана"; break;

@@ -2065,6 +2065,14 @@ final class PetOverlay {
         final RectF dest=new RectF();
         final float[] rearMesh=new float[(PetLadderMotion.COLS+1)*(PetLadderMotion.ROWS+1)*2];
 
+        private void drawFrame(Canvas canvas,Frame frame,float w,float h,float opacity){
+            Rect area=frame.area;
+            dest.set(area.left*w/FRAME_WIDTH,area.top*h/FRAME_HEIGHT,area.right*w/FRAME_WIDTH,area.bottom*h/FRAME_HEIGHT);
+            paint.setAlpha(Math.round(255*opacity));
+            canvas.drawBitmap(frame.bitmap,null,dest,paint);
+            paint.setAlpha(255);
+        }
+
         // Bend only the trouser legs to hold each planted shoe between artwork samples.
         private static final int GAIT_ROWS=12;
         private final float[] gaitMesh=new float[(GAIT_ROWS+1)*4];
@@ -2203,16 +2211,16 @@ final class PetOverlay {
                 canvas.restore();
                 return;
             }
-            boolean viewing=parked&&!appParkingMove&&!touched&&mode==PetMotion.SEATED_PEEK&&watchingPlayer();
-            if(parked&&!appParkingMove&&mode==PetMotion.SEATED_PEEK&&motionEnabled&&!viewing&&!editingInApp()){
-                long phase=SystemClock.uptimeMillis()%7200;
-                pose.frame=PetMotion.SEAT_SWING+Math.round((1-(float)Math.cos(2*Math.PI*phase/7200))*4);
-                postInvalidateDelayed(240);
-            }
             long now=SystemClock.uptimeMillis();
             float phase=chair.phase(now);
             boolean staging=mode==PetMotion.SEATED_PEEK&&!touched&&
                 (afterPacking!=null||chair.deployed&&phase<1);
+            boolean viewing=parked&&!appParkingMove&&!touched&&mode==PetMotion.SEATED_PEEK&&watchingPlayer();
+            if(!staging&&parked&&!appParkingMove&&mode==PetMotion.SEATED_PEEK&&motionEnabled&&!viewing&&!editingInApp()){
+                long swing=(chair.deployed?chair.seatedFor(now):now)%7200;
+                pose.frame=PetMotion.SEAT_SWING+Math.round((1-(float)Math.cos(2*Math.PI*swing/7200))*4);
+                postInvalidateDelayed(240);
+            }
             if(mode==PetMotion.SEATED_PEEK&&!touched&&(phase>0||staging)){
                 float open=PetChair.unfolding(phase);
                 if(open>0){
@@ -2230,22 +2238,25 @@ final class PetOverlay {
                 }
                 if(staging||!chair.deployed)postInvalidateOnAnimation();
             }
+            float sitting=PetChair.sitting(phase);
             Frame frame=staging?frames[PetMotion.RISE_FRAME+
-                Math.round((PetMotion.GENERATED_FRAMES-1)*(1-PetChair.sitting(phase)))]:artwork();
+                Math.round((PetMotion.GENERATED_FRAMES-1)*(1-sitting))]:artwork();
             if(viewing){
-                float turned=staging?PetMotion.ease((PetChair.sitting(phase)-.65f)/.35f):1;
-                if(turned<1){
-                    Rect area=frame.area;
-                    dest.set(area.left*w/FRAME_WIDTH,area.top*h/FRAME_HEIGHT,area.right*w/FRAME_WIDTH,area.bottom*h/FRAME_HEIGHT);
-                    paint.setAlpha(Math.round(255*(1-turned)));
-                    canvas.drawBitmap(frame.bitmap,null,dest,paint);
-                }
+                float turned=staging?PetMotion.ease((sitting-.65f)/.35f):1;
+                if(turned<1)drawFrame(canvas,frame,w,h,1-turned);
                 if(turned>0){
                     paint.setAlpha(Math.round(255*turned));
                     canvas.scale(w/FRAME_WIDTH,h/FRAME_HEIGHT);
                     drawWatching(canvas,now);
                 }
                 paint.setAlpha(255);
+                canvas.restore();
+                return;
+            }
+            if(staging){
+                float settled=PetChair.seatedBlend(sitting);
+                if(settled<1)drawFrame(canvas,frame,w,h,1-settled);
+                if(settled>0)drawFrame(canvas,artwork(),w,h,settled);
                 canvas.restore();
                 return;
             }

@@ -3,7 +3,7 @@ import {streetSurface,crossing} from './town-plan.mjs';
 
 const movable=new Set(['stove','basin','shower','fridge','screen','toilet','chair','lamp','plant','flowers','bin','notice','seasonTree','placedLamp','pickup','bucket','umbrella','easel','cargo','mail','market','grass','forage','sign','windsock']);
 export function editableFixture(o){
-  return Boolean(o&&!o.z&&(o.portable||o.art==='studio-cabinet'||movable.has(o.kind)));
+  return Boolean(o&&!o.z&&(o.roomMovable||o.portable||o.art==='studio-cabinet'||movable.has(o.kind)));
 }
 export function placementIssue(o,p,fixtures,doors,people){
   const u=p.u,v=p.v,x=u+o.w,y=v+o.d;

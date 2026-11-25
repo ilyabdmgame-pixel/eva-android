@@ -1,0 +1,82 @@
+import {district,worldPoint} from './district.mjs';
+import {buildingEdge} from './buildings.mjs';
+
+export const room=district('home');
+export const roomEdge=buildingEdge;
+export const roomCenter=worldPoint('home',.35,0);
+export const roomScale=.113;
+export const roomOffset=.125;
+
+const windowFrame={left:-1.19,right:2.13,bottom:1.22,top:2.68};
+export const attachedFurniture=new Map([[1,[5,6]],[3,[10,11]],[21,[22,23]],[25,[26]]]);
+
+export function inRoom(u,v,margin=0){
+ const edge=roomEdge-margin;
+ return Math.abs(u-room.u)<edge&&Math.abs(v-room.v)<edge;
+}
+
+export function fitsRoom(u,v,width,depth){
+ return inRoom(u,v,.16)&&inRoom(u+width,v+depth,.16);
+}
+
+export function roomWindowFixture(fixture){
+ const {left,right}=windowFrame;
+ return {...fixture,u:room.u+left,v:room.v-roomEdge+.08,w:right-left,d:.07,
+   approach:[room.u+.82,room.v-2.10]};
+}
+
+export function attachedPosition(fixture,before,parent){
+ const offsetU=fixture.u-before.u,offsetV=fixture.v-before.v;
+ let u=parent.turned?offsetV:offsetU,v=parent.turned?offsetU:offsetV;
+ if(parent.back){
+   u=parent.w-u-(parent.turned?fixture.d:fixture.w);
+   v=parent.d-v-(parent.turned?fixture.w:fixture.d);
+ }
+ const approach=fixture.approach&&[
+   parent.u+(parent.turned?fixture.approach[1]-before.v:fixture.approach[0]-before.u),
+   parent.v+(parent.turned?fixture.approach[0]-before.u:fixture.approach[1]-before.v)
+ ];
+ if(parent.back&&approach){
+   approach[0]=2*parent.u+parent.w-approach[0];
+   approach[1]=2*parent.v+parent.d-approach[1];
+ }
+ return {...fixture,u:parent.u+u,v:parent.v+v,
+   w:parent.turned?fixture.d:fixture.w,d:parent.turned?fixture.w:fixture.d,
+   artFlip:Boolean(fixture.artFlip)!==Boolean(parent.turned),approach};
+}
+
+export function drawRoom(renderer,open){
+ const e=roomEdge,{left,right,bottom,top}=windowFrame;
+ const plaster=[.97,.86,.78],wood=[.81,.67,.56],trim=[.60,.44,.35];
+ const box=(id,u,v,z,w,d,h,tint,mat)=>renderer.box(id,{u:room.u+u,v:room.v+v,z},w,d,h,tint,mat);
+ const panel=(points,key)=>renderer.artPanel(points.map(([u,v,z])=>[room.u+u,room.v+v,z]),key);
+ box(0,-e,-e,-.15,2*e,2*e,.15,[1.04,.90,.77],'oak');
+ box(251,-e-.14,-e-.11,0,.20,2*e+.11,2.97,[.86,.85,.76],'plaster');
+ const back=(id,a,b,z,h,tint,mat='plaster',d=.20)=>box(id,a,-e-.11,z,b-a,d,h,tint,mat);
+ back(251,-e,left,0,2.97,plaster);
+ back(251,right,e,0,2.97,plaster);
+ back(251,left,right,0,bottom,plaster);
+ back(251,left,right,top,2.97-top,plaster);
+ back(251,-e,e,.015,.105,wood,'oak',.25);
+ box(251,-e-.14,-e,.015,.25,2*e,.105,wood,'oak');
+ back(251,-e,e,2.92,.05,wood,'oak',.25);
+ box(251,-e-.14,-e,2.92,.25,2*e,.05,wood,'oak');
+ back(7,left-.09,right+.09,bottom-.09,.09,wood,'oak',.40);
+ back(7,left-.06,right+.06,top-.04,.09,trim,'oak',.29);
+ for(const x of [left,(2*left+right)/3,(left+2*right)/3,right]){
+   back(7,x-.027,x+.027,bottom,top-bottom,trim,'oak',.28);
+ }
+ const sash=bottom+(top-bottom)*(open?.55:.25);
+ back(7,left,right,sash,.045,wood,'oak',.25);
+ panel([[-.92,-.10,.014],[1.55,-.10,.014],[1.55,2.39,.014],[-.92,2.39,.014]],'attic-rug');
+ for(const vertical of [false,true]){
+   const floor=(a,b)=>vertical?[room.u+b,room.v+a,.024]:[room.u+a,room.v+b,.024];
+   renderer.shadeBand([floor(-e,-e+.08),floor(e,-e+.08),floor(e,-e+.48),floor(-e,-e+.48)],true);
+ }
+}
+
+export function drawRoomWindow(renderer,image){
+ const {left,right,bottom,top}=windowFrame,v=room.v-roomEdge-.006;
+ renderer.windowPanel([[room.u+left,v,top],[room.u+right,v,top],
+   [room.u+right,v,bottom],[room.u+left,v,bottom]],7,image);
+}

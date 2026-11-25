@@ -7,6 +7,8 @@ final class PetChairTest {
     public static void main(String[] args){
         PetChair chair=new PetChair();
         chair.set(true,1000,true);
+        check(chair.seatedFor(1000)==0&&chair.seatedFor(1000+PetChair.OPEN_DURATION+50)==50,"Swing must start after sitting");
+        check(PetChair.seatedBlend(.86f)==0&&PetChair.seatedBlend(.95f)>0&&PetChair.seatedBlend(1)>.999f,"Last transition frames blend into the resting pose");
         for(int i=0;i<=PetChair.OPEN_DURATION;i+=8){
             float t=chair.phase(1000+i);
             check(PetChair.unfolding(t)>=.999f||PetChair.sitting(t)==0,"Hips descend before the seat opens");

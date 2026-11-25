@@ -1,34 +1,28 @@
 import {seatMotion,seatSample} from './seat-motion.mjs';
 import {reverseCells} from './reverse-cells.mjs';
-import {nextStation,jobPose} from './workstations.mjs';
 import {actionAnchors} from './action-anchors.mjs';
-import {shelterPoint,stepPrints,raining} from './rain-life.mjs';
 import {restoreTurn,nextTurn,seatFront} from './prop-finish.mjs';
-import {witness,recall} from './witness.mjs';
 import {objectLine} from './local-lines.mjs';
 import {propArt} from './prop-art.mjs';
+import {furnitureSurface} from './occlusion.mjs';
 import {domestic,actionTime,useFrame} from './household.mjs';
 import {editableFixture,placementIssue} from './layout.mjs';
 import {drawNotice,castFurniture} from './street-furniture.mjs';
-import {streetLife} from './street-life.mjs';
-import {SIZE,migrateTown} from './town-plan.mjs';
+import {migrateTown} from './town-plan.mjs';
 import {fixtureTop, approach, blocksActor, canPlace, hitsFixture} from './contact.mjs';
 import {choosePastime} from './pastimes.mjs';
 import {project,worldAtHeight,inView} from './camera.mjs';
-import {createScene,cameraScale,cameraOffset} from './render.mjs';
+import {createScene} from './render.mjs';
+import {room,roomCenter,roomScale,roomOffset,roomEdge,inRoom,fitsRoom,roomWindowFixture,drawRoom,drawRoomWindow,attachedPosition,attachedFurniture} from './room.mjs';
+import {windowWeather,windowWeatherMoves} from './window-weather.mjs';
 import {places} from './places.mjs';
-import {drawScenery,drawSurroundings,waveOnScreen} from './scenery.mjs';
-import {startFlight,flightPoint,advanceFlight,hitsDoor,drawToy} from './toys.mjs';
-import {gait,heading,walkHeading,orientation,standingPose,evaPose,walkPose,actionPose} from './orientation.mjs';
+import {startFlight,flightPoint,advanceFlight,drawToy} from './toys.mjs';
+import {gait,heading,walkHeading,orientation,standingPose,evaPose,actionPose} from './orientation.mjs';
 import {createSpeech} from './speech.mjs';
-import {district, districts, extent, regionAt, worldPoint, surfaceAt, waterAt, solidWall, worldObjects, route, localPath, roundRoute, paceRoute} from './district.mjs';
-import {createCitizens, dialogue} from './citizens.mjs';
+import {district,districts,regionAt,worldPoint,surfaceAt,solidWall,worldObjects,route,localPath,roundRoute,paceRoute} from './district.mjs';
 import {initialEconomy,items,fixtureItems,fullness,apply as applyEconomy} from './economy.mjs';
 import {remark} from './remarks.mjs';
-import {outsideAt} from './neighborhood.mjs';
-import {buildings,buildingEdge,insideBuilding,doorsFor,drawDoor} from './buildings.mjs';
-import {seasons,weathers,widgetWeather,cityReading,climateAt,paletteFor,terrainState} from './weather.mjs';
-import {atmosphere} from './atmosphere.mjs';
+import {seasons,weathers,widgetWeather,cityReading,climateAt,paletteFor} from './weather.mjs';
 import {settings as soundSettings,audioVisible,ambience,footstep,audioState} from './audio.mjs';
 import {names as activityNames,lines as activityLines,prepareSound,sound} from './activities.mjs';
 
@@ -36,8 +30,7 @@ import {townChat} from './town-chat.mjs';
 const town=townChat({world:worldSnapshot,apply:useNearby,note:statusNote,quip:()=>say(remark('touch'),'wry')});
 const canvas=$('scene');
 const EVA_ID=15;
-const townLife=streetLife(start=>pathTo(worldPoint('shop',-2.75,1.13),start));
-const prints=stepPrints();
+const paintWindow=windowWeather(()=>{dirty=true;wake();});
 const speech=createSpeech($('speech'),$('world-status'),()=>document.querySelectorAll('.now,#places,#wallet,#folders button,#actions button,#dock,#town-mark:not([hidden])'));
 const renderer=createScene(canvas);
 const time=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
@@ -50,65 +43,96 @@ if(migrateTown(saved))localStorage.setItem('room',JSON.stringify(saved));
 saved.economy=initialEconomy(saved.economy,saved);
 const start=worldPoint('home',...places.home.start);
 const remembered=saved.lastLocation;
-const rememberedPlot=remembered&&regionAt(remembered.u,remembered.v);
-let eva=rememberedPlot&&!waterAt(remembered.u,remembered.v)&&!solidWall(remembered.u,remembered.v)?{...remembered}:
-  rememberedPlot?worldPoint(rememberedPlot.key,...rememberedPlot.start):start;
-let section=regionAt(eva.u,eva.v).key,center={...eva};
-const routines=JSON.parse(Desk.routines());
-const moscowHour=at=>(Math.floor(at/3600000)+3)%24;
-const currentEntry=(key,at)=>routines[key].entries.findLast(row=>row[0]<=moscowHour(at))??routines[key].entries.at(-1);
-const citizens=createCitizens(0);
-function settleResidents(at,resuming=false){
- for(const person of citizens){
-   const entry=currentEntry(person.key,at);
-   if(resuming&&person.entry===entry)continue;
-   Object.assign(person,worldPoint(entry[1],entry[2],entry[3]),{entry,doing:entry[4],sleeping:!!entry[5],job:null,journey:[],speed:0,wait:performance.now()+450+(person.id%7)*130});
- }
-}
-settleResidents(Date.now());
-let nextAmbientFrame=0,wavesVisible=false,sceneryFading=false,paintCount=0,scheduled=null;
+let eva=remembered&&inRoom(remembered.u,remembered.v,.15)&&!solidWall(remembered.u,remembered.v)?{...remembered}:start;
+const section=room.key;
+let center={...roomCenter};
+const routines=JSON.parse(Desk.routines()).eva;
+const hour=at=>new Date(at).getHours();
+const currentEntry=at=>routines.entries.findLast(row=>row[0]<=hour(at))??routines.entries.at(-1);
+let nextAmbientFrame=0,paintCount=0,scheduled=null;
 let nextPastime=0,automaticWalk=false;
 saved.pastimeCursor??={};
 let autoFollow=localStorage.getItem('followSchedule')!=='no';
 let view,speechAnchors=new Map(),motionFrames={},night=0,lighting=[1,1,1],dirty=true,nextFrame=0,last=0;
 const lamps=new Float32Array(16);
 const weatherOptions=saved.weatherOptions&&typeof saved.weatherOptions==='object'?saved.weatherOptions:{};
-let climate=climateAt(new Date(),weatherOptions),lastAir=0,lastStepIndex=0,focusedBuilding='';
+let climate=climateAt(new Date(),weatherOptions),lastStepIndex=0;
 
-const doors=doorsFor(districts).map(door=>({...door,open:0}));
-const openDoors=doors.map(door=>({...door,open:1}));
 let nativeActive=true,active=!document.hidden,move=[],onArrival=null,direction='down-right',seated=null,carrying=null,selectTarget=null,dropAim=null;
-let reply=null,timeline={},previousSlot=-1,latestClock=0;
+let timeline={},previousSlot=-1,latestClock=0;
 let toyAim=null,flight=null,gesture=null,walkFacing=direction,walkPhase=0,walkSpeed=0,lastFloorQuip=0,floorQuip=0;
 let restMotion=null,releaseMotion=null;
 function gestureAmount(g,t){
  const x=Math.min(1,Math.max(0,(t-g.start)/(g.until-g.start)));
  return ease(Math.min(1,x/.32,(1-x)/.32));
 }
-let mood=null,moodUntil=0,suspendedAt=0;
+let mood=null,moodUntil=0;
 const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const air=atmosphere($('air'),reduceMotion);
-const outdoors=()=>outsideAt(regionAt(eva.u,eva.v),eva.u,eva.v);
-const lampIsOn=o=>o.kind==='placedLamp'?o.on:saved.lamps[o.id]??(o.sector!=='home'&&night>.44);
+const lampIsOn=o=>o.kind==='placedLamp'?o.on:saved.lamps[o.id]??(o.id===5||night>.44);
 const drawerOpen=id=>saved.drawers?.[id]??(id===1&&Boolean(saved.desk));
 const now=()=>performance.now();
-const citizen=id=>citizens.find(n=>n.id===id);
 let fixtures=[];
 const fixtureIds=Object.fromEntries(Object.entries(fixtureItems).map(([id,item])=>[item,Number(id)]));
-const catalogIds=[12,91,2,9,34,115,119,111,125,128,113,33,41,42,50,133,144,93,300,301,302,303,304,305,61,65,21];
-const catalog=new Map(worldObjects({}).filter(o=>catalogIds.includes(o.id)).map(o=>[o.id,o]));
+const models=worldObjects({});
+const modelsById=new Map(models.map(o=>[o.id,o]));
+const catalogIds=[2,12,21,24,34,61,65,74,79,81,82,87,91,115,300,301,302,303,304,305];
+const catalog=new Map(models.filter(o=>catalogIds.includes(o.id)).map(o=>[o.id,o]));
+const roomDefaults=new Map(models.filter(o=>o.sector===section).map(o=>[o.id,o]));
+const settee=models.find(o=>o.id===81);
+roomDefaults.set(81,settee);
+for(const [id,u,v] of [[2,.70,-1.30],[21,-3.20,1.74],[24,2.36,-2.44],[25,-1.65,-2.93],
+                        [81,-.56,.04],[300,-.97,2.59],[301,-2.02,2.59],[302,-2.86,2.59],
+                        [303,-3.30,-2.20],[304,-3.35,-3.25],[305,-3.43,-1.26]]){
+ const before=roomDefaults.get(id);
+ const after={...before,...worldPoint(section,u,v),sector:section,approach:null};
+ roomDefaults.set(id,after);
+ for(const child of attachedFurniture.get(id)||[]){
+   roomDefaults.set(child,attachedPosition(roomDefaults.get(child),before,after));
+ }
+}
+const parents=new Map([...attachedFurniture].flatMap(([parent,children])=>children.map(id=>[id,parent])));
+function attachedTo(child,parent){
+ const attachment=attachedPosition(roomDefaults.get(child.id),roomDefaults.get(parent.id),parent);
+ const top=!parent.back&&furnitureSurface(parent.art,[parent.w,parent.d],parent.artFlip);
+ if(top){
+   attachment.u+=top.shift;attachment.v-=top.shift;
+   attachment.z+=top.height-fixtureTop(roomDefaults.get(parent.id));
+ }
+ return attachment;
+}
 saved.decor=Array.isArray(saved.decor)?saved.decor:[];
 function decorFixture(entry){
- const model=catalog.get(entry.model),where=regionAt(entry.u,entry.v);
- if(!model||!where||!Number.isInteger(entry.id)||entry.id<1024||entry.id>65534)return null;
- return {...restoreTurn(model,entry),...entry,sector:where.key,approach:null,decor:true};
+ const model=modelsById.get(entry.model);
+ if(!model||!Number.isInteger(entry.id)||entry.id<1024||entry.id>65534)return null;
+ const object=restoreTurn(model,entry);
+ if(!fitsRoom(entry.u,entry.v,object.w,object.d))return null;
+ return {...object,...entry,sector:section,approach:null,decor:true};
 }
 function refreshObjects(){
- fixtures=worldObjects(saved);
+ const objects=new Map(worldObjects(saved).map(o=>[o.id,o]));
+ fixtures=[];
+ for(const [id,base] of roomDefaults){
+   if(saved.packed?.[id]||parents.has(id))continue;
+   if(id===7){fixtures.push(roomWindowFixture(base));continue;}
+   const candidate=objects.get(id);
+   const changed=saved.chairs?.[id];
+   const object=candidate&&changed&&fitsRoom(candidate.u,candidate.v,candidate.w,candidate.d)
+     ?candidate:base;
+   const parent={...object,roomMovable:attachedFurniture.has(id)||id===81};
+   fixtures.push(parent);
+   for(const child of attachedFurniture.get(id)||[]){
+     if(!saved.packed?.[child])fixtures.push(attachedTo(roomDefaults.get(child),parent));
+   }
+ }
+ for(const object of objects.values()){
+   if(!roomDefaults.has(object.id)&&fitsRoom(object.u,object.v,object.w,object.d)){
+     fixtures.push({...object,roomMovable:true});
+   }
+ }
  for(const entry of saved.decor){const o=decorFixture(entry);if(o)fixtures.push(o)}
  for(const [i,entry] of saved.economy.placements.entries()){
    const item=items[entry.item],where=regionAt(entry.u,entry.v);
-   if(!item||!where)continue;
+   if(!item||!where||!fitsRoom(entry.u,entry.v,.25,.25))continue;
    const lamp=entry.item==='lamp';
    fixtures.push({...entry,id:160+i,placementId:entry.id,sector:where.key,kind:lamp?'placedLamp':'pickup',name:item.name,
      w:.25,d:.25,solid:lamp,parts:lamp?[
@@ -122,9 +146,6 @@ function storage(){
  saved.lastLocation=seated?{u:seated.stand[0],v:seated.stand[1]}:{u:eva.u,v:eva.v};localStorage.setItem('room',JSON.stringify(saved));
 }
 function position3D(o){return {...o,z:(o.z||0)+surfaceAt(o.u,o.v)}}
-function positionCitizen(n){
- return {...n,actor:n.key,kind:'npc',w:.23,d:.23,sector:regionAt(n.u,n.v)?.key,solid:false};
-}
 function publishHUD(){
  const wallet=$('wallet');
  if(wallet){$('balance').textContent=saved.economy.coins;wallet.setAttribute('aria-label','Инвентарь, монет '+saved.economy.coins);}
@@ -151,12 +172,7 @@ function say(text,face){
  if(face){mood=face;moodUntil=now()+1750;}
  dirty=true;wake();
 }
-function npcSays(person,text){
- if(!person){say(text);return;}
- speech.say(person.id,text,now());dirty=true;wake();
-}
 function statusNote(text){speech.report(text,now());wake()}
-function respondLater(person,text){reply={speaker:person.id,text,at:speech.until(person.id)+150}}
 function pullClock(){
  const instant=new Date(),label=time.format(instant);
  $('clock').textContent=label;$('calendar').textContent=date.format(instant);
@@ -164,39 +180,33 @@ function pullClock(){
  const widget=connected?widgetWeather(JSON.parse(Desk.weatherLabels())):{};
  const city=cityReading(JSON.parse(Desk.cityWeather()),instant.getTime());
  const sceneWeather=weatherOptions.weather||widget.weather||(weatherOptions.cityFallback!==false&&city?.weather);
- climate=climateAt(instant,{...weatherOptions,weather:sceneWeather||'clear'});night=1-climate.daylight;
- const current=city?[city.temperature,city.description,city.stale?time.format(city.at):null].filter(Boolean).join(' · '):'Нет данных о погоде';
+ const updated=climateAt(instant,{...weatherOptions,weather:sceneWeather||'clear'});
+ if(updated.weather!==climate.weather||updated.season!==climate.season||
+    Math.round(updated.daylight*20)!==Math.round(climate.daylight*20))dirty=true;
+ climate=updated;night=1-climate.daylight;
+ const current=city&&!weatherOptions.weather
+   ?[city.temperature,city.description,city.stale?time.format(city.at):null].filter(Boolean).join(' · ')
+   :[widget.temperature,weathers[climate.weather].name+' за окном'].filter(Boolean).join(' · ');
  $('weather').textContent=current;
  $('weather').setAttribute('aria-label','Погода · '+current);
  try{timeline=JSON.parse(Desk.timeline())}catch{}
- const entry=currentEntry('eva',instant);
+ const entry=currentEntry(instant);
  if(!layout&&autoFollow&&previousSlot!==entry){scheduled=entry;if(seated?.sleep&&!entry[5])leaveSeat();}
  previousSlot=entry;
- dirty=true;
 }
-function appEvent(action){
- if(['bouquet','sell','cargo','mail'].includes(action)){
-   const indoor=insideBuilding(district(section),eva.u,eva.v);
-   witness(saved,action,eva,citizens.filter(n=>insideBuilding(district(section),n.u,n.v)===indoor).map(n=>({...n,sector:regionAt(n.u,n.v)?.key})),section,Date.now());
- }
- Desk.note(action,section);pullClock()}
-function objectList(sector){
- const objects=fixtures.filter(o=>(!sector||o.sector===sector)&&(o.kind!=='shell'||!saved.pickedShell));
- const npcs=citizens.filter(n=>!n.sleeping).map(positionCitizen).filter(n=>!sector||n.sector===sector);
- return [...objects,...npcs];
-}
-const localUses={shelter:'shelter',chair:'sit',plant:'plant',books:'books',lamp:'lamp',npc:'npc',bed:'sleep',clock:'clock',lookout:'lookout',fountain:'fountain',flowers:'flowers',stove:'stove',basin:'basin',fridge:'fridge',shower:'shower',screen:'screen',toilet:'toilet',notice:'notice',wallArt:'wallArt'};
+function appEvent(action){Desk.note(action,section);pullClock()}
+function objectList(){return fixtures.filter(o=>o.kind!=='shell'||!saved.pickedShell);}
+const localUses={shelter:'shelter',chair:'sit',plant:'plant',books:'books',lamp:'lamp',window:'window',bed:'sleep',clock:'clock',lookout:'lookout',fountain:'fountain',flowers:'flowers',stove:'stove',basin:'basin',fridge:'fridge',shower:'shower',screen:'screen',toilet:'toilet',notice:'notice',wallArt:'wallArt'};
 function worldSnapshot(){
- const nearby=objectList(section).map(o=>({id:o.id,name:o.name,use:localUses[o.kind]||'',distance:Math.round(Math.hypot(o.u+o.w/2-eva.u,o.v+o.d/2-eva.v)*10)/10}))
+ const nearby=objectList().map(o=>({id:o.id,name:o.name,use:localUses[o.kind]||'',distance:Math.round(Math.hypot(o.u+o.w/2-eva.u,o.v+o.d/2-eva.v)*10)/10}))
    .filter(o=>o.distance<=6).sort((a,b)=>a.distance-b.distance).slice(0,18);
- return {location:sectionNames[section],time:time.format(new Date()),weather:climate.weather,indoors:!outdoors(),
+ return {location:sectionNames[section],time:time.format(new Date()),weather:climate.weather,indoors:true,
    activity:seated?.sleep?'спит':seated?'сидит':move.length?'идёт':'стоит',coins:saved.economy.coins,nearby};
 }
 function useNearby(id,action){
  if(layout||sheet||selectTarget||dropAim||toyAim||carrying)return 'Сейчас открыто другое действие';
- const o=objectList(section).find(f=>f.id===id&&localUses[f.kind]===action);
+ const o=objectList().find(f=>f.id===id&&localUses[f.kind]===action);
  if(!o||!worldSnapshot().nearby.some(f=>f.id===id&&f.use===action))return 'Предмет больше не рядом';
- if(citizens.some(n=>n.sleeping&&n.bed===id))return 'Кровать занята';
  perform(o,action,false,null,true);return 'Выбрано действие «'+action+'», предмет «'+o.name+'»';
 }
 let nextWorldSync=0,lastSnapshot='';
@@ -216,12 +226,12 @@ function movedBucket(){
  return Math.hypot(u-at.u,v-at.v)>.65;
 }
 function blocks(u,v,extra=0){
- return blocksActor(u,v,fixtures,openDoors,carrying,extra);
+ return !inRoom(u,v,.17+extra)||blocksActor(u,v,fixtures,[],carrying,extra);
 }
 function toyBlocked(point,radius){
  const z=point.z;
- return z+.006<surfaceAt(point.u,point.v)||solidWall(point.u,point.v)||
-   doors.some(door=>hitsDoor(point,radius,door))||fixtures.some(o=>o.id!==carrying&&hitsFixture(point,radius,o));
+ return z+.006<surfaceAt(point.u,point.v)||!inRoom(point.u,point.v,radius)||
+   fixtures.some(o=>o.id!==carrying&&hitsFixture(point,radius,o));
 }
 function pathTo(target,actor=eva){return localPath(actor,target,blocks)||roundRoute(actor,route(actor,target,blocks),blocks)}
 const ease=x=>x*x*(3-2*x);
@@ -275,27 +285,10 @@ function standFrom(o){
  const front=seatFront(o);
  return blocks(...front)?around(o):front;
 }
-function navigate(to){
- const plot=district(to);if(!plot)return;
- const destination=worldPoint(to,...plot.start);
- walkTo(destination.u,destination.v,()=>storage());
-}
-function trackDistrict(){
- const next=regionAt(eva.u,eva.v);
- if(!next||next.key===section)return;
- section=next.key;
- $('place').textContent=section==='shop'?'Лавка':next.title;
- dirty=true;
-}
 function perform(o,action,automatic=false,snack=null,fromChat=false){
- reply=null;
  if(action==='cancel'){carrying=null;selectTarget=null;dropAim=null;toyAim=null;dirty=true;wake();return}
  closeSheet();
  if(saved.sound)prepareSound();
- const resident=citizens.find(n=>n.sleeping&&n.bed===o.id);
- if(resident&&['sit','sleep'].includes(action)){say(resident.name+' спит. В расписание вторжение в кровать не входило.');return;}
- const person=o.kind==='npc'?citizen(o.id):null;
- if(person){person.job=null;person.wait=now()+10500;person.talking=person.wait;person.journey=[];person.speed=0;person.entry=null;}
  if(o.kind==='chair'&&action==='sit'&&seated?.id===o.id){
    leaveSeat();direction='down-left';dirty=true;say('Встала. Стул может выдохнуть.');return;
  }
@@ -323,7 +316,9 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
        if(trade('eat',snack)){appEvent('snack');say(snack==='tea'?'Чай. Вот теперь я человек. Почти.':'Перекусила. Жизнь снова вывозим.','pleased');}break;
      case 'shelter':say('Вот тут сухо. Дождь, можешь писать жалобу.','pleased');break;
      case 'sleep':
-       direction='down-right';takeSeat({id:o.id,stand:target,height:.75,sleep:true},{u:o.u+o.w*.48,v:o.v+.27});
+       direction=o.turned?'down-left':'down-right';
+       takeSeat({id:o.id,stand:target,height:.75,sleep:true},
+         {u:o.u+(o.turned?.27:o.w*.48),v:o.v+(o.turned?o.d*.48:.27)});
        statusNote('Ева спит. Тап по полу её разбудит.');break;
      case 'sit':
        direction=o.seatDirection||'down-left';
@@ -341,19 +336,7 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
        say('Покажи, куда поставить. Ткни в свободный пол.');break;
 
      case 'window':
-       saved.window=!saved.window;say(saved.window?'Проветрила. Теперь бардак на свежем воздухе.':'Закрыла. Хватит городу смотреть на мой плед.');break;
-     case 'npc':
-       if(!person)break;
-       person.direction=heading(eva.u-person.u,eva.v-person.v,person.direction);
-       saved.dialog++;
-       {
-         const index=saved.dialogByPerson?.[person.key]||0;
-         saved.dialogByPerson??={};saved.dialogByPerson[person.key]=index+1;
-         const [line,answer]=recall(saved,person,Date.now())||dialogue(person,index,{bucket:movedBucket(),sector:section});
-         appEvent(person.key==='mio'?'mio':person.key==='ren'?'dialog':'meeting');
-         npcSays(person,line);respondLater(person,answer);
-       }
-       break;
+       saved.window=!saved.window;say(saved.window?'Проветрила. Теперь бардак на свежем воздухе.':'Закрыла. Плед и я снова в тепле.');break;
      case 'togglePlaced':
        if(trade('toggle','lamp',{id:o.placementId}))say('Щёлк. Своя лампа. И никто не требует поставить обратно.','pleased');
        break;
@@ -453,7 +436,7 @@ const descriptions={
  table:[['Открыть или закрыть ящик','desk']],cup:[['Взять кружку','cup']],
  window:[['Открыть или закрыть окно','window']],exit:[['Пройти','exit']],
  bed:[['Лечь спать','sleep'],['Присесть на край','sit']],pillow:[['Взбить','pillow']],blanket:[['Поправить','blanket']],
- npc:[['Заговорить','npc']],plant:[['Полить','plant']]
+ plant:[['Полить','plant']]
 };
 function actionsFor(o){
  if(o.kind==='shelter')return [['Переждать дождь','shelter']];
@@ -478,7 +461,8 @@ function actionsFor(o){
 }
 function select(o){
  const out=showSheet('item',o.name);
- if(editableFixture(o))out.append(label('Переставить на карте','','✥',()=>beginLayout(o)));
+ const furniture=fixtures.find(item=>item.id===parents.get(o.id))||o;
+ if(editableFixture(furniture))out.append(label('Переставить','','✥',()=>beginLayout(furniture)));
  const choices=[...actionsFor(o)].filter(([,action])=>action!=='carry');
  if(o.id===2||o.portable)choices.push(['Перенести','carry']);
  if(fixtureItems[o.id])choices.push(['Убрать в карман','pocketFixture']);
@@ -487,12 +471,7 @@ function select(o){
 function floorAt(event){
  const rect=canvas.getBoundingClientRect();
  const x=(event.clientX-rect.left)*view.width/rect.width,y=(event.clientY-rect.top)*view.height/rect.height;
- let p=worldAtHeight(view,x,y);
- for(const z of [.54,.36,.18,.089,.082,.030,.023,0]){
-   const q=worldAtHeight(view,x,y,z);
-   if(Math.abs(surfaceAt(q.u,q.v)-z)<.001){p=q;break;}
- }
- return {x,y,p};
+ return {x,y,p:worldAtHeight(view,x,y)};
 }
 function pauseInitiative(){
  nextPastime=now()+30000;
@@ -519,7 +498,7 @@ function tapAt(hit,longPress=false){
    });return;
  }
  if(toyAim){
-   if(blocks(p.u,p.v)&&!solidWall(p.u,p.v)){say('Туда улетит прямо в мебель. Целься в пол.');return;}
+   if(blocks(p.u,p.v)){say('Туда улетит прямо в мебель. Целься в пол.');return;}
    flight=startFlight(toyAim,eva,p,now(),surfaceAt);toyAim=null;dirty=true;wake();return;
  }
  if(selectTarget){
@@ -535,15 +514,6 @@ function tapAt(hit,longPress=false){
      say(o.kind==='bucket'?'Ведро переехало. Мио пока не в курсе.':'Утащила. Новый адрес запомнила.');
    });return;
  }
- const door=doors.find(d=>d.id===id);
- if(door){
-   const side=(door.vertical?eva.u-door.u:eva.v-door.v)>=0?-1:1;
-   walkTo(door.u+(door.vertical?side*.53:0),door.v+(door.vertical?0:side*.53),()=>{
-     if(door.residence)statusNote(side<0?'Почта. Здесь сортируют посылки.':'Жилой переулок.');
-   });return;
- }
- const sleeper=citizens.find(n=>n.sleeping&&n.id===id);
- if(sleeper){say(sleeper.name+' спит. Пусть досмотрит серию.');return;}
  const picked=objectList().find(o=>o.id===id);
  if(picked){
    if(longPress){select(picked);return}
@@ -551,21 +521,16 @@ function tapAt(hit,longPress=false){
    perform(picked,action);return;
  }
  if(longPress)return;
- const passer=townLife.visible.find(a=>a.id===id);
- if(passer){say(id===397?'У человека важная миссия. Судя по маршруту, за цветами.':id===218||id===217?'Пропущу машину. Бампер в диалогах не участвует.':passer.name==='Голубь'&&passer.lift>.15?'Вот у кого маршрут без светофоров.':passer.name==='Голубь'?'Шагает так, будто площадь на него записана.':'Кис-кис. Ушёл. Запишем это как успешные переговоры.');return;}
  if(id===15){town.tap();wake();return}
  if(id===251){say('Стена. Прошивка призрака пока не завезли.');return}
- if(id===252){say('Окно с видом. Я тут работу работаю, честно.');return}
  const invalid=blocks(p.u,p.v);
  const distance=Math.hypot(eva.u-p.u,eva.v-p.v);
- if(distance<.12&&!seated){sayAboutFloor(invalid,p.v);return}
- walkTo(p.u,p.v,()=>{if(invalid||distance>.65&&now()-lastFloorQuip>6500)sayAboutFloor(invalid,p.v)});
+ if(distance<.12&&!seated){sayAboutFloor(invalid);return}
+ walkTo(p.u,p.v,()=>{if(invalid||distance>.65&&now()-lastFloorQuip>6500)sayAboutFloor(invalid)});
 }
-function sayAboutFloor(invalid,v){
- if(section==='beach'&&v>=district('beach').v+2){say(remark('edge'),'surprised');return}
+function sayAboutFloor(invalid){
  const lines=invalid?['Дальше пол занят. Подвинулась куда смогла.','Туда впишусь только в виде плоской текстуры.']:
- section==='beach'?['О, песок в кедах. Теперь у меня переносной пляж.','Новая точка, тот же песок. Масштабно погуляли.']:
- ['Дошла. Ноги официально в рабочем состоянии.','Скажи, что мы искали короткий путь к пельменям.','Новая точка. Если это было свидание, пол очень молчаливый.'];
+ ['Дошла. Ноги официально в рабочем состоянии.','Скажи, что мы искали короткий путь к пельменям.','Хорошее место. Пол даже не скрипнул.'];
  lastFloorQuip=now();say(lines[floorQuip++%lines.length]);
 }
 let layout=null;
@@ -574,7 +539,7 @@ function layoutHUD(message){
  const o=layout.object;
  $('layout-palette').hidden=!!o;$('layout-delete').hidden=!o?.decor||layout.newItem;
  $('layout-name').textContent=o?o.name:'Расстановка';
- $('layout-hint').textContent=message||(o&&layout.pan?'Потяни карту. Нажми «Обзор» ещё раз, чтобы поставить предмет.':o?'Коснись места или перетащи предмет':'Выбери предмет. Потяни пустое место, чтобы осмотреть карту.');
+ $('layout-hint').textContent=message||(o&&layout.pan?'Потяни комнату для обзора. Нажми «Обзор» ещё раз, чтобы поставить предмет.':o?'Коснись места или перетащи предмет':'Выбери предмет. Потяни пустое место, чтобы осмотреть комнату.');
  $('layout-pan').hidden=!o;$('layout-pan').setAttribute('aria-pressed',String(Boolean(layout.pan&&o)));
  $('layout-rotate').hidden=!o||o.placementId!=null;
  $('layout-undo').hidden=!!o||!layout.undo.length;
@@ -600,11 +565,11 @@ function backLayout(){
  if(sheet==='palette'){closeSheet();return true}
  if(layout.object){layout.object=null;layout.point=null;layout.issue='';layoutHUD();return true}
  layout=null;$('screen').classList.remove('arranging');$('layout-tools').hidden=true;
- center={...eva};last=now();repaintLayout();return true;
+ center={...roomCenter};last=now();repaintLayout();return true;
 }
 window.backLayout=backLayout;
 $('layout-cancel').onclick=backLayout;
-$('layout-pan').onclick=()=>{layout.pan=!layout.pan;layoutHUD(layout.pan?'Потяни карту для обзора':layout.issue)};
+$('layout-pan').onclick=()=>{layout.pan=!layout.pan;layoutHUD(layout.pan?'Потяни комнату для обзора':layout.issue)};
 $('layout-rotate').onclick=()=>{
  const o=layout.object;if(!o)return;
  const p=layout.point||o;layout.object=nextTurn(o);
@@ -631,7 +596,6 @@ function rememberPlacement(o){
 }
 $('layout-undo').onclick=()=>{
  const undo=layout?.undo.pop();if(!undo)return;undo();refreshObjects();storage();
- for(const n of citizens)if(n.journey.length)n.journey=pathTo(n.journey.at(-1),n);
  layoutHUD('Последняя правка отменена');
 };
 function openPalette(){
@@ -656,15 +620,20 @@ $('layout-delete').onclick=()=>{
  saved.decor=saved.decor.filter(e=>e.id!==o.id);delete saved.lamps[o.id];if(saved.houseUses)delete saved.houseUses[o.id];
  refreshObjects();storage();backLayout();
 };
+function roomPlacementIssue(o,p){
+ if(!fitsRoom(p.u,p.v,o.w,o.d))return 'Оставь место у стены';
+ const children=attachedFurniture.get(o.id)||[];
+ return placementIssue(o,p,fixtures.filter(f=>!children.includes(f.id)&&f.kind!=='wallArt'),[],[eva]);
+}
 function setDestination(p){
  const o=layout.object;
  layout.point={u:Math.round((p.u-o.w/2)*20)/20,v:Math.round((p.v-o.d/2)*20)/20};
- layout.issue=placementIssue(o,layout.point,fixtures,doors,[eva,...citizens]);
+ layout.issue=roomPlacementIssue(o,layout.point);
  layoutHUD(layout.issue||'Место свободно');
 }
 $('layout-apply').onclick=()=>{
  const o=layout?.object,p=layout?.point;if(!o||!p)return;
- const issue=placementIssue(o,p,fixtures,doors,[eva,...citizens]);if(issue){layout.issue=issue;layoutHUD(issue);return}
+ const issue=roomPlacementIssue(o,p);if(issue){layout.issue=issue;layoutHUD(issue);return}
  rememberPlacement(o);
  if(o.decor){const entry={model:o.model,id:o.id,turned:!!o.turned,back:!!o.back,...p};saved.decor=saved.decor.filter(e=>e.id!==o.id);saved.decor.push(entry);}
  else if(o.placementId!=null){
@@ -672,12 +641,11 @@ $('layout-apply').onclick=()=>{
    Object.assign(entry,p);
  }else{saved.chairs??={};saved.chairs[o.id]={...p,turned:!!o.turned,back:!!o.back,world:true,sector:regionAt(p.u,p.v).key}}
  refreshObjects();storage();
- for(const n of citizens)if(n.journey.length)n.journey=pathTo(n.journey.at(-1),n);
  layout.newItem=false;layout.object=null;layout.point=null;layoutHUD('Сохранено. Можно выбрать следующий предмет.');
 };
 function layoutPointerDown(event){
  const hit=floorAt(event),id=renderer.pick(hit.x,hit.y,night,lamps,lighting);
- const picked=fixtures.find(f=>f.id===id);
+ const picked=fixtures.find(f=>f.id===(parents.get(id)||id));
  const selected=Boolean(layout.object);
  if(!selected&&picked)chooseFixture(picked);
  layout.gesture={id:event.pointerId,x:event.clientX,y:event.clientY,start:hit,center:{...center},pan:!layout.object||layout.pan,selected,dragged:false};
@@ -689,7 +657,8 @@ function layoutPointerMove(event){
  g.dragged=true;
  if(!g.pan){setDestination(floorAt(event).p);return}
  const to=floorAt(event),a=worldAtHeight(view,g.start.x,g.start.y),b=worldAtHeight(view,to.x,to.y);
- center={u:Math.max(extent.u0,Math.min(extent.u1,g.center.u+a.u-b.u)),v:Math.max(extent.v0,Math.min(extent.v1,g.center.v+a.v-b.v))};repaintLayout();
+ const pan=(value,axis)=>Math.max(roomCenter[axis]-1.5,Math.min(roomCenter[axis]+1.5,value));
+ center={u:pan(g.center.u+a.u-b.u,'u'),v:pan(g.center.v+a.v-b.v,'v')};repaintLayout();
 }
 let hold=null;
 function clearHold(){if(hold){clearTimeout(hold.timer);hold=null}}
@@ -732,55 +701,23 @@ canvas.addEventListener('contextmenu',event=>{
 });
 
 function paint(t=now()){
- view=renderer.prepare(center);
+ view=renderer.prepare(center,roomScale,roomOffset);
  paintCount++;
- sceneryFading=false;
- const terrain=terrainState(climate);
- const style=terrain.season+'-'+(terrain.snow?'snow':terrain.wet?'wet':'dry');
- lighting=paletteFor(climate,true);
- const sources=[];
-  motionFrames={};
- const current=regionAt(eva.u,eva.v);
- const margin=focusedBuilding===current?.key ? .25 : -.06;
- focusedBuilding=insideBuilding(current,eva.u,eva.v,margin)?current.key:'';
- const coast=district('beach');
- const marginPx=view.scale*3;
- const nearby=districts.filter(plot=>inView(view,plot,SIZE/2+.5,4,marginPx));
- wavesVisible=!reduceMotion&&nearby.includes(coast)&&waveOnScreen(view,coast);
- const visible=nearby.map(plot=>{
-   const building=buildings[plot.theme];
-   const preload=!inView(view,plot,SIZE/2+.5,4,view.scale*.4);
-   if(building){
-     const [x,y,z]=building.light;
-     sources.push([plot.u+x,plot.v+y,z,(plot.key===focusedBuilding ? .46 : .30)+night*.64]);
-   }
-   const windowStyle=plot.theme==='home'&&saved.window?'-window-open':'';
-   return {...plot,preload,cacheKey:plot.key+'-'+style+windowStyle+(plot.key===focusedBuilding?'-inside':'')+(building&&climate.daylight<.65?'-lit':'')};
- });
- renderer.setLightingFocus({u:eva.u,v:eva.v,z:surfaceAt(eva.u,eva.v)+(seated?.sleep ? .77 : seated ? 1.09 : .81)},climate.daylight);
+ lighting=paletteFor(climate,false).map(x=>x*(.95+climate.daylight*.065));
+ const sources=[[room.u+.32,room.v-.8,2.47,.58+night*.52]];
+ const marginPx=view.scale*.4;
+ motionFrames={};
+ renderer.setLightingFocus({...eva,z:.81},climate.daylight);
  renderer.reset();
- renderer.scenery([{key:'ground',cacheKey:'ground-'+style},...visible],plot=>{
-   if(plot.key==='ground')drawSurroundings(renderer,extent,terrain);
-   else drawScenery(renderer,plot,{...terrain,daylight:climate.daylight,occupied:plot.key===focusedBuilding},saved.window);
- });
- for(const door of doors){
-   if(!inView(view,door,1.8,2.2,marginPx))continue;
-   renderer.structure(()=>drawDoor(renderer,door,door.open));
- }
- renderer.setWavePhase(reduceMotion?0:(t*.00053)%(Math.PI*2));
- for(const plot of visible){
-   if(plot.preload||plot.key!==focusedBuilding||!buildings[plot.theme])continue;
-   const u=plot.u+buildings[plot.theme].sconce,v=plot.v-buildingEdge+.21;
-   renderer.sprite(251,'amber-sconce',{u,v,z:1.76},.39,false,{bias:.03});
- }
- prints.draw(t,(p,strength)=>{
-   if(inView(view,p,.2,.2,0))renderer.shadow({...p,z:surfaceAt(p.u,p.v)+.014},.06*strength,.12*strength);
- });
- townLife.draw(renderer,view,t||now(),reduceMotion);
+ renderer.scenery([{key:'room',cacheKey:saved.window?'room-open':'room-closed'}],()=>drawRoom(renderer,saved.window));
+ drawRoomWindow(renderer,paintWindow(t,climate,reduceMotion));
+ renderer.sprite(251,'amber-sconce',{u:room.u-2.7,v:room.v-roomEdge+.16,z:1.72},.46,false,{bias:.03});
  const objects=objectList(),heads=new Map();
+ const preview=layout?.point&&{...layout.object,...layout.point};
  if(layout?.newItem&&layout.object&&layout.point)objects.push(layout.object);
  for(const original of objects){
-   const o=layout?.object?.id===original.id&&layout.point?{...layout.object,...layout.point}:carrying===original.id?{...original,u:eva.u+.23,v:eva.v+.23}:original;
+   const o=preview?.id===original.id?preview:preview&&parents.get(original.id)===preview.id
+     ?attachedTo(original,preview):carrying===original.id?{...original,u:eva.u+.23,v:eva.v+.23}:original;
    if(layout?.object?.id===o.id){
      const z=surfaceAt(o.u,o.v)+.06,t=.055,c=layout.issue?[.93,.30,.24]:[.93,.78,.38];
      for(const [u,v,w,d] of [[o.u-t,o.v-t,o.w+t*2,t],[o.u-t,o.v+o.d,o.w+t*2,t],[o.u-t,o.v,t,o.d],[o.u+o.w,o.v,t,o.d]]){
@@ -800,20 +737,6 @@ function paint(t=now()){
      renderer.artPanel([[x,y,z+h],[x+w,y,z+h],[x+w,y,z],[x,y,z]],o.art,o.id);
      renderer.box(o.id,{u:x-.09,v:y+.03,z:z-.15},w+.18,.20,.042,[.83,.70,.53],'oak');
      for(const delta of [.06,w-.14])renderer.box(o.id,{u:x+delta,v:y+.06,z:z-.105},.09,.09,.13,[.61,.73,.66],'glaze');
-     continue;
-   }
-   if(o.kind==='npc'){
-     const moving=o.journey.length>0&&o.speed>.025;
-     const idle=standingPose(o.actor,o.direction);
-     const painted=moving&&!reduceMotion?walkPose(o.actor,o.walkFacing||o.direction,o.stride):jobPose(o,t,reduceMotion)||idle;
-     const step=renderer.artReady(painted.key)?painted:idle;
-     const frame=step.key;
-     const p=position3D(o);
-     renderer.shadow({...p,z:p.z+.032},.27,.19);
-     const breath=!reduceMotion&&!moving?Math.sin(t*.0022+o.id)*.003:0;
-     const head=renderer.sprite(o.id,frame,p,o.height*(1+breath),step.flip,{...step,lean:breath*.8,cast:{ground:p.z,inside:insideBuilding(regionAt(p.u,p.v),p.u,p.v)}},true);
-     if(step)motionFrames[o.id]=step;
-     if(head)heads.set(o.id,head);
      continue;
    }
    if(o.kind==='seasonTree'){
@@ -866,18 +789,20 @@ function paint(t=now()){
        if(!o.z&&carrying!==o.id&&o.solid!==false){
          renderer.shadow({u:p.u,v:p.v,z:p.z+.032},o.w*.52,o.d*.53);
        }
-       const support=o.z&&fixtures.find(base=>base!==o&&!base.z&&base.solid!==false&&
-         p.u>=base.u&&p.u<=base.u+base.w&&p.v>=base.v&&p.v<=base.v+base.d&&Math.abs(fixtureTop(base)-o.z)<.20);
+       const support=o.z&&fixtures.find(base=>base.id===parents.get(o.id));
+       const top=furnitureSurface(key,[o.w,o.d],o.artFlip);
        renderer.sprite(o.id,key,p,height,Boolean(o.artFlip),{
          anchor,widthScale:o.back?(renderer.artAspect(o.art)||1)/(renderer.artAspect('back-'+o.art)||1):1,
-         cast:{support,ground:surfaceAt(o.u,o.v)+(support?fixtureTop(support):0),inside:insideBuilding(regionAt(o.u,o.v),o.u,o.v)},
-         limits:[p.u+o.w*.5,p.v+o.d*.5,p.z+(o.surfaceHeight??height)]
+         cast:{support,ground:surfaceAt(o.u,o.v)+(support?o.z:0),inside:true},
+         footprint:!o.z&&[o.w,o.d],floorPlane:p.z+.004,
+         limits:[p.u+o.w*.5,p.v+o.d*.5,p.z+(top?.height??o.surfaceHeight??height)]
        });
        if(o.kind==='table'&&(drawerOpen(o.id)||gesture?.id===o.id)){
          const fraction=gesture?.id===o.id?Math.min(1,Math.max(0,(t-gesture.start)/380)):1;
          const eased=fraction*fraction*(3-2*fraction);
          const openness=drawerOpen(o.id)?eased:1-eased;
-         const drawerAt={u:o.u+o.w*.70,v:o.v+o.d+.07-(1-openness)*.25,z:p.z+(o.id===1?.49:.28)};
+         const drawerHeight=top?.height??fixtureTop(o);
+         const drawerAt={u:o.u+o.w*.70,v:o.v+o.d+.07-(1-openness)*.25,z:p.z+drawerHeight*.56};
          renderer.sprite(o.id,'desk-drawer',drawerAt,o.id===1?.35:.25,false,{bias:.08,anchor:[.5,.71]});
        }
        if(!o.back&&o.kind==='easel'&&saved.draw){
@@ -946,13 +871,6 @@ function paint(t=now()){
  sources.sort((a,b)=>lightScore(b)-lightScore(a));
  lamps.fill(0);
  sources.slice(0,4).forEach((source,i)=>lamps.set(source,i*4));
- for(const person of citizens){
-   if(!person.sleeping)continue;
-   const bed=fixtures.find(o=>o.id===person.bed);
-   if(!bed||!inView(view,bed,2.5,1.4,0))continue;
-   const p={u:bed.u+bed.w*.48,v:bed.v+.29,z:.76};
-   renderer.sleepingSprite(person.id,p,'sleep-'+person.key);
- }
  const rest=restMotion,sample=rest&&seatSample(rest,t,reduceMotion);
  const seat=rest?.seat,amount=sample?.amount??0;
  const target=seat?(seat.sleep?'sleep':'sit'):gesture?.motion||releaseMotion?.motion;
@@ -970,9 +888,10 @@ function paint(t=now()){
      if(seat.sleep){opt.bedPlane=at.z;opt.restAmount=amount;}else opt.bias=amount*seat.depth;
    }
  }
- if(!seat||amount<.05)renderer.shadow({...at,z:surfaceAt(at.u,at.v)+.032},.27,.21);
+ const standing=1-ease(amount);
+ if(standing>.03)renderer.shadow({...at,z:surfaceAt(at.u,at.v)+.032},.27*standing,.21*standing);
  opt.crown=actionAnchors[shown.key]?.heads[shown.row]?.[shown.column];
- if(!seat)opt.cast={ground:surfaceAt(at.u,at.v),inside:Boolean(focusedBuilding)};
+ if(!seat)opt.cast={ground:surfaceAt(at.u,at.v),inside:true};
  const breath=target||move.length||reduceMotion?0:Math.sin(t*.002)*.002;
  const head=renderer.sprite(EVA_ID,shown.key,at,shown.height*(1+breath+(seat?.sleep ? .14*amount : 0)),shown.flip,opt,true);
  motionFrames[EVA_ID]=shown;
@@ -993,144 +912,18 @@ function paint(t=now()){
  if(anchor)anchor.feetY=project(view,at).y*view.cssHeight/view.height;
  town.anchor(anchor,sheet);
 }
-function updateDoors(dt){
- for(const door of doors){
-   const near=actor=>Math.hypot(actor.u-door.u,actor.v-door.v)<(door.open>.01?1.95:1.75);
-   const target=near(eva)||townLife.passenger&&near(townLife.passenger)||citizens.some(n=>!n.sleeping&&near(n))?1:0;
-   if(door.open===target)continue;
-   door.open=reduceMotion?target:door.open+Math.sign(target-door.open)*Math.min(Math.abs(target-door.open),dt*3.2);
-   dirty=true;
- }
-}
-function waitingForDoor(actor,path){
- const end=path[0],dx=end.u-actor.u,dy=end.v-actor.v;
- const k=Math.min(1,.15/Math.max(.001,Math.hypot(dx,dy)));
- const point={u:actor.u+k*dx,v:actor.v+k*dy,z:1};
- return doors.some(door=>door.open<.999&&Math.abs(door.u-actor.u)<1.8&&Math.abs(door.v-actor.v)<1.8&&hitsDoor(point,.12,door));
-}
-function wetStep(id,p,step,beat,t){
- if(reduceMotion)return;
- const plot=regionAt(p.u,p.v);
- const near=doors.some(d=>Math.hypot(p.u-d.u,p.v-d.v)<2.5);
- prints.step(id,p,step.du,step.dv,beat,t,raining(climate.weather),!insideBuilding(plot,p.u,p.v),near);
-}
 function advanceWalker(dt){
  if(restMotion||releaseMotion)return;
- if(!move.length||waitingForDoor(eva,move))return;
+ if(!move.length)return;
  const step=paceRoute(eva,move,dt,walkSpeed,1.62);
  walkSpeed=step.speed;
- walkFacing=walkHeading(step.du,step.dv,walkFacing);direction=walkFacing;walkPhase+=step.distance;trackDistrict();
+ walkFacing=walkHeading(step.du,step.dv,walkFacing);direction=walkFacing;walkPhase+=step.distance;
  const beat=Math.floor(walkPhase/(gait.stride/2));
  if(beat!==lastStepIndex){
-   lastStepIndex=beat;wetStep(EVA_ID,eva,step,beat,now());
-   const t=terrainState(climate);
-   footstep(!outdoors()?(buildings[section]?.tile==='slate'?'stone':'wood'):t.wet?'wet':t.snow?'snow':section==='beach'?'sand':
-     ['park','garden','headland'].includes(section)?'grass':section==='pier'?'wood':'stone');
+   lastStepIndex=beat;footstep('wood');
  }
  if(!move.length){if(!automaticWalk)nextPastime=now()+30000;automaticWalk=false;const callback=onArrival;onArrival=null;callback?.();storage();}
  dirty=true;
-}
-function startWork(person,t,entry){
- const choice=nextStation(person,entry[1],fixtures,citizens);if(!choice)return false;
- const [u,v]=around(choice.object,person),path=pathTo({u,v},person),end=path.at(-1)||person;
- if(Math.hypot(end.u-u,end.v-v)>.21)return false;
- person.job={id:choice.id,u,v,label:choice.label,seconds:choice.seconds};
- person.journey=path;person.doing='идёт к месту работы';person.wait=t+1000;
- return true;
-}
-function atStation(person,t){
- const job=person.job;if(!job||person.journey.length)return false;
- const o=fixtures.find(o=>o.id===job.id&&o.sector===person.entry[1]);
- if(!o||Math.hypot(person.u-job.u,person.v-job.v)>.29||
-    Math.hypot(person.u-o.u-o.w*.5,person.v-o.v-o.d*.5)>Math.max(o.w,o.d)*.65+.75){
-   person.job=null;person.wait=t+380;return false;
- }
- if(!job.arrived){
-   Object.assign(job,{arrived:true,start:t,end:t+job.seconds*1000});
-   person.direction=heading(o.u+o.w*.5-person.u,o.v+o.d*.5-person.v,person.direction);
-   person.doing=job.label;person.speed=0;dirty=true;
-   if(o.sector==='school'&&t>(person.nextStudioLine||10000)&&section==='school'&&Math.hypot(person.u-eva.u,person.v-eva.v)<4){
-     const lines=o.id===61?['Свет по краю. Вот теперь похоже на стекло.','Только бы эту тень не замазать.']:o.id===64?['Ещё немного синей краски, и вода сама станет этюдом.','Чистая кисть. Чудеса водопровода.']:['Здесь была охра. О, нашлась.','Сверю оттенок на полях.'];
-     npcSays(person,lines[(person.studioLine||0)%lines.length]);person.studioLine=(person.studioLine||0)+1;person.nextStudioLine=t+57000+person.id%9*1600;
-   }
- }
- if(t<job.end)return true;
- person.job=null;person.wait=t+320;return false;
-}
-function advanceNPC(t,dt){
- const at=Date.now();
- for(const person of citizens){
-   const entry=currentEntry(person.key,at);
-   if(t<person.talking)continue;
-   if(person.entry!==entry){
-     person.job=null;person.sheltering=false;person.entry=entry;person.sleeping=false;person.doing=entry[4];
-     const dest=worldPoint(entry[1],entry[2],entry[3]);
-     person.journey=pathTo(dest,person);
-     if(!person.journey.length)person.sleeping=!!entry[5]&&Math.hypot(person.u-dest.u,person.v-dest.v)<.45;
-     dirty=true;
-   }
-   if(person.sleeping&&seated?.id===person.bed){leaveSeat();say('Кровать понадобилась. Уступаю место, пока меня не свернули вместе с пледом.');}
-   const plot=regionAt(person.u,person.v),wet=raining(climate.weather);
-   if(!wet&&person.sheltering){person.sheltering=false;person.wait=0;person.doing=entry[4];}
-   if(wet&&!entry[5]&&!person.sheltering&&!person.journey.length&&plot?.key===entry[1]&&!insideBuilding(plot,person.u,person.v)&&t>=person.wait){
-     const dest=shelterPoint(plot,person.id);
-     if(dest&&!blocks(dest.u,dest.v)){
-       const path=pathTo(dest,person),end=path.at(-1)||person;
-       if(Math.hypot(end.u-dest.u,end.v-dest.v)<.38){person.job=null;person.journey=path;person.sheltering=true;person.doing='пережидает дождь под навесом';}
-     }
-   }
-   if(atStation(person,t))continue;
-   if(!person.job&&!person.sheltering&&!entry[5]&&!person.journey.length&&t>=person.wait&&
-      !(plot?.key===entry[1]&&startWork(person,t,entry))){
-     const local=person.spots.filter(spot=>spot[0]===entry[1]);
-     person.wait=t+19000+(person.id%9)*1250;
-     if(local.length){
-       const point=local[person.index++%local.length];
-       let dest=worldPoint(point[0],point[1],point[2]);
-       person.doing=point[3];
-       if(person.key==='mio'&&point[3]==='ищет ведро'){
-         const bucket=fixtures.find(o=>o.id===72);
-         if(bucket){const [u,v]=around(bucket,person);dest={u,v};}
-         if(!person.noticed&&movedBucket()&&Math.hypot(person.u-eva.u,person.v-eva.v)<2.6){
-           person.noticed=true;npcSays(person,'Ведро переехало. Даже у ведра планы на жизнь.');
-         }
-       }
-       person.journey=pathTo(dest,person);
-     }
-   }
-   if(!person.journey.length)continue;
-   if(waitingForDoor(person,person.journey)){person.speed=0;continue;}
-   const target=person.journey[0],du=target.u-person.u,dv=target.v-person.v,d=Math.hypot(du,dv);
-   const peers=[eva,...citizens.filter(n=>n.id!==person.id&&!n.sleeping)];
-   const nearest=peers.reduce((a,b)=>Math.hypot(a.u-person.u,a.v-person.v)<Math.hypot(b.u-person.u,b.v-person.v)?a:b);
-   const gap=Math.hypot(person.u-nearest.u,person.v-nearest.v);
-   if(gap<.43&&t>=person.yieldUntil&&d>.02){
-     const offset={u:-dv/d*.24,v:du/d*.24};
-     const sidestep=[1,-1].map(s=>({u:person.u+s*offset.u,v:person.v+s*offset.v}))
-       .find(p=>peers.every(n=>Math.hypot(p.u-n.u,p.v-n.v)>gap)&&!blocks(p.u,p.v)
-         &&!blocks((p.u+person.u)/2,(p.v+person.v)/2)
-         &&surfaceAt(p.u,p.v)===surfaceAt(person.u,person.v));
-     person.yieldUntil=t+850;
-     if(sidestep){
-       const onward=pathTo(person.journey.at(-1),sidestep);
-       person.journey=[sidestep,...onward];
-     }
-   }
-   const step=paceRoute(person,person.journey,dt,person.speed,1.15);
-   person.speed=step.speed;
-   person.walkFacing=walkHeading(step.du,step.dv,person.walkFacing||person.direction);
-   person.direction=person.walkFacing;
-   const beat=Math.floor(person.stride/(gait.stride/2));
-   person.stride+=step.distance;
-   const nextBeat=Math.floor(person.stride/(gait.stride/2));
-   if(beat!==nextBeat)wetStep(person.id,person,step,nextBeat,t);
-   if(!person.journey.length)person.wait=t+(entry[1]==='school'?650:9000+(person.id%9)*500);
-   if(!person.journey.length&&entry[5]){
-     const door=worldPoint(entry[1],entry[2],entry[3]);
-     person.sleeping=Math.hypot(person.u-door.u,person.v-door.v)<.45;
-   }
-   if(Math.hypot(eva.u-person.u,eva.v-person.v)<9)dirty=true;
- }
 }
 let timer=0;
 function wake(){
@@ -1150,7 +943,7 @@ function loop(t){
  if(!sheet&&t>=nextWorldSync){syncWorld();nextWorldSync=t+2200}
  if(t>latestClock){pullClock();latestClock=t+5000;}
  if(!sheet&&!layout){
-   updateDoors(dt);advanceWalker(dt);advanceNPC(t,dt);if(!reduceMotion)townLife.tick(Math.min(.35,elapsed),[eva,...citizens.filter(p=>!p.sleeping)],raining(climate.weather));
+   advanceWalker(dt);
 
    if(flight){
      dirty=true;
@@ -1162,75 +955,54 @@ function loop(t){
        });
      }
    }
-   if(autoFollow&&!move.length&&!carrying&&!flight&&!toyAim&&!dropAim&&!selectTarget&&!hold&&!reply){
+   if(autoFollow&&!town.composing&&!move.length&&!carrying&&!flight&&!toyAim&&!dropAim&&!selectTarget&&!hold){
      if(scheduled){
        const entry=scheduled;scheduled=null;
-       const bed=fixtures.find(o=>o.kind==='bed');
-       if(entry[5]&&bed)perform(bed,'sleep',true);
+       const [id,action]=entry[6]||[];
+       const fixture=fixtures.find(o=>o.id===id);
+       if(fixture)perform(fixture,action,true);
        else{
          const dest=worldPoint(entry[1],entry[2],entry[3]);
          walkTo(dest.u,dest.v,()=>{nextPastime=now()+1600;},true);
        }
      }else if(t>=nextPastime&&!seated?.sleep){
-       const entry=currentEntry('eva',Date.now());
+       const entry=currentEntry(Date.now());
        const bed=entry[5]&&fixtures.find(o=>o.kind==='bed');
        nextPastime=t+15000;
        if(bed)perform(bed,'sleep',true);
        else{
-         const cover=raining(climate.weather)&&outdoors()&&shelterPoint(district(section),0);
-         if(cover&&!blocks(cover.u,cover.v)&&fullness(saved.economy,Date.now())>48){
-           if(Math.hypot(cover.u-eva.u,cover.v-eva.v)>.27)walkTo(cover.u,cover.v,()=>{nextPastime=now()+23000;},true);
-         }else{
          const choice=choosePastime(section,fixtures,saved,saved.pastimeCursor[section]||0,Date.now());
          if(choice){
            saved.pastimeCursor[section]=choice.next;
            perform(choice.object,choice.action,true,choice.item);
-         }}
+         }
        }
      }
    }
  }
- const focus=rest||eva,u=focus.u-center.u,v=focus.v-center.v;
- if(!layout&&Math.hypot(u,v)>.006){
-   const ease=reduceMotion?1:1-Math.exp(-dt*7.8);
-   center.u+=u*ease;center.v+=v*ease;dirty=true;
- }
  if(gesture&&t>=gesture.until){gesture=null;dirty=true;}
  if(mood&&t>=moodUntil){mood=null;dirty=true;}
- if(reply&&t>=reply.at&&!sheet){
-   const line=reply;reply=null;const person=citizen(line.speaker);if(person&&Math.hypot(person.u-eva.u,person.v-eva.v)<3.5)say(line.text,'wry');
- }
  if(speech.tick(t))dirty=true;
- const working=view&&!reduceMotion&&citizens.some(n=>n.job?.arrived&&inView(view,n,.5,1.8));
- const streetMoving=!reduceMotion&&(townLife.visible.length||townLife.nearTraffic(view));
- const precipitation=outdoors()&&['rain','storm','snow'].includes(climate.weather)&&!reduceMotion;
- const animated=!sheet&&(wavesVisible||streetMoving||working||precipitation);
+ const animated=!sheet&&windowWeatherMoves(climate,reduceMotion);
  const ambientDue=animated&&t+1>=nextAmbientFrame;
- const moving=!sheet&&(move.length||flight||!layout&&Math.hypot(u,v)>.006||
-   citizens.some(p=>p.journey.length&&Math.abs(p.u-eva.u)+Math.abs(p.v-eva.v)<12));
- const responsive=!sheet&&(releaseMotion||settling||sceneryFading||gesture||moving);
- const paintScene=dirty||!sheet&&(sceneryFading||Boolean(gesture)||ambientDue);
+ const responsive=!sheet&&(releaseMotion||settling||gesture||move.length||flight);
+ const paintScene=dirty||!sheet&&(Boolean(gesture)||ambientDue);
  if(paintScene){
    paint(t);dirty=false;
-   nextAmbientFrame=t+1000/30;
+   nextAmbientFrame=t+72;
  }
- if(!sheet&&(precipitation?paintScene:t>=lastAir)){
-   air.draw(t,climate,outdoors());
-   ambience(climate.weather,section,outdoors());
-   lastAir=t+(reduceMotion?210:1000/30);
- }
+ if(!sheet)ambience(climate.weather,section,false,Boolean(saved.window));
  if(responsive)wake();
  else if(!nextFrame){
    const delay=sheet?750:animated?Math.max(8,nextAmbientFrame-t-8):
-     speech.waiting||mood||reply?75:300;
+     speech.waiting||mood?75:300;
    timer=setTimeout(wake,delay);
  }
 }
 
 window.homeSheetChanged=()=>{
  $('speech').hidden=Boolean(sheet);
- if(sheet)air.clear();
- else{last=now();dirty=true;nextAmbientFrame=0}
+ if(!sheet){last=now();dirty=true;nextAmbientFrame=0}
  wake();
 };
 
@@ -1240,12 +1012,9 @@ function updateHomeVisibility(){
  active=visible;
  town.active(active);audioVisible(active);
  if(active){
-   if(suspendedAt&&Math.floor(Date.now()/900000)>Math.floor(suspendedAt/900000)){
-     settleResidents(Date.now(),true);reply=null;speech.clear();
-   }
-   suspendedAt=0;last=now();pullClock();wake();
+   last=now();pullClock();wake();
  }else{
-   air.clear();suspendedAt=suspendedAt||Date.now();storage();
+   storage();
    cancelAnimationFrame(nextFrame);clearTimeout(timer);nextFrame=timer=0;
  }
 }
@@ -1257,41 +1026,24 @@ canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();statusNote('Г
 canvas.addEventListener('webglcontextrestored',()=>location.reload());
 
 $('places').onclick=()=>{
- const out=showSheet('places','Куда пойдём?');
+ const out=showSheet('room','Комната Евы');
  out.append(label(autoFollow?'Расписание включено':'Включить расписание',
-   'Ева сама ходит по делам, занимается предметами и ложится спать','◷',()=>{
+   'Ева сама занимается своими делами и ложится спать','◷',()=>{
    autoFollow=!autoFollow;localStorage.setItem('followSchedule',autoFollow?'yes':'no');
    if(!autoFollow){scheduled=null;pauseInitiative();}previousSlot=-1;pullClock();closeSheet();wake();
  }));
- const grid=node('div',null,'district-map');
- const firstColumn=Math.min(...districts.map(d=>d.column)),firstRow=Math.min(...districts.map(d=>d.row));
- const width=1+Math.max(...districts.map(d=>d.column))-firstColumn;
- grid.style.gridTemplateColumns='repeat('+width+',minmax(49px,1fr))';
- const short={home:'Дом',lane:'Дома',terrace:'Сквер',courtyard:'Двор',garden:'Сад',square:'Площадь',shop:'Лавка',promenade:'Берег'};
- for(const plot of districts){
-   const b=btn(short[plot.key]||plot.title,'',()=>{scheduled=null;closeSheet();navigate(plot.key)});
-   b.setAttribute('aria-label',plot.title);
-   b.style.gridColumn=String(plot.column-firstColumn+1);b.style.gridRow=String(plot.row-firstRow+1);
-   b.setAttribute('aria-current',String(plot.key===section));grid.append(b);
- }
- const plan=node('img');plan.src='town-map.svg';plan.alt='План кварталов, тротуаров и пешеходных переходов';plan.style.width='100%';out.append(plan,grid);
- out.append(label('Распорядок жителей','Занятия и сон по Москве','◷',()=>{
-   const panel=showSheet('schedules','Распорядок');
-   for(const person of Object.values(routines)){
-     const group=document.createElement('details');
-     group.append(node('summary',person.name));
-     for(const [hour,place,,,activity] of person.entries){
-       group.append(node('p',String(hour).padStart(2,'0')+':00 · '+activity+' · '+district(place).title));
-     }
-     panel.append(group);
+ out.append(label('Распорядок дня','','◷',()=>{
+   const panel=showSheet('schedules','Распорядок Евы');
+   for(const [hour,,,,activity] of routines.entries){
+     panel.append(node('p',String(hour).padStart(2,'0')+':00 · '+activity,'sub'));
    }
  }));
 };
 $('interact').onclick=()=>{
- const out=showSheet('decor','Вокруг');
- out.append(label('Расстановка','Переместить мебель и городской декор','✥',()=>beginLayout()),label('Палитра предметов','Добавить предмет в город','＋',()=>{beginLayout();openPalette()}));
+ const out=showSheet('decor','В комнате');
+ out.append(label('Расстановка','Переместить или повернуть мебель','✥',()=>beginLayout()),label('Палитра предметов','Добавить предмет в комнату','＋',()=>{beginLayout();openPalette()}));
  if(carrying||dropAim||toyAim)out.append(label('Отменить действие','','×',()=>{closeSheet();perform(null,'cancel')}));
- for(const o of objectList(section))out.append(label(o.name,o.kind==='npc'?o.doing||'':'','◇',()=>select(o)));
+ for(const o of objectList(section))out.append(label(o.name,'','◇',()=>select(o)));
  for(const [name,kind] of [['Мяч','ball'],['Бумажный самолётик','plane']])out.append(label(name,'Выбери, куда запустить','›',()=>{
    closeSheet();flight=null;move=[];onArrival=null;carrying=null;selectTarget=null;dropAim=null;toyAim=kind;
    say('Ткни в пол. Кому прилетит — чисто случайность.');
@@ -1320,18 +1072,18 @@ function openWeather(){
    connected?(widgetWeather(JSON.parse(Desk.weatherLabels())).area||'Открыть данные погодного приложения'):'Подключить системный виджет погоды','☁',()=>{
      delete weatherOptions.weather;saved.weatherOptions=weatherOptions;storage();closeSheet();Desk.connectWeather();
    }));
- out.append(label('Погода города в сцене',(weatherOptions.cityFallback!==false?'Включена':'Выключена')+' · Open-Meteo, если в виджете нет условий','☁',()=>{
+ out.append(label('Прогноз за окном',(weatherOptions.cityFallback!==false?'Включена':'Выключена')+' · Open-Meteo, если в виджете нет условий','☁',()=>{
    weatherOptions.cityFallback=weatherOptions.cityFallback===false;delete weatherOptions.weather;saved.weatherOptions=weatherOptions;storage();pullClock();openWeather();wake();
  }));
- choices('weather','Погода в сцене',Object.entries(weathers).map(([key,v])=>[key,v.name]));
+ choices('weather','Погода за окном',Object.entries(weathers).map(([key,v])=>[key,v.name]));
  appendSoundControls(out,openWeather);
 }
 window.openHomeSound=()=>{
- const out=showSheet('sound','Звуки города');
+ const out=showSheet('sound','Звуки комнаты');
  appendSoundControls(out,window.openHomeSound);
 };
 function appendSoundControls(out,refresh){
- out.append(label(saved.sound?'Звук включён':'Звук выключен','Улица, осадки, шаги и предметы','♪',()=>{
+ out.append(label(saved.sound?'Звук включён':'Звук выключен','Погода за окном, шаги и предметы','♪',()=>{
    saved.sound=!saved.sound;soundSettings(saved.sound,saved.volume??.42);storage();refresh();wake();
  }));
  const volume=node('label',null,'sound-level'),bar=node('input',null);
@@ -1347,6 +1099,7 @@ function openInventory(){
  const out=showSheet('inventory','Карман');
  const summary=node('div',null,'stock-summary');
  summary.append(node('strong',saved.economy.coins+' мон.'),node('span','Сытость '+Math.round(fullness(saved.economy,Date.now()))+'%'));out.append(summary);
+ out.append(label('Заказать запасы','Еда, материалы и мелочи','＋',openSupplies));
  const entries=Object.entries(saved.economy.stock);
  for(const [key,n] of entries){
    const info=items[key];if(!info||n<1)continue;
@@ -1365,12 +1118,30 @@ function openInventory(){
  if(!entries.length)out.append(node('p','Карман пуст.','sub'));
 }
 
+function openSupplies(){
+ const out=showSheet('supplies','Запасы');
+ for(const [key,item] of Object.entries(items)){
+   if(!item.price)continue;
+   out.append(label(item.name,item.price+' мон.','＋',()=>{
+     if(trade('buy',key))openInventory();
+     else closeSheet();
+   }));
+ }
+ for(const [key,coins,event] of [['drawing',5,'sell-drawing'],['bouquet',6,'sell']]){
+   if(!saved.economy.stock[key])continue;
+   out.append(label('Сдать · '+items[key].name,coins+' мон.','◇',()=>{
+     if(trade('sell',key)){appEvent(event);openInventory();}
+   }));
+ }
+ out.append(btn('В карман','back-link',openInventory));
+}
+
 function openTimeline(){
  pullClock();
  const out=showSheet('timeline','Что было');
  const live=timeline.live!==false;
  out.append(label(live?'Фоновое расписание включено':'Включить фоновое расписание',
-  live?'Android обновляет события города в фоне':'События обновляются при открытии рабочего стола','◷',()=>{
+  live?'Android обновляет события комнаты в фоне':'События обновляются при открытии рабочего стола','◷',()=>{
    Desk.enableLife(!live);closeSheet();statusNote(live?'Фоновое расписание выключено.':'Фоновое расписание включено.');
  }));
  for(const ev of [...(timeline.events||[])].reverse().slice(0,15)){
@@ -1382,17 +1153,17 @@ function openTimeline(){
 window.worldCheck=()=>{
  const close=project(view,{u:1,v:1,z:1.62}).y-project(view,{u:1,v:1}).y;
  const far=project(view,{u:-2,v:-1,z:1.62}).y-project(view,{u:-2,v:-1}).y;
- return {section,climate,lighting,motionFrames,paintCount,wavesVisible,sceneryFading, doors:doors.map(({id,u,v,open})=>({id,u,v,open})),focusedBuilding,activeLights:Array.from(lamps).filter((strength,i)=>i%4===3&&strength>0).length,cameraScale,cameraOffset,sound:audioState(),outdoors:outdoors(),anchors:Object.fromEntries(speechAnchors),move:move.length,direction,pose:seated?.sleep?'sleep':seated?'sit':move.length?'walk':gesture?.motion||'idle',center,eva,depth:renderer.depthBits,sizeConstant:Math.abs(close-far)<.0001,
-    lamp:saved.lamps,chairs:saved.chairs,dialog:saved.dialog,flight:flight?.kind||null,citizens:citizens.map(({id,name,u,v,doing,sleeping})=>({id,name,u,v,doing,sleeping})),economy:saved.economy,level:surfaceAt(eva.u,eva.v),timeline:JSON.parse(Desk.timeline())};
+ return {section,climate,lighting,motionFrames,paintCount,activeLights:Array.from(lamps).filter((strength,i)=>i%4===3&&strength>0).length,
+   cameraScale:roomScale,cameraOffset:roomOffset,sound:audioState(),outdoors:false,
+   anchors:Object.fromEntries(speechAnchors),move:move.length,direction,pose:seated?.sleep?'sleep':seated?'sit':move.length?'walk':gesture?.motion||'idle',
+   center,eva,depth:renderer.depthBits,sizeConstant:Math.abs(close-far)<.0001,windowOpen:!!saved.window,
+   lamp:saved.lamps,chairs:saved.chairs,flight:flight?.kind||null,economy:saved.economy,timeline:JSON.parse(Desk.timeline())};
 };
-$('place').textContent=section==='shop'?'Лавка':district(section).title;
+$('place').textContent='Комната';
 soundSettings(Boolean(saved.sound),saved.volume??.42);
 document.addEventListener('click',event=>{
  const button=event.target.closest('button');
  if(saved.sound&&button){prepareSound();sound(button.closest('#town-compose')?'chatTap':'uiTap');}
 },true);
-for(const p of citizens){
- renderer.artReady('walk-'+p.key);
-}
 for(const key of ['walk-eva','act-eva-front','act-eva-rear','desk-drawer','amber-sconce','closed-umbrella','folded-throw'])renderer.artReady(key);
 refreshObjects();publishHUD();last=now();pullClock();paint();storage();wake();

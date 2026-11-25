@@ -23,6 +23,11 @@ final class PetChair {
 
     static float unfolding(float phase){return PetMotion.ease(phase/FOLDED);}
     static float sitting(float phase){return PetMotion.ease((phase-FOLDED)/(1f-FOLDED));}
+    static float seatedBlend(float sitting){return PetMotion.ease((sitting-.87f)/.13f);}
+
+    long seatedFor(long now){
+        return Math.max(0,now-began-Math.round((1f-start)*OPEN_DURATION));
+    }
 
     static boolean hipOn(int left,int top,int right,int x,int y,int w,int h,boolean mirrored,int tolerance){
         float hip=x+w*(mirrored?.55f:.45f);

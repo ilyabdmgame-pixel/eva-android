@@ -363,20 +363,22 @@ test('land and tall objects enter the preload margin before crossing a portrait 
  }
 });
 
-test('all daily shifts and sleeping places are reachable, and every entrance has a unique door',async()=>{
+test('the room schedule stays indoors and legacy entrances have unique door IDs',async()=>{
  const {doorsFor}=await import('../../../app/src/main/assets/home/buildings.mjs');
+ const {inRoom}=await import('../../../app/src/main/assets/home/room.mjs');
  const doors=doorsFor(districts);
  assert.equal(new Set(doors.map(d=>d.id)).size,doors.length);
  assert.equal(doors.length,Object.values(buildings).flatMap(b=>b.sides.flat()).filter(h=>h.kind==='door').length+1);
  const plans=JSON.parse(readFileSync(new URL('../../../app/src/main/assets/home/routines.json',import.meta.url)));
- assert.equal(Object.keys(plans).length,6);
+ assert.deepEqual(Object.keys(plans),['eva']);
  const objects=worldObjects({chairs:{}});
- const blocked=(u,v)=>!regionAt(u,v)||solidWall(u,v)||waterAt(u,v)||objects.some(o=>o.solid!==false&&u>o.u-.12&&u<o.u+o.w+.12&&v>o.v-.12&&v<o.v+o.d+.12);
+ const blocked=(u,v)=>!inRoom(u,v,.17)||solidWall(u,v)||objects.some(o=>o.solid!==false&&u>o.u-.12&&u<o.u+o.w+.12&&v>o.v-.12&&v<o.v+o.d+.12);
  for(const {entries} of Object.values(plans)){
    assert.equal(entries.filter(a=>a[5]).length,1);
    assert.deepEqual(entries.map(a=>a[0]),entries.map(a=>a[0]).sort((a,b)=>a-b));
    let previous=entries.at(-1);
    for(const row of entries){
+     assert.equal(row[1],'home');
      const target=worldPoint(row[1],row[2],row[3]);
      assert(!blocked(target.u,target.v));
      const path=route(worldPoint(previous[1],previous[2],previous[3]),target,blocked);
@@ -486,6 +488,10 @@ test('sprite front and top share the same projected silhouette and stop at the s
    assert(Math.abs((u-x)-(v+x))<1e-8&&Math.abs((u-x)-(z-up))<1e-8);
    assert(Math.abs(Math.min(limits[0]-u,limits[1]-v,limits[2]-z))<1e-8);
  }
+ const aboveFloor=surfaceTriangles(corners,[0,0,1,1],limits,.04);
+ assert(aboveFloor.every(p=>p[2]>=.04-1e-9));
+ assert(aboveFloor.every(([u,v,z,s,t])=>
+   Math.abs(u-v-(4*s-2))<1e-8&&Math.abs(u+v-2*z-(4*t-2))<1e-8));
 });
 test('placement checks the whole footprint and projectiles hit furniture at its own elevation',async()=>{
  const {canPlace,hitsFixture}=await import('../../../app/src/main/assets/home/contact.mjs');
@@ -567,6 +573,26 @@ test('exterior stone and interior skirting have distinct faces, and closed leave
       }
     }
   }
+});
+test('the desk feet and worktops align after a move or quarter turn',async()=>{
+ const {furnitureCorners,furnitureSurface}=await import('../../../app/src/main/assets/home/occlusion.mjs');
+ const at={u:-11.37,v:1.82,z:.16};
+ for(const flip of [false,true]){
+   const size=flip?[.72,1.62]:[1.62,.72];
+   const [a,b,,d]=furnitureCorners('writing-desk',at,size,flip);
+   const local=([s,t])=>a.map((value,i)=>value+s*(b[i]-value)+t*(d[i]-value));
+   for(const [sprite,[x,y]] of [[[.054,.683],[.03,.95]],[[.722,.993],[.97,.95]],[[.953,.841],[.97,.05]]]){
+     const [u,v,z]=local(sprite);
+     const [du,dv]=flip?[(y-.5)*size[0],(x-.5)*size[1]]:[(x-.5)*size[0],(y-.5)*size[1]];
+     assert(Math.abs((u-v)-(at.u+du-at.v-dv))<1e-8);
+     assert(Math.abs((u+v-2*z)-(at.u+du+at.v+dv-2*at.z))<1e-8);
+   }
+ }
+ const cabinet=furnitureSurface('tv-cabinet',[.53,.45],false);
+ const rotated=furnitureSurface('tv-cabinet',[.45,.53],true);
+ assert(cabinet.height>.30&&cabinet.height<.36);
+ assert(Math.abs(cabinet.height-rotated.height)<1e-8);
+ assert(Math.abs(cabinet.shift+rotated.shift)<1e-8);
 });
 test('roof texture axes follow the slope across both triangles and either winding',async()=>{
   const {faceUV}=await import('../../../app/src/main/assets/home/material-uv.mjs');

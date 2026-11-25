@@ -10,6 +10,7 @@ test('one desktop conversation, work, question, completion, voice and retry',asy
  const request={op:'send',id:'test-retry-1',text:'тест'};
  assert.equal((await run(request)).status,'working');
  await run(request);assert.equal(calls.length,2);assert.equal(calls[1][1].sandboxPolicy.type,'readOnly');
+ assert.equal(calls[1][1].spoken,false);
  await assert.rejects(run({...request,id:'test-other-1'}));
  const params={threadId:'desktop',turnId:'turn-1'};
  event({id:7,method:'item/tool/requestUserInput',params});assert.equal((await run({op:'state'})).status,'question');
@@ -23,6 +24,7 @@ test('one desktop conversation, work, question, completion, voice and retry',asy
  const restored=create({root,cards,rpc,authenticated:()=>true});assert.equal((await restored.run({op:'state'})).voice,true);
  assert.equal((await restored.run({op:'read',id:'stale'})).status,'done');assert.equal((await restored.run({op:'read',id:'turn-1'})).status,'idle');
  await restored.run({op:'open'});assert.equal(calls.at(-1)[0],'thread/resume');
+ await restored.run({...request,id:'test-voice-1'});assert.equal(calls.at(-1)[1].spoken,true);
 });
 test('a direct follow-up stays yellow until the next turn, including after reading',async t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'eva-town-q-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));

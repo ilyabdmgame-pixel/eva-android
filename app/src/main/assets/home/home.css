@@ -14,20 +14,14 @@ header{top:max(6.5%,50px)}#folders{top:22%;grid-template-columns:repeat(auto-fil
 
 #actions #wallet{min-width:76px;justify-content:center;border-color:#d9ab695f;color:#ffdc9e}
 #actions .pill{padding:7px 11px}
-.district-map{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:15px}
-.district-map button{min-height:58px;border-radius:9px;background:#e1ddce;color:#29362d;line-height:1.15;padding:6px 3px}
-.district-map button[aria-current=true]{background:#435c53;color:#fff4de;box-shadow:inset 0 0 0 2px #759180}
 .stock-summary{display:flex;justify-content:space-between;gap:8px;padding:12px 0;color:#263831}
 .stock-summary strong{color:#38574c}
 .stock-menu{display:flex;gap:8px;padding:8px 0 12px}.stock-menu button{background:#dce6d9;color:#293c31;border-radius:8px;padding:7px 12px}
-.district-map{overflow-x:auto;overscroll-behavior-x:contain}
 
-#air{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .now #weather{pointer-events:auto}
 .weather-chip{margin-top:7px;padding:4px 10px;min-height:31px;color:#f4dfbc;background:#243030dd;border:1px solid #ffe2b84a;border-radius:12px;font-size:12px;font-weight:650;white-space:nowrap}
 .weather-options{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px}.weather-options button{background:#e3ddca;color:#24362e;border-radius:8px;padding:5px 10px;font-size:13px}.weather-options button[aria-pressed=true]{background:#435d54;color:#fff7e3}.weather-label{font-weight:650;margin:8px 0 0}.sound-level{color:#374a41;display:flex;align-items:center;gap:12px;margin-bottom:8px}.sound-level input{width:100%;accent-color:#456258}
 
-.district-map button{font-size:10.5px;white-space:nowrap;min-height:48px;padding-inline:1px}
 header .now{min-width:0}#calendar{white-space:nowrap}
 
 #content details{padding:.65rem .85rem;border-bottom:1px solid #ffffff26}
@@ -137,3 +131,4 @@ body:has(#sheet:not([hidden])) #layout-tools{visibility:hidden}
 #sheet[data-page=folder] .app img{width:34px;height:34px;object-fit:contain}
 #sheet[data-page=folder] .app span{font-size:11px;line-height:1.2}
 #sheet[data-page=folder-edit] #content>.back-link{margin-top:0}
+.shade{background:linear-gradient(180deg,#28212b59,transparent 34%,transparent 78%,#221c2491)}

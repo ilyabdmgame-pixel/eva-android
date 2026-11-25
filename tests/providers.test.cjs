@@ -49,7 +49,8 @@ test('external providers preserve persona, conversation history and explicit mod
     next = provider === 'claude' ? {payload: {content: [{type: 'text', text: 'Готово'}],
       usage: {input_tokens: 4, output_tokens: 2}}} : {payload: {choices: [{message: {content: 'Готово'}}],
       usage: {prompt_tokens: 4, completion_tokens: 2}}};
-    const result = await chat({provider, messages: history}, signal);
+    const spoken = provider === 'claude' || provider === 'gemini';
+    const result = await chat({provider, messages: history, spoken}, signal);
     assert.equal(result.text, 'Готово');
     assert.deepEqual(result.usage, {input_tokens: 4, output_tokens: 2, total_tokens: null});
     const request = calls.at(-1);
@@ -61,6 +62,7 @@ test('external providers preserve persona, conversation history and explicit mod
     assert.match(request.url, /^https:\/\//);
     const personality = isClaude ? request.body.system : request.body.messages[0].content;
     assert.ok(personality.includes(persona));
+    assert.equal(personality.includes('Этот ответ будут слушать'),spoken);
     assert.deepEqual(isClaude ? request.body.messages : request.body.messages.slice(1), history);
     assert.deepEqual(info()[provider], {model, configured: true});
   }

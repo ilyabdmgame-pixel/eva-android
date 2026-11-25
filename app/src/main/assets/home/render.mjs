@@ -2,7 +2,7 @@ import {faceUV} from './material-uv.mjs';
 import {shadowOffset,clipToReceiver} from './lighting.mjs';
 import {camera,actorBillboardSpan} from './camera.mjs';
 import {propArt} from './prop-art.mjs';
-import {surfaceTriangles} from './occlusion.mjs';
+import {furnitureCorners,surfaceTriangles} from './occlusion.mjs';
 import {parts} from './painted-parts.mjs';
 import {gait} from './orientation.mjs';
 
@@ -397,7 +397,8 @@ export function createScene(canvas) {
     // Offsets along the view axis preserve screen placement and adjust occlusion.
     const bias=options?.bias??0;
     const foot=options?.floor?h*(1-anchorY)+.016:0;
-    const physical=[[u-left,v+left,top],[u+right,v-right,top],[u+right,v-right,bottom],[u-left,v+left,bottom]];
+    const calibrated=options?.footprint?furnitureCorners(key,{u,v,z},options.footprint,flip):null;
+    const physical=calibrated??[[u-left,v+left,top],[u+right,v-right,top],[u+right,v-right,bottom],[u-left,v+left,bottom]];
     const lean=options?.lean??0;
     if(lean)for(const point of physical.slice(0,2)){point[0]+=lean;point[1]-=lean;}
     const corners=!options?.limits&&(bias||foot)?physical.map(p=>[...p]):physical;
@@ -409,8 +410,8 @@ export function createScene(canvas) {
       const delta=(options.bedPlane-p[2])*options.restAmount;
       for(let i=0;i<3;i++)p[i]+=delta;
     }
-    const uv=flip?[rightU,y,x,bottomV]:[x,y,rightU,bottomV];
-    const volume=options?.limits?surfaceTriangles(corners,uv,options.limits):null;
+    const uv=flip&&!calibrated?[rightU,y,x,bottomV]:[x,y,rightU,bottomV];
+    const volume=options?.limits?surfaceTriangles(corners,uv,options.limits,options.floorPlane):null;
     if(options?.cast){
       const {ground,inside}=options.cast;
       const [sx,sy]=shadowOffset(1,inside);
@@ -459,19 +460,19 @@ export function createScene(canvas) {
     quad(corners,id,[1,1,1],key);
     return {u,v,z:z+.15};
   }
-  function prepare(center){
+  function prepare(center,scale=cameraScale,offset=cameraOffset){
     const cw=canvas.clientWidth,ch=canvas.clientHeight;
     const d=Math.min(devicePixelRatio,Math.sqrt(3200000/Math.max(1,cw*ch)));
     const w=Math.round(cw*d),h=Math.round(ch*d);
     if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
-    view=camera({width:w,height:h,pixelsPerMeter:w*cameraScale,u:center.u,v:center.v});
+    view=camera({width:w,height:h,pixelsPerMeter:w*scale,u:center.u,v:center.v});
     view.cssWidth=cw;view.cssHeight=ch;
-    view.y+=h*cameraOffset;
+    view.y+=h*offset;
     return view;
   }
   function bindTexture(key){
     const tex=textures.get(key);
-    gl.uniform1i(uniforms.glow,key==='glow'?1:0);
+    gl.uniform1i(uniforms.glow,key==='glow'||key==='room-window'?1:0);
     gl.uniform1i(uniforms.cutout,tex.cutout?1:0);
     gl.uniform1i(uniforms.wave,key==='foam'?1:0);
     gl.bindTexture(gl.TEXTURE_2D,tex.t);
@@ -479,7 +480,7 @@ export function createScene(canvas) {
   function flush(pick,night,lamp,climate=[1,1,1],x=0,y=0){
     const width=pick?1:canvas.width,height=pick?1:canvas.height;
     gl.viewport(0,0,width,height);
-    gl.clearColor(pick?0:.16,pick?0:.19,pick?0:.21,1);
+    gl.clearColor(pick?0:.145,pick?0:.128,pick?0:.15,1);
     gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT|(pick?0:gl.STENCIL_BUFFER_BIT));
     gl.uniform3f(uniforms.view,view.x-x,view.y-y,view.scale);
     gl.uniform2f(uniforms.size,width,height);
@@ -581,6 +582,16 @@ export function createScene(canvas) {
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   const pixel=new Uint8Array(4);
   return {sleepingSprite,prepare,structure,scenery,
+    windowPanel(points,id,image){
+      const first=!textures.has('room-window');
+      if(first)texture('room-window');
+      if(image){
+        gl.bindTexture(gl.TEXTURE_2D,textures.get('room-window').t);
+        if(first)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
+        else gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,image);
+      }
+      quad(points,id,[1,1,1],'room-window');
+    },
     shadeBand(points,contact){quad(points,0,[1,1,1],contact?'cornerShade':'groundShade');},box,panel,artPanel,sprite,triangle,illustratedPart,ball,shadow,castFloor,foam,flush,
     setLightingFocus(at,day){reveal=[at.u,at.v,at.z];lightDay=day;},
     setWavePhase(value){wavePhase=value;},

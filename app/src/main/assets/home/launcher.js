@@ -187,12 +187,12 @@ function phoneTheme(){
  const screen=menuSection(out,'Оформление');
  const preview=node('img',null,'lock-preview');preview.src='/art/eva-lock.jpg';preview.alt='Вечерняя набережная';
  screen.append(preview,label('Обои экрана блокировки','Применить иллюстрацию','☾',()=>Desk.lockWallpaper()));
- const city=menuSection(out,'Город');
- city.append(label('Звуки города','Громкость, шаги и окружение','♫',()=>window.openHomeSound()));
+ const room=menuSection(out,'Комната');
+ room.append(label('Звуки комнаты','Громкость, шаги и окружение','♫',()=>window.openHomeSound()));
  const boot=Desk.bootEnabled();
  const toggle=label('Расписание после перезагрузки',boot?'Включено':'Выключено','↻',()=>{
    Desk.setBootEnabled(!boot);phoneTheme();
  });
- toggle.setAttribute('aria-pressed',String(boot));city.append(toggle);
+ toggle.setAttribute('aria-pressed',String(boot));room.append(toggle);
  out.append(btn('К приложениям','back-link',()=>drawer()));
 }

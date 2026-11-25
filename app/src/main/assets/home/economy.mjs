@@ -80,7 +80,7 @@ export function apply(state,op,now=Date.now()){
       count(next,'can',-1);return done();
     case 'make': {
       const needs=op.item==='bouquet'?'ribbon':op.item==='drawing'?'paper':null;
-      if(!needs||!amount(state,needs))return fail('Нужен расходник. Куплю у полки в цветочной лавке.');
+      if(!needs||!amount(state,needs))return fail('Нужны материалы. Загляни в «Карман» → «Запасы».');
       if(next.fullness<10)return fail('Я голодная. Сначала поем, потом изображу трудоголика.');
       count(next,needs,-1);count(next,op.item,1);next.fullness-=6;return done();
     }

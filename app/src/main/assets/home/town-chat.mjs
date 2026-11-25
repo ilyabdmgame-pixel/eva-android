@@ -5,7 +5,7 @@ export function townChat({note,quip,world,apply}){
  choices=document.getElementById('town-options');
  const labels={working:'Ева работает',done:'Дело готово',question:'Ева ждёт ответа'};
  const post=(op,extra={})=>window.Desk?.town?.(JSON.stringify({op,...extra}));
- let active=!document.hidden,open=false,head=null,covered=false,roomBusy=false,pending=null,showTimer=0;
+ let active=!document.hidden,open=false,head=null,covered=false,roomBusy=false,pending=null,showTimer=0,position=null;
  let status='idle',answer=null,choicePoll=null,words=[],page='',timer=0,spoken=false,ack='',lastDraft='';
  input.value=sessionStorage.getItem('townDraft')||'';
  function controls(){send.disabled=!input.value.trim()||!!pending||roomBusy;input.readOnly=!!pending;}
@@ -32,10 +32,14 @@ export function townChat({note,quip,world,apply}){
   place(choices,point.x,point.y-choices.offsetHeight-(mark.hidden?12:33));
   const below=(point.feetY??point.y+76)+10;
   const above=point.y-form.offsetHeight-(bubble.hidden?36:bubble.offsetHeight+40);
-  place(form,point.x,below+form.offsetHeight<=top+h-8?below:above);
+  if(!form.hidden){
+   position??={x:point.x,y:below+form.offsetHeight<=top+h-8?below:above,height:h};
+   const keyboard=document.activeElement===input&&h<position.height-76;
+   place(form,position.x,keyboard?top+h-form.offsetHeight-8:position.y);
+  }
  }
  const layout=()=>anchor(head,covered);
- function close(){if(!open&&!showTimer)return false;clearTimeout(showTimer);showTimer=0;open=false;input.blur();layout();return true;}
+ function close(){if(!open&&!showTimer)return false;clearTimeout(showTimer);showTimer=0;open=false;position=null;input.blur();layout();return true;}
  function tap(){
   if(open||showTimer){close();return;}
   if(!answer)quip();
@@ -117,7 +121,7 @@ export function townChat({note,quip,world,apply}){
   if(lastDraft!==message){form.dataset.request=crypto.randomUUID();lastDraft=message;}
   pending=form.dataset.request;controls();
   const token=pending,scene=world();
-  const context='\n\n[Дом Евы, игровой снимок] '+JSON.stringify(scene)+'\nЕсли выбираешь одно игровое действие, добавь в самом конце [town '+token+' ID USE] из nearby. Действие выполнится при получении ответа в городе.';
+  const context='\n\n[Комната Евы, игровой снимок] '+JSON.stringify(scene)+'\nЕсли выбираешь одно игровое действие, добавь в самом конце [town '+token+' ID USE] из nearby. Действие выполнится при получении ответа в комнате.';
   if(message.length+context.length<=8000){sessionStorage.setItem('townActionToken',token);post('send',{id:pending,text:message+context});}
   else{sessionStorage.removeItem('townActionToken');post('send',{id:pending,text:message});}
  };
@@ -142,7 +146,7 @@ export function townChat({note,quip,world,apply}){
   pollTimer=setTimeout(poll,roomBusy||pending?2200:5500);
  }
  poll();
- return {tap,anchor,close,get playing(){return !!answer;},active(value){
+ return {tap,anchor,close,get playing(){return !!answer;},get composing(){return open||!!showTimer;},active(value){
   if(active===value)return;active=value;
   if(!value){clearTimeout(pollTimer);clearTimeout(timer);clearTimeout(showTimer);showTimer=0;page='';answer=null;spoken=false;pending=null;mic.classList.remove('listening');controls();}
   else poll();
