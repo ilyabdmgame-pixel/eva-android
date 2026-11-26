@@ -436,7 +436,7 @@ function advanceRoomActivity(){
    const cue=roomDialogue(state.key,state.definition.category,elapsed,saved.roomActivityCounts[state.key]||0);
    if(cue&&state.lastCue!==cue.id){
      state.lastCue=cue.id;
-     if(cue.chat){speech.say(STREAM_CHAT,'Чат стрима · '+cue.text,now());dirty=true;}
+     if(cue.chat){speech.say(STREAM_CHAT,cue.text,now(),{fromOrigin:true});dirty=true;}
      else say(cue.text);
    }
  }
@@ -1145,7 +1145,7 @@ function paint(t=now()){
    }
  }
  if(stream&&opt.grip){
-   opt.deskHands=Math.min(1,(stream.left.reach+stream.right.reach)*.63);
+   opt.deskHands=true;
    const {crown}=opt.grip;
    if(stream.nod&&crown)opt.grip={...opt.grip,crown:{...crown,to:[crown.to[0]+stream.nod,crown.to[1]+Math.abs(stream.nod)*.7]}};
  }
@@ -1160,8 +1160,8 @@ function paint(t=now()){
  motionFrames[EVA_ID]=shown;
  if(head)heads.set(EVA_ID,head);
  if(stream){
-   drawComputerArms(renderer,at,playing.fixture,stream);
-   heads.set(STREAM_CHAT,computerLayout(playing.fixture)(.82,.18,.43));
+   drawComputerArms(renderer,at,playing.fixture,stream,EVA_ID);
+   heads.set(STREAM_CHAT,computerLayout(playing.fixture)(.795,.180,.365));
  }
  if(playing&&playing.key!=='computer'){
    const o=playing.key==='tv'?fixtures.find(fixture=>fixture.id===26):playing.fixture;

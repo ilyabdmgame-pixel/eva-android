@@ -127,44 +127,88 @@ export function computerGesture(fixture,sample,reduced=false){
    index===3?smooth(phase/.24):0;
  const reach=index===0?smooth(phase):index===3?1-smooth((phase-.24)/.76):1;
  const x=[2,5].map(column=>.45+column*.052);
- const wrist=(localX,localY,side)=>point(localX,localY,.058-(tap===side?pressure*.014:0));
+ const wrist=(localX,localY,side)=>point(localX,localY,
+   .071-(tap===side?pressure*.010:0)+(side===1?.092*mouse*(1-mouse):0));
  return {
-   left:{point:wrist(x[0],.49,0),reach:reach*(1-.28*mouse)},
-   right:{point:wrist(x[1]+(.935-x[1])*mouse,.49+mouse*.002,1),reach},
+   left:{point:wrist(x[0],.538,0),reach,bend:tap===0?pressure:0},
+   right:{point:wrist(x[1]+(.935-x[1])*mouse,.538+mouse*.008,1),reach,
+     bend:tap===1?pressure:0,mouse},
    key:tap<0?null:{column:tap===0?2:5,pressure},
    nod:!reduced&&index===2?.012*Math.sin(Math.PI*phase)**2*Math.sin(5*Math.PI*phase):0
  };
 }
 
+const vec=p=>[p.u,p.v,p.z];
+const point3=([u,v,z])=>({u,v,z});
+const add=(a,b)=>a.map((v,i)=>v+b[i]);
+const sub=(a,b)=>a.map((v,i)=>v-b[i]);
+const scale=(a,k)=>a.map(v=>v*k);
+const dot=(a,b)=>a.reduce((sum,v,i)=>sum+v*b[i],0);
+const cross=([u,v,z],[x,y,w])=>[v*w-z*y,z*x-u*w,u*y-v*x];
+const unit=a=>scale(a,1/Math.hypot(...a));
+const reject=(a,axis)=>sub(a,scale(axis,dot(a,axis)));
+
 export function computerArms(actor,fixture,gesture){
- const deskFront=fixture.turned?'u':'v',across=fixture.turned?'v':'u';
- return [gesture.left,gesture.right].map(({point,reach},index)=>{
+ const front=fixture.turned?'u':'v',across=fixture.turned?'v':'u';
+ return [gesture.left,gesture.right].map(({point,reach,bend=0,mouse=0},index)=>{
    const side=index===0?-1:1;
-   const shoulder={...actor,[across]:actor[across]+side*.118,[deskFront]:actor[deskFront]-.035,z:actor.z+.38};
-   const rest={...shoulder,[deskFront]:shoulder[deskFront]-.18,z:actor.z+.135};
-   const hand=Object.fromEntries(['u','v','z'].map(key=>[key,rest[key]+(point[key]-rest[key])*reach]));
-   const elbow={u:(shoulder.u+hand.u)/2,v:(shoulder.v+hand.v)/2,z:(shoulder.z+hand.z)/2-.087};
-   elbow[across]+=side*.038;
-   return {shoulder,elbow,hand,reach};
+   const shoulder={...actor,[across]:actor[across]+side*.118,[front]:actor[front]-.060,z:actor.z+.405};
+   const rest={...shoulder,[front]:shoulder[front]-.16,[across]:shoulder[across]+side*.033,z:actor.z+.175};
+   const origin=vec(shoulder);
+   const wrist=add(vec(rest),scale(sub(vec(point),vec(rest)),reach));
+   const delta=sub(wrist,origin),length=Math.hypot(...delta);
+   const forward=fixture.turned?[-1,0,0]:[0,-1,0];
+   const axis=length>1e-6?scale(delta,1/length):forward;
+   const upper=.279,forearm=.271;
+   const distance=Math.max(.035,Math.min(upper+forearm-.007,length));
+   const along=(upper**2-forearm**2+distance**2)/(2*distance);
+   const pole=fixture.turned?[.12,side*.37,-1]:[side*.37,.12,-1];
+   const normal=reject(pole,axis);
+   const outside=unit(Math.hypot(...normal)<1e-6?reject(forward,axis):normal);
+   const elbow=add(add(origin,scale(axis,along)),scale(outside,Math.sqrt(upper**2-along**2)));
+   const hand=point3(distance===length?wrist:add(origin,scale(axis,distance)));
+   return {shoulder,elbow:point3(elbow),hand,reach,bend,mouse};
  });
 }
 
-export function drawComputerArms(renderer,actor,fixture,gesture){
- const vertex=(point,width,z=0)=>[point.u+width,point.v-width,point.z+z];
- const strip=(a,b,from,to,tint,z=0)=>renderer.panel([
-   vertex(a,-from,z),vertex(a,from,z),vertex(b,to,z),vertex(b,-to,z)
- ],tint,null,0);
- for(const {shoulder,elbow,hand,reach} of computerArms(actor,fixture,gesture)){
-   if(reach<.10)continue;
-   strip(shoulder,elbow,.041,.039,[.29,.26,.29]);
-   strip(elbow,hand,.039,.025,[.34,.31,.34]);
-   strip(shoulder,elbow,.019,.015,[.38,.34,.36],.01);
-   strip(elbow,hand,.021,.012,[.42,.37,.39],.01);
-   const finger={...hand,[fixture.turned?'u':'v']:hand[fixture.turned?'u':'v']-.041,z:hand.z-.011};
-   strip(hand,finger,.025,.016,[.71,.51,.42],.002);
+export function drawComputerArms(renderer,actor,fixture,gesture,id=0){
+ const sides=8;
+ function tube(centers,axes,sideAxis,radii,colors){
+   const rings=centers.map((center,i)=>{
+     const axis=axes[i];
+     const across=unit(reject(sideAxis,axis));
+     const top=cross(across,axis);
+     return Array.from({length:sides},(_,n)=>{
+       const angle=n*2*Math.PI/sides;
+       return add(center,add(scale(across,Math.cos(angle)*radii[i][0]),scale(top,Math.sin(angle)*radii[i][1])));
+     });
+   });
+   for(let i=0;i<rings.length-1;i++)for(let side=0;side<sides;side++){
+     const next=(side+1)%sides;
+     const shade=.77+.23*Math.max(0,Math.sin((side+.5)*2*Math.PI/sides));
+     renderer.panel([rings[i][side],rings[i][next],rings[i+1][next],rings[i+1][side]],
+       scale(colors[i],shade),null,id);
+   }
+ }
+ const sleeve=[.33,.29,.32],cuff=[.27,.25,.29];
+ const palm=[.75,.55,.47],tips=[.67,.49,.42];
+ for(const {shoulder,elbow,hand,reach,bend,mouse} of computerArms(actor,fixture,gesture)){
+   const a=vec(shoulder),b=vec(elbow),c=vec(hand);
+   const upper=unit(sub(b,a)),forearm=unit(sub(c,b));
+   const joint=unit(add(upper,forearm));
+   const cuffAt=sub(c,scale(forearm,.019));
+   const elbowNormal=unit(cross(upper,forearm));
+   tube([a,b,cuffAt,c],[upper,joint,forearm,forearm],elbowNormal,
+     [[.053,.049],[.040,.039],[.032,.029],[.026,.024]],[sleeve,sleeve,cuff]);
+   const pitch=-.27-.06*mouse-.10*bend;
+   const fingerAxis=unit(fixture.turned?[-1,.04,pitch]:[.04,-1,pitch]);
+   const relaxed=unit(add(scale(forearm,1-reach),scale(fingerAxis,reach)));
+   const palmAxis=fixture.turned?[0,1,0]:[1,0,0];
+   tube([c,add(c,scale(relaxed,.038)),add(c,scale(relaxed,.069)),add(c,scale(relaxed,.079))],
+     [forearm,relaxed,relaxed,relaxed],palmAxis,
+     [[.024,.019],[.030,.018],[.015,.009],[0,0]],[palm,palm,tips]);
  }
 }
-
 export function drawComputer(renderer,o,powered,streaming,seconds=0,gesture=null){
  const point=computerLayout(o);
  const box=(x,y,z,w,d,h,t,mat)=>renderer.box(o.id,point(x,y,z),o.turned?d:w,o.turned?w:d,h,t,mat);

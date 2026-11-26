@@ -4,7 +4,7 @@ import {roomSeat,seatMotion,seatSample} from '../../../app/src/main/assets/home/
 
 import {roomWalk} from '../../../app/src/main/assets/home/room-walk.mjs';
 import {room,roomFurniture,attachedPosition} from '../../../app/src/main/assets/home/room.mjs';
-import {computerArms,computerGesture,streamChair} from '../../../app/src/main/assets/home/room-furnishings.mjs';
+import {computerArms,computerGesture,drawComputerArms,streamChair} from '../../../app/src/main/assets/home/room-furnishings.mjs';
 import {turnFixture} from '../../../app/src/main/assets/home/prop-finish.mjs';
 import {worldObjects} from '../../../app/src/main/assets/home/district.mjs';
 import {actionPose} from '../../../app/src/main/assets/home/orientation.mjs';
@@ -118,6 +118,31 @@ test('both forearms reach the keyboard through fixed shoulders in either desk or
    const last=computerArms(actor,fixture,computerGesture(fixture,{index:3,phase:1}));
    assert.deepEqual(arm.map(x=>x.shoulder),last.map(x=>x.shoulder));
    assert.equal(last[0].reach+last[1].reach,0);
+ }
+});
+
+test('typing and moving to the mouse preserve both arm lengths and sleeve thickness',()=>{
+ const distance=(a,b)=>Math.hypot(a.u-b.u,a.v-b.v,a.z-b.z);
+ for(const turned of [false,true]){
+   const pc={u:0,v:0,z:.80,turned};
+   const actor=turned?{u:.91,v:.60,z:.51}:{u:.60,v:.91,z:.51};
+   const leftKey=computerGesture(pc,{index:1,phase:.18}).left.point;
+   for(let index=0;index<4;index++)for(let step=0;step<=40;step++){
+     const gesture=computerGesture(pc,{index,phase:step/40});
+     for(const arm of computerArms(actor,pc,gesture)){
+       assert(Math.abs(distance(arm.shoulder,arm.elbow)-.279)<1e-8);
+       assert(Math.abs(distance(arm.elbow,arm.hand)-.271)<1e-8);
+     }
+     if(index===2)assert.equal(Math.hypot(gesture.left.point.u-leftKey.u,gesture.left.point.v-leftKey.v),0);
+     const panels=[];
+     drawComputerArms({panel(points){panels.push(points);}},actor,pc,gesture,15);
+     assert(panels.length>40);
+     assert(panels.flat(2).every(Number.isFinite));
+     // The first ring keeps its physical width when the upper arm turns.
+     const [a,b]=panels[0],opposite=panels[4][0];
+     assert(Math.abs(Math.hypot(...a.map((v,i)=>v-opposite[i]))-.106)<1e-8);
+     assert(Math.hypot(...a.map((v,i)=>v-b[i]))>.03);
+   }
  }
 });
 

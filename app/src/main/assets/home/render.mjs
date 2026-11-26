@@ -182,7 +182,7 @@ export function createScene(canvas) {
         vec2 cellUV=(coord-deskHands.xy)*vec2(8.,5.);
         float sleeve=1.-smoothstep(.72,1.,length((cellUV-vec2(.539,.621))/vec2(.106,.066)));
         float skin=smoothstep(.10,.21,px.r-px.b)*smoothstep(.43,.64,px.r);
-        px.rgb=mix(px.rgb,vec3(.30,.26,.27),deskHands.z*sleeve*skin);
+        px.rgb=mix(px.rgb,px.rgb*.43+vec3(.040,.029,.034),deskHands.z*sleeve*skin);
       }
       if(cutout&&evaStep.y>0.&&!pick&&coverage){
         if(px.a<.035)discard;
@@ -443,7 +443,7 @@ export function createScene(canvas) {
     const y=atlas?(options.row*rowsPerView+Math.floor(options.column/gait.columns))/rows:frame?.[2]??0;
     const rightU=atlas?x+1/gait.columns:frame?.[3]??1,bottomV=atlas?y+1/rows:frame?.[4]??1;
     if(key==='walk-eva')evaStep=options?.step?{...options.step,x,y}:null;
-    if(options?.deskHands)deskHands={key:sheet,x,y,amount:options.deskHands};
+    if(options?.deskHands)deskHands={key:sheet,x,y};
     // Offsets along the view axis preserve screen placement and adjust occlusion.
     const bias=options?.bias??0;
     const foot=options?.floor?h*(1-anchorY)+.016:0;
@@ -569,7 +569,7 @@ export function createScene(canvas) {
         gl.uniform4fv(uniforms.evaFeet,step.feet);
         gl.uniform4fv(uniforms.evaShoeTravel,step.travel);
       }else gl.uniform4f(uniforms.evaStep,0,0,0,0);
-      if(typing)gl.uniform3f(uniforms.deskHands,typing.x,typing.y,typing.amount);
+      if(typing)gl.uniform3f(uniforms.deskHands,typing.x,typing.y,1);
       else gl.uniform3f(uniforms.deskHands,0,0,0);
       bindTexture(key);
     }
