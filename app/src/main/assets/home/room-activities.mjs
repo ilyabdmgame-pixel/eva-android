@@ -103,11 +103,6 @@ function floorTool(ctx,mop){
 const oakBrush=[.71,.54,.33];
 
 export const activityEffects={
- computer({r,s,hand}){
-   if(s.index!==1)return;
-   const mark=at(hand,.022,.016,-.038);
-   block(r,mark,.029,.029,.012,[.62,.72,.67]);
- },
  stretch({r,s,actor,across}){
    if(s.index!==1&&s.index!==2)return;
    for(const side of [-1,1]){

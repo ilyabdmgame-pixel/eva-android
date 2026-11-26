@@ -20,6 +20,11 @@ const lap={
  'act-eva-front':[[91,132],[104,151],[100,158]],
  'act-eva-rear':[[124,127],[111,142],[103,149]]
 };
+// Lowest load-bearing soles in the clean sitting cels.
+const soles={
+ 'act-eva-front':[[91,230],[108,232],[110,232]],
+ 'act-eva-rear':[[121,229],[133,229],[127,232]]
+};
 const ratio=value=>[value[0]/210,value[1]/252];
 const mix=(a,b,t)=>a.map((number,i)=>number+(b[i]-number)*t);
 
@@ -39,8 +44,8 @@ export function registeredPose(pose,amount){
  if(pose.row===2){
    grip.other=ratio(mix(lap[pose.key][start],lap[pose.key][end],part));
    grip.otherFrom=ratio(lap[pose.key][source]);
- }
- if(pose.row!==3)grip.support=[.5,.935];
+   grip.foot={from:ratio(soles[pose.key][source]),to:ratio(mix(soles[pose.key][start],soles[pose.key][end],part))};
+ }else if(pose.row!==3)grip.support=[.5,.935];
  return {...pose,column:columns[source],grip};
 }
 
@@ -67,6 +72,15 @@ export function pointOnCel(corners,[x,y]){
  return {u,v,z};
 }
 
+export function seatedUpperBody(corners,grip,anchor,amount,floor){
+ const [top,,,bottom]=corners;
+ const y=(top[2]-floor)/(top[2]-bottom[2]);
+ return {...grip,
+   foot:{...grip.foot,to:[grip.foot.to[0],y]},
+   upper:{anchor,scale:amount*.19}
+ };
+}
+
 export function gripGrid(corners,grip,flip){
  const mirror=([x,y])=>[flip?1-x:x,y];
  const landmark=(first,last)=>{
@@ -77,6 +91,15 @@ export function gripGrid(corners,grip,flip){
  if(grip.crown)points.push(landmark(grip.crown.from,grip.crown.to));
  if(grip.otherFrom)points.push(landmark(grip.otherFrom,grip.other));
  if(grip.support)points.push(landmark(grip.support,grip.support));
+ if(grip.foot)points.push(landmark(grip.foot.from,grip.foot.to));
+ const upper=grip.upper&&mirror(grip.upper.anchor);
+ const map=([x,y])=>{
+   if(!upper)return pointOnCel(corners,[x,y]);
+   const [u,v]=upper;
+   const t=Math.max(0,Math.min(1,(v-y)/.16));
+   const scale=1+grip.upper.scale*t*t*(3-2*t);
+   return pointOnCel(corners,[u+(x-u)*scale,v+(y-v)*scale]);
+ };
  const move=(x,y)=>{
    let dx=0,dy=0,total=1;
    for(const point of points){
@@ -86,10 +109,12 @@ export function gripGrid(corners,grip,flip){
      const weight=(1-distance)**2/distance**2;
      dx+=weight*point.dx;dy+=weight*point.dy;total+=weight;
    }
-   const p=pointOnCel(corners,[x+dx/total,y+dy/total]);
+   const p=map([x+dx/total,y+dy/total]);
    return [p.u,p.v,p.z];
  };
- const grid=axis=>[...new Set([0,.25,.5,.75,1,...points.map(point=>point.from[axis])])].sort((a,b)=>a-b);
- return {hand:pointOnCel(corners,mirror(grip.to)),other:grip.other?pointOnCel(corners,mirror(grip.other)):null,
-   xs:grid(0),ys:grid(1),move,warped:points.some(point=>Math.hypot(point.dx,point.dy)>.0005)};
+ const grid=axis=>[...new Set([0,.25,.5,.75,1,...points.map(point=>point.from[axis]),
+   ...(upper&&axis===1?[upper[1]-.16,upper[1]]:[])])].sort((a,b)=>a-b);
+ return {hand:map(mirror(grip.to)),other:grip.other?map(mirror(grip.other)):null,
+   head:grip.crown?map(mirror(grip.crown.to)):null,xs:grid(0),ys:grid(1),move,
+   warped:grip.upper?.scale>0||points.some(point=>Math.hypot(point.dx,point.dy)>.0005)};
 }

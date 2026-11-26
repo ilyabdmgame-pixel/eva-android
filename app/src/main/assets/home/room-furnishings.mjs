@@ -7,11 +7,11 @@ const item=(id,name,category,w,d,kind,parts,extra={})=>
 export const streamChair=item(307,'Кресло у компьютера','Мебель',.48,.48,'streamChair',[
  part(.04,.20,.04,.40,.066,.055,[.36,.39,.44]),
  part(.205,.038,.043,.071,.404,.053,[.36,.39,.44]),
- part(.203,.20,.09,.078,.08,.31,[.37,.38,.41]),
- part(.018,.045,.39,.444,.39,.075,[.48,.40,.52],'cloth'),
- part(.04,.389,.445,.40,.075,.45,[.45,.38,.50],'cloth'),
+ part(.203,.20,.09,.078,.08,.35,[.37,.38,.41]),
+ part(.018,.045,.435,.444,.39,.075,[.48,.40,.52],'cloth'),
+ part(.04,.389,.49,.40,.075,.40,[.45,.38,.50],'cloth'),
  part(.07,.388,.81,.34,.08,.071,[.62,.49,.62],'cloth')
-],{seatHeight:.45,solid:true});
+],{seatHeight:.51,solid:true});
 
 export const roomFurnishings=[
  item(701,'Прикроватная тумба','Мебель',.47,.37,'storage',[
@@ -27,7 +27,7 @@ export const roomFurnishings=[
    ...legs(.72,.71,.22),part(0,0,.19,.72,.71,.27,linen,'cloth'),part(.083,.16,.452,.56,.49,.07,[.73,.56,.53],'cloth'),
    part(.032,.024,.50,.65,.145,.47,linen,'cloth'),
    ...[.018,.58].map(u=>part(u,.17,.433,.121,.49,.177,linen,'cloth'))
- ],{seatHeight:.51}),
+ ],{seatHeight:.522}),
  item(704,'Пуф','Мебель',.48,.47,'chair',[
    ...legs(.48,.47,.12),part(0,0,.113,.48,.47,.26,[.56,.66,.60],'cloth'),
    part(.025,.024,.37,.43,.423,.04,[.67,.76,.65],'cloth')
@@ -101,6 +101,13 @@ export function furnishingThumbnail(canvas,model){
  }
 }
 
+export function roomDesk(fixture){
+ const height=.80;
+ const scale=height/fixture.surfaceHeight;
+ return {...fixture,art:null,surfaceHeight:height,
+   parts:fixture.parts.map(p=>({...p,z:p.z*scale,h:p.h*scale}))};
+}
+
 const bezel=[.32,.34,.36],stand=[.49,.46,.41],keycaps=[.55,.54,.51];
 
 export function computerLayout(fixture){
@@ -108,7 +115,57 @@ export function computerLayout(fixture){
  return (x,y,height)=>fixture.turned?{u:u+y,v:v+x,z:z+height}:{u:u+x,v:v+y,z:z+height};
 }
 
-export function drawComputer(renderer,o,powered,streaming,seconds=0){
+export function computerGesture(fixture,sample,reduced=false){
+ const point=computerLayout(fixture);
+ const smooth=t=>{const x=Math.max(0,Math.min(1,t));return x*x*(3-2*x);};
+ const {index,phase}=sample;
+ const typing=index===1&&!reduced;
+ const keyPhase=phase*13;
+ const tap=typing?Math.floor(keyPhase)%2:-1;
+ const pressure=typing?Math.sin(Math.PI*(keyPhase%1))**2:0;
+ const mouse=index===2?smooth(phase/.23)*(1-smooth((phase-.83)/.17)):
+   index===3?smooth(phase/.24):0;
+ const reach=index===0?smooth(phase):index===3?1-smooth((phase-.24)/.76):1;
+ const x=[2,5].map(column=>.45+column*.052);
+ const wrist=(localX,localY,side)=>point(localX,localY,.058-(tap===side?pressure*.014:0));
+ return {
+   left:{point:wrist(x[0],.49,0),reach:reach*(1-.28*mouse)},
+   right:{point:wrist(x[1]+(.935-x[1])*mouse,.49+mouse*.002,1),reach},
+   key:tap<0?null:{column:tap===0?2:5,pressure},
+   nod:!reduced&&index===2?.012*Math.sin(Math.PI*phase)**2*Math.sin(5*Math.PI*phase):0
+ };
+}
+
+export function computerArms(actor,fixture,gesture){
+ const deskFront=fixture.turned?'u':'v',across=fixture.turned?'v':'u';
+ return [gesture.left,gesture.right].map(({point,reach},index)=>{
+   const side=index===0?-1:1;
+   const shoulder={...actor,[across]:actor[across]+side*.118,[deskFront]:actor[deskFront]-.035,z:actor.z+.38};
+   const rest={...shoulder,[deskFront]:shoulder[deskFront]-.18,z:actor.z+.135};
+   const hand=Object.fromEntries(['u','v','z'].map(key=>[key,rest[key]+(point[key]-rest[key])*reach]));
+   const elbow={u:(shoulder.u+hand.u)/2,v:(shoulder.v+hand.v)/2,z:(shoulder.z+hand.z)/2-.087};
+   elbow[across]+=side*.038;
+   return {shoulder,elbow,hand,reach};
+ });
+}
+
+export function drawComputerArms(renderer,actor,fixture,gesture){
+ const vertex=(point,width,z=0)=>[point.u+width,point.v-width,point.z+z];
+ const strip=(a,b,from,to,tint,z=0)=>renderer.panel([
+   vertex(a,-from,z),vertex(a,from,z),vertex(b,to,z),vertex(b,-to,z)
+ ],tint,null,0);
+ for(const {shoulder,elbow,hand,reach} of computerArms(actor,fixture,gesture)){
+   if(reach<.10)continue;
+   strip(shoulder,elbow,.041,.039,[.29,.26,.29]);
+   strip(elbow,hand,.039,.025,[.34,.31,.34]);
+   strip(shoulder,elbow,.019,.015,[.38,.34,.36],.01);
+   strip(elbow,hand,.021,.012,[.42,.37,.39],.01);
+   const finger={...hand,[fixture.turned?'u':'v']:hand[fixture.turned?'u':'v']-.041,z:hand.z-.011};
+   strip(hand,finger,.025,.016,[.71,.51,.42],.002);
+ }
+}
+
+export function drawComputer(renderer,o,powered,streaming,seconds=0,gesture=null){
  const point=computerLayout(o);
  const box=(x,y,z,w,d,h,t,mat)=>renderer.box(o.id,point(x,y,z),o.turned?d:w,o.turned?w:d,h,t,mat);
  const screen=(x,z,w,h,t,mat)=>{
@@ -144,10 +201,11 @@ export function drawComputer(renderer,o,powered,streaming,seconds=0){
      screen(.377,.341-row*.036,length,.008,row%2?[.47,.69,.66]:[.71,.70,.49],'glow');
    }
  }
- box(.404,.334,0,.45,.145,.027,bezel);
+ box(.404,.419,0,.45,.145,.027,bezel);
  for(let row=0;row<3;row++)for(let column=0;column<8;column++){
-   const press=streaming&&column===(Math.floor(seconds*10)+row*2)%8;
-   box(.432+column*.052,.349+row*.041,.028,.035,.027,press?.006:.011,press?[.76,.75,.57]:keycaps);
+   const press=gesture?.key?.column===column&&row===1?gesture.key.pressure:0;
+   box(.432+column*.052,.434+row*.041,.028,.035,.027,.011-.005*press,
+     press>.7?[.69,.67,.55]:keycaps);
  }
- box(.905,.363,.005,.066,.100,.040,bezel);
+ box(.905,.448,.005,.066,.100,.040,bezel);
 }

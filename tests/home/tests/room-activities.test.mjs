@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {activityDuration,activityEffects,activityLine,activitySample,drawRoomActivity,nextActivity,scheduledPeriod}
   from '../../../app/src/main/assets/home/room-activities.mjs';
-import {roomFurniture,inRoom,roomApproach,roomWindowFixture} from '../../../app/src/main/assets/home/room.mjs';
-import {worldObjects,worldPoint,district,route,localPath} from '../../../app/src/main/assets/home/district.mjs';
-import {blocksActor} from '../../../app/src/main/assets/home/contact.mjs';
+import {roomFurniture,roomApproach,roomWindowFixture} from '../../../app/src/main/assets/home/room.mjs';
+import {worldObjects,worldPoint,district} from '../../../app/src/main/assets/home/district.mjs';
+import {roomSeat} from '../../../app/src/main/assets/home/seat-motion.mjs';
+import {roomWalk} from '../../../app/src/main/assets/home/room-walk.mjs';
+import {computerGesture,drawComputer,streamChair} from '../../../app/src/main/assets/home/room-furnishings.mjs';
 
 const assets=new URL('../../../app/src/main/assets/home/',import.meta.url);
 const read=name=>JSON.parse(readFileSync(new URL(name,assets),'utf8'));
@@ -14,7 +16,7 @@ const activities=read('room-activities.json'),entries=read('routines.json').eva.
 test('every room activity has a distinct animated track and effect, plus rotating reactions',()=>{
  const keys=Object.keys(activities);
  assert(keys.length>=20);
- assert.deepEqual(Object.keys(activityEffects).sort(),keys.sort());
+ assert.deepEqual(Object.keys(activityEffects).sort(),keys.filter(key=>key!=='computer').sort());
  const tracks=new Set(),treatments=new Set(),titles=new Set();
  for(const [key,activity] of Object.entries(activities)){
    const duration=activityDuration(activity,false), reduced=activityDuration(activity,true);
@@ -32,8 +34,11 @@ test('every room activity has a distinct animated track and effect, plus rotatin
      const sample=activitySample(activity,duration*n/30,false),frame=[];
      assert(sample.amount>=0&&sample.amount<=1,key);
      assert(Number.isFinite(sample.swing)&&sample.progress>=0&&sample.progress<=1,key);
-     const renderer=Object.fromEntries(['box','triangle','sprite'].map(type=>[type,(...args)=>frame.push([type,args])]));
-     drawRoomActivity(renderer,key,sample,{u:-13,v:0,z:0},{u:-13.07,v:.42,z:.9},'down-right');
+     const renderer=Object.fromEntries(['box','triangle','sprite','panel'].map(type=>[type,(...args)=>frame.push([type,args.filter(arg=>arg!==undefined)])]));
+     if(key==='computer'){
+       const pc={id:27,u:-13.07,v:.42,z:.9};
+       drawComputer(renderer,pc,true,true,sample.seconds,computerGesture(pc,sample));
+     }else drawRoomActivity(renderer,key,sample,{u:-13,v:0,z:0},{u:-13.07,v:.42,z:.9},'down-right');
      effects.push(JSON.stringify(frame));
      assert(!effects.at(-1).includes('null'),key);
    }
@@ -47,17 +52,21 @@ test('every room activity has a distinct animated track and effect, plus rotatin
 test('every activity is on the daily programme and can be reached in the default room',()=>{
  const fixtures=[...roomFurniture(worldObjects({})).values()].map(o=>o.kind==='window'?roomWindowFixture(o):o);
  const start=worldPoint('home',...district('home').start);
- const blocked=(u,v)=>!inRoom(u,v,.17)||blocksActor(u,v,fixtures,[]);
+ const walk=roomWalk(fixtures);
  assert.deepEqual([...new Set(entries.flatMap(row=>row[6]))].sort(),Object.keys(activities).sort());
  for(const [key,activity] of Object.entries(activities)){
    const o=fixtures.find(item=>item.id===activity.fixture);
    assert(o||activity.spot,key);
-   const p=o?roomApproach(o,fixtures,start,blocked):Object.values(worldPoint('home',...activity.spot));
-   assert(!blocked(...p),key);
-   const destination={u:p[0],v:p[1]};
-   const path=localPath(start,destination,blocked)||route(start,destination,blocked);
+   const chair=key==='computer'&&fixtures.find(item=>item.id===streamChair.id);
+   const seat=activity.rest||chair?roomSeat(chair||o,walk,fixtures.find(item=>item.id===10),activity.rest==='bed'):null;
+   if(activity.rest||chair)assert(seat,key);
+   const p=o&&roomApproach(o,fixtures,start,(u,v)=>walk.blocked({u,v}));
+   const goal=seat?.stand??(p?{u:p[0],v:p[1]}:worldPoint('home',...activity.spot));
+   assert(!walk.blocked(goal),key);
+   const path=walk.path(start,goal,true);
    const end=path.at(-1)||start;
-   assert(Math.hypot(end.u-p[0],end.v-p[1])<.28,key);
+   assert(Math.hypot(end.u-goal.u,end.v-goal.v)<.025,key);
+   assert(path.every((point,i)=>walk.clear(path[i-1]??start,point)),key);
  }
 });
 

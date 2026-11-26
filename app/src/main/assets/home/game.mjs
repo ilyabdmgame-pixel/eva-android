@@ -1,8 +1,8 @@
-import {seatMotion,seatSample} from './seat-motion.mjs';
+import {roomSeat,seatMotion,seatSample} from './seat-motion.mjs';
 import {reverseCells} from './reverse-cells.mjs';
 import {actionAnchors} from './action-anchors.mjs';
 import {registeredPose} from './eva-motion.mjs';
-import {restoreTurn,nextTurn,seatFront,turnFixture} from './prop-finish.mjs';
+import {restoreTurn,nextTurn,turnFixture} from './prop-finish.mjs';
 import {objectLine} from './local-lines.mjs';
 import {propArt} from './prop-art.mjs';
 import {furnitureSurface} from './occlusion.mjs';
@@ -10,19 +10,19 @@ import {domestic,actionTime,useFrame} from './household.mjs';
 import {editableFixture,placementIssue} from './layout.mjs';
 import {drawNotice,castFurniture} from './street-furniture.mjs';
 import {migrateTown} from './town-plan.mjs';
-import {fixtureTop,blocksActor,canPlace,hitsFixture} from './contact.mjs';
+import {fixtureTop,canPlace,hitsFixture} from './contact.mjs';
 import {activityDuration,activityLine,activitySample,drawRoomActivity,nextActivity,scheduledPeriod} from './room-activities.mjs';
 import {project,worldAtHeight,inView} from './camera.mjs';
 import {createScene} from './render.mjs';
 import {room,roomOffset,roomEdge,roomView,expandedRoom,inRoom,fitsRoom,roomWindowFixture,drawRoom,drawRoomWindow,
-  attachedPosition,attachedFurniture,furnitureOwners as parents,roomFurniture,roomApproach,bedRest,drawBedding} from './room.mjs';
-import {computerLayout,drawComputer,drawFloorDecor,furnishingThumbnail,roomFurnishings,streamChair} from './room-furnishings.mjs';
+  attachedPosition,attachedFurniture,furnitureOwners as parents,roomFurniture,roomApproach,drawBedding} from './room.mjs';
+import {computerGesture,drawComputer,drawComputerArms,drawFloorDecor,furnishingThumbnail,roomDesk,roomFurnishings,streamChair} from './room-furnishings.mjs';
 import {windowWeather,windowWeatherMoves} from './window-weather.mjs';
 import {places} from './places.mjs';
 import {startFlight,flightPoint,advanceFlight,drawToy} from './toys.mjs';
 import {gait,heading,walkHeading,orientation,standingPose,evaPose,actionPose} from './orientation.mjs';
 import {createSpeech} from './speech.mjs';
-import {district,districts,regionAt,worldPoint,worldObjects,route,localPath,roundRoute,paceRoute} from './district.mjs';
+import {district,districts,regionAt,worldPoint,worldObjects,paceRoute} from './district.mjs';
 import {initialEconomy,items,fixtureItems,fullness,apply as applyEconomy} from './economy.mjs';
 import {remark} from './remarks.mjs';
 import {seasons,weathers,widgetWeather,cityReading,climateAt,paletteFor} from './weather.mjs';
@@ -30,6 +30,7 @@ import {settings as soundSettings,audioVisible,ambience,footstep,audioState} fro
 import {names as activityNames,lines as activityLines,prepareSound,sound} from './activities.mjs';
 
 import {townChat} from './town-chat.mjs';
+import {roomWalk} from './room-walk.mjs';
 const town=townChat({world:worldSnapshot,apply:useNearby,note:statusNote,quip:()=>say(remark('touch'),'wry'),usage:publishWeeklyQuota});
 const canvas=$('scene');
 const EVA_ID=15;
@@ -85,7 +86,7 @@ function reactInRoom(kind){
 const lampIsOn=o=>o.kind==='placedLamp'?o.on:saved.lamps[o.id]??(o.id===5||night>.44);
 const drawerOpen=id=>saved.drawers?.[id]??(id===1&&Boolean(saved.desk));
 const now=()=>performance.now();
-let fixtures=[];
+let fixtures=[],navigation;
 const fixtureIds=Object.fromEntries(Object.entries(fixtureItems).map(([id,item])=>[item,Number(id)]));
 const models=[...worldObjects({}),...roomFurnishings];
 const modelsById=new Map(models.map(o=>[o.id,o]));
@@ -97,7 +98,7 @@ function attachedTo(child,parent){
  const base=child.id===streamChair.id?roomDefaults.get(child.id):modelsById.get(child.id);
  const attachment=attachedPosition(base,original,parent);
  const key=parent.back?'back-'+parent.art:parent.art;
- const top=furnitureSurface(key,[parent.w,parent.d],parent.artFlip);
+ const top=parent.id===1&&parent.art==null?{height:fixtureTop(parent),shift:0}:furnitureSurface(key,[parent.w,parent.d],parent.artFlip);
  if(child.id===streamChair.id){
    const shift=top?.shift??0;
    if(parent.turned)attachment.v-=shift;
@@ -130,7 +131,7 @@ function refreshObjects(){
    const changed=saved.chairs?.[id];
    const object=candidate&&changed&&fitsRoom(candidate.u,candidate.v,candidate.w,candidate.d,roomExtra)
      ?candidate:base;
-   const parent={...object,roomMovable:attachedFurniture.has(id)||id===81};
+   const parent={...(id===1?roomDesk(object):object),roomMovable:attachedFurniture.has(id)||id===81};
    fixtures.push(parent);
    for(const child of attachedFurniture.get(id)||[]){
      if(!saved.packed?.[child])fixtures.push(attachedTo(roomDefaults.get(child),parent));
@@ -153,9 +154,15 @@ function refreshObjects(){
        {u:.025,v:.028,z:.34,a:.20,b:.20,h:.14,tint:entry.on?[1,.83,.39]:[.59,.51,.42]}
      ]:[],art:item.art,visualHeight:item.height||.18,tint:item.tint});
  }
+ navigation=roomWalk(fixtures,roomExtra);
+ if(move.some((point,i)=>!navigation.clear(move[i-1]??eva,point,carrying))){
+   move=[];onArrival=null;walkSpeed=0;automaticWalk=false;
+   if(!roomActivity?.started)roomActivity=null;
+ }
+ if(!seated&&!restMotion)eva=navigation.recover(eva,start);
 }
 function storage(){
- saved.lastLocation=seated?{u:seated.stand[0],v:seated.stand[1]}:{u:eva.u,v:eva.v};localStorage.setItem('room',JSON.stringify(saved));
+ saved.lastLocation=seated?{...seated.stand}:{u:eva.u,v:eva.v};localStorage.setItem('room',JSON.stringify(saved));
 }
 function position3D(o){return {...o,z:(o.z||0)+surfaceAt(o.u,o.v)}}
 function publishWeeklyQuota(week){
@@ -248,37 +255,46 @@ function movedBucket(){
  const u=moved.world?moved.u:where.u+moved.u,v=moved.world?moved.v:where.v+moved.v;
  return Math.hypot(u-at.u,v-at.v)>.65;
 }
-function blocks(u,v,extra=0){
- return !inRoom(u,v,.17+extra,roomExtra)||blocksActor(u,v,fixtures,[],carrying,extra,true);
-}
+function blocks(u,v){return navigation.blocked({u,v},carrying);}
+
 function toyBlocked(point,radius){
  const z=point.z;
  return z+.006<surfaceAt(point.u,point.v)||!inRoom(point.u,point.v,radius,roomExtra)||
    fixtures.some(o=>o.id!==carrying&&o.kind!=='floorDecor'&&hitsFixture(point,radius,o));
 }
-function pathTo(target,actor=eva){return localPath(actor,target,blocks)||roundRoute(actor,route(actor,target,blocks),blocks)}
+
 const ease=x=>x*x*(3-2*x);
-function takeSeat(seat,at){
- restMotion=seatMotion(seat,{u:eva.u,v:eva.v},at,direction,now());
- seated=seat;eva=at;
+function takeSeat(seat){
+ direction=seat.facing;
+ restMotion=seatMotion(seat,eva,seat.at,direction,now());
+ seated=seat;eva={u:seat.at.u,v:seat.at.v};
 }
 function leaveSeat(){
- if(!seated)return;
- const exit={u:seated.stand[0],v:seated.stand[1]};
+ if(!seated)return true;
+ const exit=seated.stand;
+ if(!navigation.clear(seated.at,exit,seated.id)){
+   say('Перед сиденьем занято. Встану, когда проход освободится.','wry');
+   return false;
+ }
  if(restMotion){
    const time=now(),sample=seatSample(restMotion,time,reduceMotion);
    restMotion=seatMotion(seated,sample,exit,restMotion.facing,time,sample.amount,0);
  }
- eva=exit;seated=null;
+ eva={u:exit.u,v:exit.v};seated=null;
+ return true;
 }
-function walkTo(u,v,done,automatic=false){
+function walkTo(u,v,done,automatic=false,exact=false){
  automaticWalk=automatic;
  if(!automatic)nextPastime=now()+30000;
- leaveSeat();
+ if(!leaveSeat()){
+   automaticWalk=false;
+   if(!roomActivity?.started)roomActivity=null;
+   return;
+ }
  if(gesture&&!reduceMotion)releaseMotion={motion:gesture.motion,facing:direction,from:gestureAmount(gesture,now()),start:now()};
  gesture=null;
  const starting=!move.length;
- move=pathTo({u,v});
+ move=(carrying?roomWalk(fixtures,roomExtra,carrying):navigation).path(eva,{u,v},exact);
  if(starting){
    walkSpeed=0;
    // Idle time before a tap should not count toward the first step.
@@ -303,10 +319,6 @@ function animateAction(action,id){
    record:'reach',television:'reach',vending:'reach',bin:'stoop',pickup:'stoop',pocketFixture:'stoop',togglePlaced:'stoop',carry:'stoop',shell:'stoop',fill:'stoop',plant:'stoop',pillow:'stoop',blanket:'stoop',kit:'stoop'
  }[action];
  if((motion||actionTime[action])&&!reduceMotion)gesture={motion:motion||'reach',id,start:now(),until:now()+(actionTime[action]||620)};
-}
-function standFrom(o){
- const front=seatFront(o);
- return blocks(...front)?around(o):front;
 }
 function activityFixture(definition){
  return fixtures.find(item=>item.id===definition.fixture);
@@ -333,42 +345,33 @@ function startRoomActivity(key,automatic=false,fromChat=false){
  stopRoomActivity();
  if(saved.sound)prepareSound();
  const spot=definition.spot&&worldPoint(section,...definition.spot);
- const target=fixture?around(chair||fixture):[spot.u,spot.v];
+ const sleeper=definition.rest==='bed';
+ const seat=chair||definition.rest?roomSeat(chair||fixture,navigation,
+   sleeper&&fixtures.find(item=>item.id===10),sleeper):null;
+ if((chair||definition.rest)&&!seat){
+   if(!automatic)say('К сиденью не подойти. Оставь перед ним свободный пол.','wry');
+   return;
+ }
+ const target=seat?[seat.stand.u,seat.stand.v]:fixture?around(fixture):[spot.u,spot.v];
  const state={key,definition,fixture,started:false,elapsed:0,fromChat};
  roomActivity=state;
  walkTo(...target,()=>{
    if(roomActivity!==state)return;
-   if(Math.hypot(eva.u-target[0],eva.v-target[1])>.29){
+   if(Math.hypot(eva.u-target[0],eva.v-target[1])>.025){
      roomActivity=null;nextPastime=now()+12000;
      if(fromChat)Desk.worldResult?.('Не удалось подойти к компьютеру');
      if(!automatic)statusNote('До места не подойти. Освободи проход.');
      return;
    }
    if(fixture)face(fixture);
-   if(chair){
-     const position={u:chair.u+chair.w/2,v:chair.v+chair.d/2};
-     const monitor=computerLayout(fixture)(.595,.177,0);
-     direction=heading(monitor.u-position.u,monitor.v-position.v,direction);
-     takeSeat({id:chair.id,stand:target,height:chair.seatHeight,depth:.20},position);
-     saved.computerOn=true;
-     say('Так, я в эфире. Чат, как слышно?','pleased');
-   }else if(definition.rest==='bed'){
-     direction=fixture.turned?'down-left':'down-right';
-     const pillow=fixtures.find(item=>item.id===10);
-     const rest=bedRest(fixture,pillow,true);
-     takeSeat({id:fixture.id,stand:target,height:rest.height,sleep:true},rest);
-     speech.clear();
-   }else if(definition.rest==='seat'){
-     direction=fixture.seatDirection||'down-left';
-     const near=fixture.back?.40:.60;
-     takeSeat({id:fixture.id,stand:target,height:fixture.seatHeight??.5,depth:.25},
-       {u:fixture.u+fixture.w*(fixture.turned?near:.5),v:fixture.v+fixture.d*(fixture.turned?.5:near)});
-   }
+   if(seat)takeSeat(seat);
+   if(chair)saved.computerOn=true;
+   else if(sleeper)speech.clear();
    state.started=true;state.sample=activitySample(definition,0,reduceMotion);
    statusNote(definition.title);
-   if(definition.sound)sound(definition.sound);
+   if(definition.sound&&key!=='computer')sound(definition.sound);
    dirty=true;
- },automatic);
+ },automatic,true);
 }
 function finishRoomActivity(state){
  const {key,definition,fixture}=state;
@@ -405,7 +408,11 @@ function finishRoomActivity(state){
 }
 function advanceRoomActivity(dt){
  const state=roomActivity;
- if(!state?.started)return;
+ if(!state?.started||seated&&restMotion&&!seatSample(restMotion,now(),reduceMotion).complete)return;
+ if(!state.elapsed&&state.key==='computer'){
+   say('Так, я в эфире. Чат, как слышно?','pleased');
+   sound(state.definition.sound);
+ }
  state.elapsed+=dt*1000;
  if(state.elapsed>=activityDuration(state.definition,reduceMotion)){finishRoomActivity(state);return;}
  state.sample=activitySample(state.definition,state.elapsed,reduceMotion);
@@ -418,15 +425,17 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
  if(action==='cancel'){carrying=null;selectTarget=null;dropAim=null;toyAim=null;dirty=true;wake();return}
  closeSheet();
  if(saved.sound)prepareSound();
- if(o.kind==='chair'&&action==='sit'&&seated?.id===o.id){
-   leaveSeat();direction='down-left';dirty=true;say('Встала. Стул может выдохнуть.');return;
+ if(action==='sit'&&seated?.id===o.id){
+   if(leaveSeat()){dirty=true;wake();say('Встала. Стул может выдохнуть.');}
+   return;
  }
- const bedEdge=o.kind==='bed'&&action==='sit'&&bedRest(o,null,false);
- const edge=bedEdge&&(o.turned?[bedEdge.u,o.v+o.d+.28]:[o.u+o.w+.28,bedEdge.v]);
- const target=edge&&!blocks(...edge)?edge:around(o);
+ const needsSeat=action==='sit'||action==='sleep';
+ const seat=needsSeat?roomSeat(o,navigation,action==='sleep'&&o.id===3&&fixtures.find(item=>item.id===10),action==='sleep'):null;
+ if(needsSeat&&!seat){say('С этой стороны к сиденью не подойти. Освободи проход.','wry');return;}
+ const target=seat?[seat.stand.u,seat.stand.v]:around(o);
  walkTo(...target,()=>{
    if(automatic)nextPastime=now()+15000+Math.random()*12000;
-   if(Math.hypot(eva.u-target[0],eva.v-target[1])>.28){
+   if(Math.hypot(eva.u-target[0],eva.v-target[1])>.025){
      if(fromChat)Desk.worldResult?.('Не удалось подойти к предмету «'+o.name+'»');
      say('До '+o.name.toLowerCase()+' отсюда не дотянуться. Обойду, когда проход освободится.');return;
    }
@@ -446,21 +455,12 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
      case 'eatSnack':
        if(trade('eat',snack)){appEvent('snack');say(snack==='tea'?'Чай. Вот теперь я человек. Почти.':'Перекусила. Жизнь снова вывозим.','pleased');}break;
      case 'shelter':say('Вот тут сухо. Дождь, можешь писать жалобу.','pleased');break;
-     case 'sleep': {
-       direction=o.turned?'down-left':'down-right';
-       const pillow=o.id===3&&fixtures.find(item=>item.id===10);
-       const rest=bedRest(o,pillow,true);
-       takeSeat({id:o.id,stand:target,height:rest.height,sleep:true},rest);
-       speech.clear();
+     case 'sleep':
+       takeSeat(seat);speech.clear();
        statusNote('Ева спит. Тап по полу её разбудит.');
        break;
-     }
      case 'sit':
-       direction=o.seatDirection||'down-left';
-       const pos=o.back?.40:.60;
-       takeSeat({id:o.id,depth:Math.max(o.w,o.d)>1?.32:.16,stand:bedEdge?target:standFrom(o),
-         height:bedEdge?.height??o.seatHeight??.5},
-         bedEdge||{u:o.u+o.w*(o.turned?pos:.5),v:o.v+o.d*(o.turned?.5:pos)});
+       takeSeat(seat);
        appEvent('sit');say(remark('seat'),'pleased');break;
      case 'desk':
        saved.drawers??={};saved.drawers[o.id]=!drawerOpen(o.id);
@@ -568,7 +568,7 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
    }
    if(fromChat)Desk.worldResult?.('Выполнено: '+o.name+' / '+action);
    storage();dirty=true;wake();
- },automatic);
+ },automatic,true);
 }
 const descriptions={
  notice:[['Рассмотреть','notice']],
@@ -576,6 +576,7 @@ const descriptions={
  table:[['Открыть или закрыть ящик','desk']],cup:[['Взять кружку','cup']],
  window:[['Открыть или закрыть окно','window']],exit:[['Пройти','exit']],
  bed:[['Лечь спать','sleep'],['Присесть на край','sit']],pillow:[['Взбить','pillow']],blanket:[['Поправить','blanket']],
+ streamChair:[['Сесть','sit']],
  computer:[['Начать стрим','useComputer'],['Включить или выключить ПК','computerPower']],
  plant:[['Полить','plant']]
 };
@@ -696,7 +697,7 @@ function chooseFixture(o){
  layout.newItem=false;layout.pan=false;layout.object=o;layout.point=null;layout.issue='';layoutHUD();
 }
 function beginLayout(o){
- closeSheet();town.close();pauseInitiative();
+ closeSheet();town.close();pauseInitiative();leaveSeat();
  move=[];onArrival=null;carrying=null;selectTarget=null;dropAim=null;toyAim=null;
  layout={undo:[],object:null,point:null,issue:'',gesture:null};
  $('screen').classList.add('arranging');$('layout-tools').hidden=false;
@@ -777,11 +778,19 @@ function roomPlacementIssue(o,p){
  const children=attachedFurniture.get(o.id)||[];
  const available=fixtures.filter(f=>!children.includes(f.id)&&f.kind!=='wallArt');
  const issue=placementIssue(o,p,available,[],[eva],true);
- if(issue||!children.includes(streamChair.id))return issue;
- const chair=attachedTo(streamChair,{...o,...p});
- if(!fitsRoom(chair.u,chair.v,chair.w,chair.d,roomExtra)||
-   placementIssue(chair,chair,available.filter(f=>f.id!==o.id),[],[eva],true))
-   return 'Оставь свободное место для кресла перед столом';
+ if(issue)return issue;
+ const others=available.filter(f=>f.id!==o.id),placed={...o,...p};
+ if(o.kind==='chair'||o.kind==='bed'){
+   if(!roomSeat(placed,roomWalk([...others,placed],roomExtra)))
+     return 'Оставь проход перед сиденьем';
+ }
+ if(children.includes(streamChair.id)){
+   const chair=attachedTo(streamChair,placed);
+   if(!fitsRoom(chair.u,chair.v,chair.w,chair.d,roomExtra)||
+     placementIssue(chair,chair,others,[],[eva],true)||
+     !roomSeat(chair,roomWalk([...others,placed,chair],roomExtra)))
+     return 'Оставь свободное место для кресла перед столом';
+ }
  return '';
 }
 function setDestination(p){
@@ -865,6 +874,8 @@ function paint(t=now()){
  paintCount++;
  const playing=roomActivity?.started?roomActivity:null;
  const routinePose=playing?.sample;
+ const stream=playing?.key==='computer'&&restMotion&&seatSample(restMotion,t,reduceMotion).complete?
+   computerGesture(playing.fixture,routinePose,reduceMotion):null;
  lighting=paletteFor(climate,false).map(x=>x*(.95+climate.daylight*.065));
  const sources=[[room.u+.32,room.v-.8,2.47,.58+night*.52]];
  const marginPx=view.scale*.4;
@@ -915,8 +926,8 @@ function paint(t=now()){
    }
    if(o.kind==='window')continue;
    if(o.kind==='computer'){
-     const streaming=playing?.key==='computer';
-     drawComputer(renderer,o,!!saved.computerOn||streaming,streaming,routinePose?.seconds);
+     const streaming=Boolean(stream);
+     drawComputer(renderer,o,!!saved.computerOn||streaming,streaming,routinePose?.seconds,stream);
      continue;
    }
    if(o.kind==='floorDecor'){drawFloorDecor(renderer,o);continue;}
@@ -975,7 +986,7 @@ function paint(t=now()){
          anchor,widthScale:o.back?(renderer.artAspect(o.art)||1)/(renderer.artAspect('back-'+o.art)||1):1,
          cast:{support,ground:surfaceAt(o.u,o.v)+(support?o.z:0),inside:true},
          footprint:!o.z&&[o.w,o.d],floorPlane:p.z+.004,
-         limits:[p.u+o.w*.5,p.v+o.d*.5,p.z+(top?.height??o.surfaceHeight??height)]
+         limits:[p.u+o.w*.5,p.v+o.d*.5,p.z+(o.kind==='chair'?o.seatHeight??.48:top?.height??o.surfaceHeight??height)]
        });
        if(o.kind==='table'&&(drawerOpen(o.id)||gesture?.id===o.id)){
          const fraction=gesture?.id===o.id?Math.min(1,Math.max(0,(t-gesture.start)/380)):1;
@@ -1034,7 +1045,7 @@ function paint(t=now()){
    for(const [i,part] of o.parts.entries()){
      const a={u:o.u+part.u,v:o.v+part.v,z:part.z+surfaceAt(o.u,o.v)+(carrying===o.id?.48:0)};
      let b=part.b,tint=part.tint;
-     if(o.kind==='table'&&drawerOpen(o.id)&&i>4)a.v+=.16;
+     if(o.kind==='table'&&drawerOpen(o.id)&&i>4)a[o.turned?'u':'v']+=.16;
      if(o.kind==='window'&&saved.window&&i>0)a.v+=.16+i*.014;
      if(o.kind==='blanket'&&(o.id===11?saved.blanket:saved.linens?.[o.id]))b*=.71;
      if(o.kind==='pillow'&&saved.pillow)a.u+=.072;
@@ -1071,9 +1082,16 @@ function paint(t=now()){
    at.u=sample.u;at.v=sample.v;
    at.z=surfaceAt(at.u,at.v)+seat.height*amount;
    if(ready){
-     const anchor=actionAnchors[pose.key][seat.sleep?'pillow':'seat'];
-     opt.anchor=[.5+(anchor[0]-.5)*amount,gait.anchorY+(anchor[1]-gait.anchorY)*amount];
-     if(seat.sleep){opt.bedPlane=at.z;opt.restAmount=amount;}else opt.bias=amount*seat.depth;
+     const [anchorX,anchorY]=actionAnchors[pose.key][seat.sleep?'pillow':'seat'];
+     const anchor=[anchorX,anchorY+(seat.sleep?0:.030)];
+     const sole=pose.grip?.foot?.to??[.5,gait.anchorY];
+     opt.anchor=[sole[0]+(anchor[0]-sole[0])*amount,sole[1]+(anchor[1]-sole[1])*amount];
+     if(seat.sleep){opt.bedPlane=at.z;opt.restAmount=amount;}
+     else{
+       opt.bias=amount*(seat.id===streamChair.id?.055:.14);
+       opt.footFloor=surfaceAt(at.u,at.v)+.012+opt.bias;
+       opt.seatScale={anchor,amount};
+     }
    }
  }
  if(playing&&!reduceMotion){
@@ -1087,14 +1105,11 @@ function paint(t=now()){
      opt.grip={...opt.grip,to:[opt.grip.to[0]+(.64-opt.grip.to[0])*lift,
        opt.grip.to[1]+(.30-opt.grip.to[1])*lift]};
    }
-   if(playing.key==='computer'){
-     const rhythm=Math.sin(routinePose.seconds*(routinePose.index===2?5:17));
-     opt.lean=(.011+rhythm*.017)*amount;
-     if(opt.grip&&routinePose.index===1){
-       const [handX,handY]=opt.grip.to;
-       opt.grip={...opt.grip,to:[handX+rhythm*.025,handY-routinePose.amount*.07]};
-     }
-   }
+ }
+ if(stream&&opt.grip){
+   opt.deskHands=Math.min(1,(stream.left.reach+stream.right.reach)*.63);
+   const {crown}=opt.grip;
+   if(stream.nod&&crown)opt.grip={...opt.grip,crown:{...crown,to:[crown.to[0]+stream.nod,crown.to[1]+Math.abs(stream.nod)*.7]}};
  }
  const standing=1-ease(amount);
  if(standing>.03)renderer.shadow({...at,z:surfaceAt(at.u,at.v)+.032},.27*standing,.21*standing);
@@ -1107,7 +1122,8 @@ function paint(t=now()){
    shown.height*(1+breath+stretch+resting+(seat?.sleep ? .14*amount : 0)),shown.flip,opt,true);
  motionFrames[EVA_ID]=shown;
  if(head)heads.set(EVA_ID,head);
- if(playing){
+ if(stream)drawComputerArms(renderer,at,playing.fixture,stream);
+ if(playing&&playing.key!=='computer'){
    const o=playing.key==='tv'?fixtures.find(fixture=>fixture.id===26):playing.fixture;
    let point=at;
    if(o){
@@ -1481,9 +1497,5 @@ if(!saved.roomDecorIntroduced){
    saved.decor.push({id:id++,model,...point});
    refreshObjects();
  }
-}
-if(blocks(eva.u,eva.v)){
- const free=blocks(start.u,start.v)?pathTo(start).find(p=>!blocks(p.u,p.v)):start;
- eva={...(free||start)};
 }
 last=now();pullClock();paint();storage();wake();

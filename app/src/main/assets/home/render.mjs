@@ -5,7 +5,7 @@ import {propArt} from './prop-art.mjs';
 import {furnitureCorners,surfaceTriangles} from './occlusion.mjs';
 import {parts} from './painted-parts.mjs';
 import {gait} from './orientation.mjs';
-import {gripGrid} from './eva-motion.mjs';
+import {seatedUpperBody,gripGrid} from './eva-motion.mjs';
 
 const vertexSize=10;
 export const cameraScale=.174;
@@ -79,6 +79,7 @@ export function createScene(canvas) {
     uniform vec4 evaStep;
     uniform vec4 evaFeet;
     uniform vec4 evaShoeTravel;
+    uniform vec3 deskHands;
 
 
     uniform vec3 ambient;
@@ -175,6 +176,12 @@ export function createScene(canvas) {
           px=vec4(rgb/max(.001,a),a);
         }
       }
+      if(deskHands.z>0.){
+        vec2 cellUV=(coord-deskHands.xy)*vec2(8.,5.);
+        float sleeve=1.-smoothstep(.72,1.,length((cellUV-vec2(.539,.621))/vec2(.106,.066)));
+        float skin=smoothstep(.10,.21,px.r-px.b)*smoothstep(.43,.64,px.r);
+        px.rgb=mix(px.rgb,vec3(.30,.26,.27),deskHands.z*sleeve*skin);
+      }
       if(cutout&&evaStep.y>0.&&!pick&&coverage){
         if(px.a<.035)discard;
         opacity*=px.a;
@@ -217,7 +224,7 @@ export function createScene(canvas) {
   gl.disable(gl.DITHER);
   const hasCoverage=gl.getParameter(gl.SAMPLES)>1;
   const shadowStencil=gl.getParameter(gl.STENCIL_BITS)>0;
-  const uniforms=Object.fromEntries(['placingPart','partMatrix','partInfo','partMotion','view','size','pick','ambient','lamps[0]','shadow','glow','cutout','structure','coverage','revealCenter','castStrength','materialMeters','wave','wavePhase','evaStep','evaFeet','evaShoeTravel'].map(name=>[name,gl.getUniformLocation(program,name)]));
+  const uniforms=Object.fromEntries(['placingPart','partMatrix','partInfo','partMotion','view','size','pick','ambient','lamps[0]','shadow','glow','cutout','structure','coverage','revealCenter','castStrength','materialMeters','wave','wavePhase','evaStep','evaFeet','evaShoeTravel','deskHands'].map(name=>[name,gl.getUniformLocation(program,name)]));
   const buf=gl.createBuffer();
   function vertexArray(buffer){
     const vao=gl.createVertexArray();
@@ -414,7 +421,7 @@ export function createScene(canvas) {
   const crowns={'iso-idle':.537,'rear-idle':.552,'iso-sit':.447,'rear-sit':.378,
     'front-stoop':.452,'rear-stoop':.614,'front-reach':.303,'rear-reach':.317,
     'mood-wry':.510,'mood-pleased':.512,'mood-surprised':.515,'mood-curious':.498};
-  let evaStep;
+  let evaStep,deskHands;
   function sprite(id,key,{u,v,z=0},h,flip,options,actor=false){
     if(!artReady(key))return;
     const frame=propArt[key];
@@ -434,6 +441,7 @@ export function createScene(canvas) {
     const y=atlas?(options.row*rowsPerView+Math.floor(options.column/gait.columns))/rows:frame?.[2]??0;
     const rightU=atlas?x+1/gait.columns:frame?.[3]??1,bottomV=atlas?y+1/rows:frame?.[4]??1;
     if(key==='walk-eva')evaStep=options?.step?{...options.step,x,y}:null;
+    if(options?.deskHands)deskHands={key:sheet,x,y,amount:options.deskHands};
     // Offsets along the view axis preserve screen placement and adjust occlusion.
     const bias=options?.bias??0;
     const foot=options?.floor?h*(1-anchorY)+.016:0;
@@ -480,7 +488,10 @@ export function createScene(canvas) {
       }else quad(physical.map(projected),0,[1,1,1],shadowKey,uv);
     }
     const batch=options?.foliage?'leaves:'+sheet:sheet;
-    const grip=options?.grip&&gripGrid(corners,options.grip,flip);
+    const contact=options?.grip;
+    const posed=contact&&(options.seatScale?
+      seatedUpperBody(corners,contact,options.seatScale.anchor,options.seatScale.amount,options.footFloor):contact);
+    const grip=posed&&gripGrid(corners,posed,flip);
     if(volume){
       if(!batches.has(batch))batches.set(batch,[]);
       const vertices=batches.get(batch);
@@ -498,7 +509,7 @@ export function createScene(canvas) {
     const crownPoint=options?.grip?.crown?.to??options?.crown;
     const crown=crownPoint?.[0]??crowns[key]??.5;
     const crownX=span*((flip?1-crown:crown)-anchor)+lean;
-    return {u:u+crownX,v:v-crownX,z:top-h*(crownPoint?.[1]??(atlas?.027:0)),
+    return {...(grip?.head??{u:u+crownX,v:v-crownX,z:top-h*(crownPoint?.[1]??(atlas?.027:0))}),
       hand:grip?.hand,otherHand:grip?.other};
   }
   function sleepingSprite(id,{u,v,z},key='eva-asleep'){
@@ -547,7 +558,7 @@ export function createScene(canvas) {
     gl.uniform3fv(uniforms.revealCenter,reveal);
     gl.uniform1f(uniforms.castStrength,.18+.16*lightDay);
     gl.uniform1i(uniforms.coverage,hasCoverage?1:0);
-    function material(key,step){
+    function material(key,step,typing){
       const scale=key==='roofs'?2.8:key==='coast'?2.4:key==='terrain'?4.3:key==='building'?3.4:
         key==='material'||key==='district'?2.7:0;
       gl.uniform1f(uniforms.materialMeters,scale);
@@ -556,6 +567,8 @@ export function createScene(canvas) {
         gl.uniform4fv(uniforms.evaFeet,step.feet);
         gl.uniform4fv(uniforms.evaShoeTravel,step.travel);
       }else gl.uniform4f(uniforms.evaStep,0,0,0,0);
+      if(typing)gl.uniform3f(uniforms.deskHands,typing.x,typing.y,typing.amount);
+      else gl.uniform3f(uniforms.deskHands,0,0,0);
       bindTexture(key);
     }
     function geometry(){
@@ -576,7 +589,7 @@ export function createScene(canvas) {
 
         const key=shell?batch.slice(6):leaves?batch.slice(7):batch;
         gl.uniform1i(uniforms.structure,shell?1:leaves?2:0);
-        material(key,batch==='walk-eva'?evaStep:null);
+        material(key,batch==='walk-eva'?evaStep:null,deskHands?.key===batch?deskHands:null);
         uploadDynamic(vertices);
         gl.drawArrays(gl.TRIANGLES,0,vertices.length/vertexSize);
       }
@@ -653,7 +666,7 @@ export function createScene(canvas) {
     shadeBand(points,contact){quad(points,0,[1,1,1],contact?'cornerShade':'groundShade');},box,panel,artPanel,sprite,triangle,illustratedPart,ball,shadow,castFloor,foam,flush,
     setLightingFocus(at,day){reveal=[at.u,at.v,at.z];lightDay=day;},
     setWavePhase(value){wavePhase=value;},
-    reset(){batches=new Map();partInstances.length=0;},
+    reset(){batches=new Map();partInstances.length=0;deskHands=null;},
     pick(x,y,night,lamp,climate){
       gl.bindFramebuffer(gl.FRAMEBUFFER,hitBuffer);
       flush(true,night,lamp,climate,Math.floor(x),Math.floor(y));
