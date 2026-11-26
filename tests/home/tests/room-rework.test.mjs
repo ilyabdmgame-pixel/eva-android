@@ -4,7 +4,7 @@ import {actionBeat,gripGrid,pointOnCel,registeredPose} from '../../../app/src/ma
 import {actionPose} from '../../../app/src/main/assets/home/orientation.mjs';
 import {attachedPosition,bedRest,drawBedding,expandedRoom,fitsRoom,inRoom,roomFurniture,roomView}
   from '../../../app/src/main/assets/home/room.mjs';
-import {computerLayout,drawComputer,furnishingThumbnail,roomFurnishings} from '../../../app/src/main/assets/home/room-furnishings.mjs';
+import {computerLayout,drawComputer,furnishingThumbnail,roomFurnishings,streamChair} from '../../../app/src/main/assets/home/room-furnishings.mjs';
 import {worldObjects,worldPoint,localPath,route} from '../../../app/src/main/assets/home/district.mjs';
 import {blocksActor} from '../../../app/src/main/assets/home/contact.mjs';
 import {placementIssue} from '../../../app/src/main/assets/home/layout.mjs';
@@ -71,6 +71,14 @@ test('the desktop PC rotates with the desk, and its monitor and keyboard animate
    const monitor=at(.5,.16,.25),keyboard=at(.7,.40,0);
    assert(monitor.z>keyboard.z);
    for(const p of [monitor,keyboard])assert(p.u>=table.u&&p.u<=table.u+table.w&&p.v>=table.v&&p.v<=table.v+table.d);
+   const chair=attachedPosition(layout.get(streamChair.id),desk,table),center=at(.595,.177,0);
+   if(table.turned){
+     assert(Math.abs(chair.v+chair.d/2-center.v)<1e-8);
+     assert(chair.u>table.u+table.w);
+   }else{
+     assert(Math.abs(chair.u+chair.w/2-center.u)<1e-8);
+     assert(chair.v>table.v+table.d);
+   }
    const render=(on,time)=>{const calls=[];const r={box(...p){calls.push(p);},panel(...p){calls.push(p);}};
      drawComputer(r,pc,on,on,time);return calls;};
    assert(render(false,0).length>20);

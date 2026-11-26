@@ -1,12 +1,13 @@
-export function townChat({note,quip,world,apply}){
+export function townChat({note,quip,world,apply,usage}){
  const form=document.getElementById('town-compose'),input=form.querySelector('input'),
  mic=form.querySelector('[data-mic]'),send=form.querySelector('[type=submit]'),
  mark=document.getElementById('town-mark'),bubble=document.getElementById('town-answer'),
  choices=document.getElementById('town-options');
  const labels={working:'Ева работает',done:'Дело готово',question:'Ева ждёт ответа'};
  const post=(op,extra={})=>window.Desk?.town?.(JSON.stringify({op,...extra}));
- let active=!document.hidden,open=false,head=null,covered=false,roomBusy=false,pending=null,showTimer=0,position=null;
+ let active=!document.hidden,open=false,head=null,covered=false,roomBusy=false,pending=null,position=null;
  let status='idle',answer=null,choicePoll=null,words=[],page='',timer=0,spoken=false,ack='',lastDraft='';
+ let voiceOptions={rate:1,pitch:.7},phrase=null;
  input.value=sessionStorage.getItem('townDraft')||'';
  function controls(){send.disabled=!input.value.trim()||!!pending||roomBusy;input.readOnly=!!pending;}
  function draft(){sessionStorage.setItem('townDraft',input.value);controls();}
@@ -39,11 +40,25 @@ export function townChat({note,quip,world,apply}){
   }
  }
  const layout=()=>anchor(head,covered);
- function close(){if(!open&&!showTimer)return false;clearTimeout(showTimer);showTimer=0;open=false;position=null;input.blur();layout();return true;}
+ function close(){if(!open)return false;open=false;position=null;input.blur();layout();return true;}
  function tap(){
-  if(open||showTimer){close();return;}
+  if(open){close();return;}
   if(!answer)quip();
-  showTimer=setTimeout(()=>{showTimer=0;open=true;layout();post('state',{activate:true});},300);
+  open=true;layout();post('state',{activate:true});
+ }
+ function playVoice(id,text,volume,options){
+  if(options.voiceName==='silero-kseniya')post('synthesize',{...options,id,text,volume});
+  else window.Desk?.townSpeak?.(id,text,options.rate,options.pitch,volume);
+ }
+ function stopPhrase(){
+  if(!phrase)return;
+  window.Desk?.stopRoomVoice?.(phrase.id);phrase=null;
+ }
+ function speakPhrase(text,volume){
+  if(!active||answer||volume<=0)return;
+  stopPhrase();
+  phrase={id:'room-'+crypto.randomUUID(),text,volume};
+  playVoice(phrase.id,text,volume,voiceOptions);
  }
  function finish(){
   const id=answer?.id;if(!id)return;
@@ -80,6 +95,18 @@ export function townChat({note,quip,world,apply}){
   layout();
  }
  function update(data){
+  if('week' in data)usage?.(data.week);
+  if(data.op==='state'&&!data.error){
+   const {voiceName,rate=1,pitch=.7,accent,yo}=data;
+   voiceOptions={voiceName,rate,pitch,accent,yo};
+  }
+  if(phrase?.id&&data.id===phrase.id){
+   if(data.op==='voiceError'&&voiceOptions.voiceName==='silero-kseniya'&&!phrase.fallback){
+    phrase.fallback=true;
+    window.Desk?.townSpeak?.(phrase.id,phrase.text,voiceOptions.rate,voiceOptions.pitch,phrase.volume);
+   }else phrase=null;
+   return;
+  }
   if(data.op==='mic'){
    mic.classList.toggle('listening',data.status==='listening');mic.setAttribute('aria-pressed',String(data.status==='listening'));
    if(data.text){input.value=(input.value+' '+data.text).trim().slice(0,8000);draft();}
@@ -100,7 +127,7 @@ export function townChat({note,quip,world,apply}){
   controls();layout();
   if(active&&data.answer&&!answer){
    if(ack===data.answer.id){post('read',{id:ack});return;}
-   answer={...data.answer};
+   stopPhrase();answer={...data.answer};
    const token=sessionStorage.getItem('townActionToken'),match=answer.text.match(/\[town ([a-z0-9-]+) ([0-9]+) ([a-zA-Z]+)\]\s*$/);
    if(token&&match&&match[1]===token){
      sessionStorage.removeItem('townActionToken');answer.text=answer.text.slice(0,match.index).trim();
@@ -109,9 +136,7 @@ export function townChat({note,quip,world,apply}){
    document.querySelector('#speech [data-speaker="15"]')?.style.setProperty('display','none');
    choicePoll=window.EvaQuestions?.parse(answer.text)||null;
    if(choicePoll){showChoices();return;}
-   if(data.voice&&data.voiceName==='silero-kseniya'){
-    spoken=true;post('synthesize',{id:answer.id,text:answer.text,rate:data.rate,accent:data.accent,yo:data.yo});
-   }else if(data.voice&&window.Desk?.townSpeak){spoken=true;Desk.townSpeak(answer.id,answer.text);}
+   if(data.voice&&window.Desk?.townSpeak){spoken=true;playVoice(answer.id,answer.text,1,voiceOptions);}
    else text();
   }
  }
@@ -127,8 +152,9 @@ export function townChat({note,quip,world,apply}){
  };
  input.oninput=draft;
  mic.onclick=()=>window.Desk?.townMic?.();
- form.querySelector('[data-expand]').onclick=()=>post('open');
- mark.onclick=()=>post('open',{indicator:true});
+ function openChat(indicator){close();window.Desk?.openRoomChat?.(indicator);}
+ form.querySelector('[data-expand]').onclick=()=>openChat(false);
+ mark.onclick=()=>openChat(true);
  // The canvas resolves actor hits after pointerup. Other launcher surfaces can
  // dismiss on click without cancelling a drag or stealing touches inside the form.
  document.addEventListener('click',event=>{
@@ -146,9 +172,9 @@ export function townChat({note,quip,world,apply}){
   pollTimer=setTimeout(poll,roomBusy||pending?2200:5500);
  }
  poll();
- return {tap,anchor,close,get playing(){return !!answer;},get composing(){return open||!!showTimer;},active(value){
+ return {tap,anchor,close,speakPhrase,stopPhrase,refresh:()=>post('state',{activate:true}),get playing(){return !!answer;},get composing(){return open;},active(value){
   if(active===value)return;active=value;
-  if(!value){clearTimeout(pollTimer);clearTimeout(timer);clearTimeout(showTimer);showTimer=0;page='';answer=null;spoken=false;pending=null;mic.classList.remove('listening');controls();}
+  if(!value){clearTimeout(pollTimer);clearTimeout(timer);phrase=null;page='';answer=null;spoken=false;pending=null;mic.classList.remove('listening');controls();}
   else poll();
   layout();
  }};

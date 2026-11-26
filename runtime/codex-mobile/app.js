@@ -982,12 +982,21 @@ es.addEventListener('message',event=>{
  if(m.method==='turn/completed'||m.type==='request')window.evaPetWorkCards(true);
 });
 
-let townOpening=false;
+let townOpening=false,roomChatRequest=null;
+window.evaOpenRoomChat=indicator=>{
+ roomChatRequest={indicator};
+ followTownChat();
+};
 async function followTownChat(){
- if(document.hidden||townOpening||typeof canLeaveChat!=='function'||!canLeaveChat(true))return;
+ if(document.hidden||townOpening||!roomChatRequest||!canLeaveChat(true))return;
  townOpening=true;
- try{const post=o=>api('/town',{method:'POST',body:JSON.stringify(o)}),{id}=await post({op:'destination'});
- if(id){await openThread(id);if(thread===id)await post({op:'opened',id});}}
+ const request=roomChatRequest;
+ try{
+  const post=o=>api('/town',{method:'POST',body:JSON.stringify(o)});
+  if(!request.prepared){await post({op:'open',indicator:request.indicator});request.prepared=true;}
+  const {id}=await post({op:'destination'});
+  if(id){await openThread(id);if(thread===id){if(roomChatRequest===request)roomChatRequest=null;await post({op:'opened',id});}}
+ }
  catch{}finally{townOpening=false}
 }
 window.addEventListener('focus',followTownChat);document.addEventListener('visibilitychange',followTownChat);

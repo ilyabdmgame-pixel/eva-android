@@ -2,7 +2,7 @@ let enabled=false,visible=true,volume=.42;
 let context,master,bed,bedFilter,bedLevel,grain,lastStep=0,profile='';
 let chirpAt=0;
 const songs={
-  uiTap:[430],chatTap:[587,784],
+  uiTap:[430],chatTap:[587,784],stream:[392,523,659],
   record:[147,196,220,196,175,165,147],television:[91,152,96,181],vending:[415,311],
   radio:[196,220,233,261,196,174,196,233],coffee:[93,101,113],sell:[494,740],lamp:[187],grass:[138,117,104],
   chime:[622,830,1046],water:[490,520,588],press:[260,310],pickup:[420,610]

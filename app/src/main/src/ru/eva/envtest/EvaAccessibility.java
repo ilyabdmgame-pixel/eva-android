@@ -113,6 +113,9 @@ public final class EvaAccessibility extends AccessibilityService {
     if(instance==this){instance=null;signalWindows();}
   }
   static boolean enabled(){return instance!=null;}
+  public static boolean openRecentApps(){
+    return instance!=null&&instance.performGlobalAction(GLOBAL_ACTION_RECENTS);
+  }
 
   private static Boolean configured(Context context){
     String services;

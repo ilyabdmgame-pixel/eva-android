@@ -68,6 +68,27 @@ function dock(){
  const dest=$('favorites');dest.replaceChildren();
  for(const k of pins()){const a=apps.find(x=>x.key===k);if(!a)continue;const b=btn(null,'fav',()=>Desk.open(k));b.setAttribute('aria-label',a.name);b.append(icon(a));dest.append(b)}
 }
+let dockPointer=null,skipDockClick=false;
+$('dock').addEventListener('pointerdown',event=>{
+ if(event.pointerType!=='touch'||!event.isPrimary)return;
+ skipDockClick=false;
+ dockPointer={id:event.pointerId,x:event.clientX,y:event.clientY};
+});
+window.addEventListener('pointercancel',event=>{
+ if(dockPointer?.id===event.pointerId)dockPointer=null;
+});
+window.addEventListener('pointerup',event=>{
+ if(dockPointer?.id!==event.pointerId)return;
+ const rise=dockPointer.y-event.clientY,side=Math.abs(dockPointer.x-event.clientX);
+ dockPointer=null;
+ if(rise<52||side>rise*.6)return;
+ skipDockClick=true;
+ window.Desk?.openRecentApps?.();
+});
+$('dock').addEventListener('click',event=>{
+ if(!skipDockClick||!event.detail)return;
+ skipDockClick=false;event.preventDefault();event.stopImmediatePropagation();
+},true);
 function launchApp(app){
  closeSheet();
  Desk.open(app.key);

@@ -4,6 +4,15 @@ const legs=(w,d,h)=>[.038,w-.094].flatMap(u=>[.039,d-.093].map(v=>part(u,v,0,.05
 const item=(id,name,category,w,d,kind,parts,extra={})=>
  ({id,name,category,w,d,u:0,v:0,kind,parts,roomMovable:true,...extra});
 
+export const streamChair=item(307,'Кресло у компьютера','Мебель',.48,.48,'streamChair',[
+ part(.04,.20,.04,.40,.066,.055,[.36,.39,.44]),
+ part(.205,.038,.043,.071,.404,.053,[.36,.39,.44]),
+ part(.203,.20,.09,.078,.08,.31,[.37,.38,.41]),
+ part(.018,.045,.39,.444,.39,.075,[.48,.40,.52],'cloth'),
+ part(.04,.389,.445,.40,.075,.45,[.45,.38,.50],'cloth'),
+ part(.07,.388,.81,.34,.08,.071,[.62,.49,.62],'cloth')
+],{seatHeight:.45,solid:true});
+
 export const roomFurnishings=[
  item(701,'Прикроватная тумба','Мебель',.47,.37,'storage',[
    ...legs(.47,.37,.13),part(0,0,.125,.47,.37,.37,walnut),part(-.015,-.015,.495,.50,.40,.033,[.84,.67,.54]),
@@ -98,7 +107,7 @@ export function computerLayout(fixture){
  return (x,y,height)=>fixture.turned?{u:u+y,v:v+x,z:z+height}:{u:u+x,v:v+y,z:z+height};
 }
 
-export function drawComputer(renderer,o,powered,typing,seconds=0){
+export function drawComputer(renderer,o,powered,streaming,seconds=0){
  const point=computerLayout(o);
  const box=(x,y,z,w,d,h,t,mat)=>renderer.box(o.id,point(x,y,z),o.turned?d:w,o.turned?w:d,h,t,mat);
  const screen=(x,z,w,h,t,mat)=>{
@@ -112,17 +121,31 @@ export function drawComputer(renderer,o,powered,typing,seconds=0){
  box(.428,.074,.001,.34,.187,.030,stand);
  box(.564,.097,.030,.062,.053,.143,stand);
  box(.291,.075,.15,.61,.10,.30,bezel);
+ box(.545,.120,.45,.102,.068,.049,bezel);
+ box(.584,.183,.467,.028,.008,.019,streaming?[.92,.29,.31]:[.47,.48,.48],streaming?'glow':undefined);
+ box(.955,.25,0,.093,.102,.025,stand);
+ box(.988,.282,.025,.027,.034,.126,stand);
+ box(.974,.27,.137,.058,.058,.075,bezel);
  screen(.323,.186,.547,.235,powered?[.185,.32,.37]:[.18,.20,.22],powered?'glow':undefined);
- if(powered){
+ if(streaming){
+   screen(.349,.364,.061,.025,[.98,.28,.32],'glow');
+   screen(.348,.222,.278,.118,[.30,.54,.56],'glow');
+   screen(.433,.272,.075,.049,[.76,.51,.48],'glow');
+   screen(.406,.229,.13,.038,[.49,.36,.57],'glow');
+   for(let row=0;row<5;row++){
+     const length=.075+((Math.floor(seconds*2)+row*3)%4)*.024;
+     screen(.655,.34-row*.028,length,.009,row%2?[.57,.78,.73]:[.74,.68,.50],'glow');
+   }
+ }else if(powered){
    screen(.35,.383,.077,.009,[.57,.78,.77],'glow');
    for(let row=0;row<4;row++){
-     const length=typing?.27+((Math.floor(seconds*7)+row)%5)*.03:.28+row%2*.055;
+     const length=.28+row%2*.055;
      screen(.377,.341-row*.036,length,.008,row%2?[.47,.69,.66]:[.71,.70,.49],'glow');
    }
  }
  box(.404,.334,0,.45,.145,.027,bezel);
  for(let row=0;row<3;row++)for(let column=0;column<8;column++){
-   const press=typing&&column===(Math.floor(seconds*10)+row*2)%8;
+   const press=streaming&&column===(Math.floor(seconds*10)+row*2)%8;
    box(.432+column*.052,.349+row*.041,.028,.035,.027,press?.006:.011,press?[.76,.75,.57]:keycaps);
  }
  box(.905,.363,.005,.066,.100,.040,bezel);

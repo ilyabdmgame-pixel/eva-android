@@ -23,17 +23,15 @@ final class TownChat {
  private TextToSpeech tts;
  private boolean ttsReady;
  private String utterance="";
+ private Runnable waitingSpeech;
  TownChat(Home activity){
   home=activity;
   inbox=new Messenger(new Handler(Looper.getMainLooper(),m->{
    try{
     JSONObject data=new JSONObject(m.getData().getString("json","{}"));
     if("state".equals(data.optString("op")))pollAt=0;
-    if(active){
-     home.townEvent(data);
-     if(data.optBoolean("open"))home.startActivity(new Intent(home,ru.eva.envtest.MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP));
-    }
-   }catch(Exception e){error("open","Не удалось открыть полный чат.");}return true;
+    if(active)home.townEvent(data);
+   }catch(JSONException ignored){}return true;
   }));
  }
  private void event(String op,String key,String value){
@@ -56,20 +54,22 @@ final class TownChat {
   if(!bound)try{bound=home.bindService(new Intent(home,ru.eva.envtest.TownService.class),link,Context.BIND_AUTO_CREATE);}catch(RuntimeException ignored){}
  }
  void pause(){
-  active=false;cancelMic();if(tts!=null)tts.stop();utterance="";
+  active=false;cancelMic();if(tts!=null)tts.stop();utterance="";waitingSpeech=null;
   if(bound){home.unbindService(link);bound=false;}channel=null;queuedRequest=null;pollAt=0;
  }
  void destroy(){if(tts!=null)tts.shutdown();}
  void request(String raw){
   try{
    JSONObject o=new JSONObject(raw);String op=o.getString("op");
-   if(!active||!op.matches("state|open|read|send|synthesize"))return;
+   if(!active||!op.matches("state|read|send|synthesize|stopVoice"))return;
    if(channel==null){
+    if(op.equals("stopVoice"))return;
     boolean state=op.equals("state");
     if(state&&!o.optBoolean("activate")&&!CodexService.running())return;
     bind();
     if(!state){
      if(bound&&queuedRequest==null)queuedRequest=raw;
+     else if(op.equals("synthesize"))event("voiceError","id",o.optString("id"));
      else error(op,"Чат Евы запускается. Попробуй через пару секунд.");
     }
     return;
@@ -103,16 +103,33 @@ final class TownChat {
  }
  void permission(boolean granted){if(!askingMic)return;askingMic=false;if(granted)handler.post(()->microphone());else error("mic","Для диктовки разреши микрофон.");}
  void cancelMic(){if(mic!=null){SpeechRecognizer current=mic;mic=null;current.cancel();current.destroy();}}
- void speak(String id,String text){
-  if(!active||text.isEmpty())return;utterance=id;
-  if(tts!=null){play(id,text);return;}
-  tts=new TextToSpeech(home,status->{
-   ttsReady=status==TextToSpeech.SUCCESS&&tts.setLanguage(new Locale("ru","RU"))>=0;
-   if(utterance.equals(id)&&active)play(id,text);
-  });
+ void stopSpeech(String id){
+  if(utterance.equals(id)){utterance="";waitingSpeech=null;if(tts!=null)tts.stop();}
+  if(queuedRequest!=null)try{
+   JSONObject pending=new JSONObject(queuedRequest);
+   if("synthesize".equals(pending.optString("op"))&&id.equals(pending.optString("id")))queuedRequest=null;
+  }catch(JSONException ignored){}
+  if(channel!=null)try{request(new JSONObject().put("op","stopVoice").put("id",id).toString());}catch(JSONException ignored){}
  }
- private void play(String id,String text){
+ void speak(String id,String text,float rate,float pitch,float volume){
+  if(!active||text.isEmpty())return;
+  utterance=id;
+  Runnable next=()->{if(utterance.equals(id)&&active)play(id,text,rate,pitch,volume);};
+  if(ttsReady){next.run();return;}
+  waitingSpeech=next;
+  if(tts==null)tts=new TextToSpeech(home,status->handler.post(()->{
+   if(tts==null)return;
+   ttsReady=status==TextToSpeech.SUCCESS&&tts.setLanguage(new Locale("ru","RU"))>=0;
+   Runnable pending=waitingSpeech;waitingSpeech=null;
+   if(!ttsReady){tts.shutdown();tts=null;}
+   if(pending!=null)pending.run();
+  }));
+ }
+ private void play(String id,String text,float rate,float pitch,float volume){
   if(!ttsReady){event("voiceError","id",id);return;}
+  tts.setPitch(Math.max(.5f,Math.min(2f,pitch)));
+  tts.setSpeechRate(Math.max(.5f,Math.min(2f,rate)));
+  Bundle params=new Bundle();params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME,Math.max(0f,Math.min(1f,volume)));
   tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){
    public void onStart(String key){}
    public void onDone(String key){if(key.equals(id))handler.post(()->{if(utterance.equals(id))event("spoken","id",id);});}
@@ -123,7 +140,7 @@ final class TownChat {
    int end=Math.min(start+limit,text.length());
    if(end<text.length()){int word=text.lastIndexOf(' ',end);if(word>start)end=word;}
    boolean last=end==text.length();
-   if(tts.speak(text.substring(start,end),start==0?TextToSpeech.QUEUE_FLUSH:TextToSpeech.QUEUE_ADD,null,last?id:id+"-"+start)==TextToSpeech.ERROR){tts.stop();event("voiceError","id",id);break;}
+   if(tts.speak(text.substring(start,end),start==0?TextToSpeech.QUEUE_FLUSH:TextToSpeech.QUEUE_ADD,params,last?id:id+"-"+start)==TextToSpeech.ERROR){tts.stop();event("voiceError","id",id);break;}
    start=end;
   }
  }

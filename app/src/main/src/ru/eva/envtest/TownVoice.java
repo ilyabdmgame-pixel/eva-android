@@ -14,23 +14,26 @@ final class TownVoice {
  private final ExecutorService worker=Executors.newSingleThreadExecutor();
  private volatile int generation;
  private MediaPlayer player;
+ private String utterance="";
  private volatile HttpURLConnection inFlight;
  TownVoice(TownService host){this.host=host;}
  void stop(){
-  generation++;
+  generation++;utterance="";
   HttpURLConnection connection=inFlight;if(connection!=null)connection.disconnect();
   if(player!=null){player.release();player=null;}
  }
  void destroy(){stop();worker.shutdownNow();}
+ void stop(String id){if(!id.isEmpty()&&id.equals(utterance))stop();}
  void speak(JSONObject o,Messenger reply){
   stop();
   String text=o.optString("text").trim(),id=o.optString("id");
   if(text.length()==0||text.length()>65000)return;
+  utterance=id;
   part(generation,o,reply,id,text,0);
  }
  private void part(int gen,JSONObject options,Messenger reply,String id,String text,int start){
   if(gen!=generation)return;
-  if(start>=text.length()){signal(reply,"spoken",id);return;}
+  if(start>=text.length()){utterance="";signal(reply,"spoken",id);return;}
   int end=Math.min(start+550,text.length());
   if(end<text.length()){
    int stop=text.lastIndexOf(". ",end);if(stop<start+100)stop=text.lastIndexOf(' ',end);
@@ -55,6 +58,8 @@ final class TownVoice {
       if(gen!=generation)return;
       MediaPlayer p=new MediaPlayer();player=p;
       p.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+      float volume=(float)Math.max(0,Math.min(1,options.optDouble("volume",1)));
+      p.setVolume(volume,volume);
       p.setDataSource(file.getAbsolutePath());
       p.setOnPreparedListener(mp->{if(gen==generation){try{mp.setPlaybackParams(mp.getPlaybackParams().setSpeed((float)Math.max(.6,Math.min(1.8,options.optDouble("rate",1)))));}catch(RuntimeException ignored){}mp.start();}});
       p.setOnCompletionListener(mp->{if(gen==generation){mp.release();player=null;part(gen,options,reply,id,text,next);}});

@@ -3,11 +3,12 @@ import {buildingEdge} from './buildings.mjs';
 import {furnitureSurface} from './occlusion.mjs';
 import {turnFixture} from './prop-finish.mjs';
 import {approach} from './contact.mjs';
+import {streamChair} from './room-furnishings.mjs';
 
 export const room=district('home');
 export const roomEdge=buildingEdge;
-export const roomCenter=worldPoint('home',.13,0);
-export const roomScale=.098;
+export const roomCenter=worldPoint('home',-.31,.44);
+export const roomScale=.1176;
 export const roomOffset=.108;
 export const expandedRoom=1.24;
 
@@ -17,18 +18,20 @@ export function roomView(extra){
 }
 
 const windowFrame={left:-1.19,right:2.13,bottom:1.22,top:2.68};
-export const attachedFurniture=new Map([[1,[5,6,27]],[3,[10,11]],[21,[22,23]],[25,[26]]]);
+export const attachedFurniture=new Map([[1,[5,6,27,streamChair.id]],[3,[10,11]],[21,[22,23]],[25,[26]]]);
 export const furnitureOwners=new Map([...attachedFurniture].flatMap(([parent,children])=>children.map(id=>[id,parent])));
 
 export function roomApproach(item,fixtures,actor,blocked){
  const owner=fixtures.find(fixture=>fixture.id===furnitureOwners.get(item.id));
- return approach(owner||item,actor,blocked);
+ return approach(item.kind==='streamChair'?item:owner||item,actor,blocked);
 }
 
 export function roomFurniture(models){
  const layout=new Map(models.filter(item=>item.sector===room.key).map(item=>[item.id,item]));
+ const desk=layout.get(1),monitor=layout.get(27);
+ layout.set(streamChair.id,{...streamChair,u:monitor.u+.595-streamChair.w/2,v:desk.v+desk.d+.22,sector:room.key});
  layout.set(81,models.find(item=>item.id===81));
- for(const [id,u,v,turned] of [[2,.70,-1.30],[3,-3.26,-.62],[21,-3.48,1.86,true],[24,2.36,-2.44],
+ for(const [id,u,v,turned] of [[2,.70,-1.30],[3,-3.26,-.62],[21,-3.30,1.86,true],[24,2.18,-2.44],
                                [25,-1.65,-2.93],[81,-.56,.04],[300,-.97,2.59],[301,-2.02,2.59],
                                [302,.18,2.59],[303,-3.30,-2.20],[304,-3.35,-3.25],[305,-3.43,-1.26]]){
    const before=layout.get(id);
@@ -138,6 +141,16 @@ export function drawRoom(renderer,open,extra=0){
  }
  const sash=bottom+(top-bottom)*(open?.55:.25);
  back(7,left,right,sash,.045,wood,'oak',.25);
+ // A short shelf above the desk and fabric below the window.
+ back(251,2.35,3.18,1.68,.055,wood,'oak',.42);
+ for(const [x,w,h,tint] of [
+   [2.41,.083,.24,[.73,.49,.45]],[2.51,.065,.20,[.53,.67,.62]],[2.59,.091,.27,[.76,.68,.49]],
+   [2.84,.22,.13,[.46,.63,.64]]
+ ])box(251,x,-e+.06,1.735,w,.17,h,tint,'oak');
+ for(const x of [left-.19,right+.13]){
+   for(let i=0;i<3;i++)box(251,x+i*.042,-e+.11+(i%2)*.023,1.13,.045,.055,1.64,
+     i%2?[.61,.51,.61]:[.72,.59,.68],'cloth');
+ }
  panel([[-.92,-.10,.014],[1.55,-.10,.014],[1.55,2.39,.014],[-.92,2.39,.014]],'attic-rug');
  for(const vertical of [false,true]){
    const floor=(a,b)=>vertical?[room.u+b,room.v+a,.024]:[room.u+a,room.v+b,.024];

@@ -2,7 +2,7 @@ import {seatMotion,seatSample} from './seat-motion.mjs';
 import {reverseCells} from './reverse-cells.mjs';
 import {actionAnchors} from './action-anchors.mjs';
 import {registeredPose} from './eva-motion.mjs';
-import {restoreTurn,nextTurn,seatFront} from './prop-finish.mjs';
+import {restoreTurn,nextTurn,seatFront,turnFixture} from './prop-finish.mjs';
 import {objectLine} from './local-lines.mjs';
 import {propArt} from './prop-art.mjs';
 import {furnitureSurface} from './occlusion.mjs';
@@ -16,7 +16,7 @@ import {project,worldAtHeight,inView} from './camera.mjs';
 import {createScene} from './render.mjs';
 import {room,roomOffset,roomEdge,roomView,expandedRoom,inRoom,fitsRoom,roomWindowFixture,drawRoom,drawRoomWindow,
   attachedPosition,attachedFurniture,furnitureOwners as parents,roomFurniture,roomApproach,bedRest,drawBedding} from './room.mjs';
-import {drawComputer,drawFloorDecor,furnishingThumbnail,roomFurnishings} from './room-furnishings.mjs';
+import {computerLayout,drawComputer,drawFloorDecor,furnishingThumbnail,roomFurnishings,streamChair} from './room-furnishings.mjs';
 import {windowWeather,windowWeatherMoves} from './window-weather.mjs';
 import {places} from './places.mjs';
 import {startFlight,flightPoint,advanceFlight,drawToy} from './toys.mjs';
@@ -30,11 +30,11 @@ import {settings as soundSettings,audioVisible,ambience,footstep,audioState} fro
 import {names as activityNames,lines as activityLines,prepareSound,sound} from './activities.mjs';
 
 import {townChat} from './town-chat.mjs';
-const town=townChat({world:worldSnapshot,apply:useNearby,note:statusNote,quip:()=>say(remark('touch'),'wry')});
+const town=townChat({world:worldSnapshot,apply:useNearby,note:statusNote,quip:()=>say(remark('touch'),'wry'),usage:publishWeeklyQuota});
 const canvas=$('scene');
 const EVA_ID=15;
 const paintWindow=windowWeather(()=>{dirty=true;wake();});
-const speech=createSpeech($('speech'),$('world-status'),()=>document.querySelectorAll('.now,#places,#wallet,#folders button,#actions button,#dock,#town-mark:not([hidden])'));
+const speech=createSpeech($('speech'),$('world-status'),()=>document.querySelectorAll('.now,.top-status,#folders button,#actions button,#dock,#town-mark:not([hidden])'));
 const renderer=createScene(canvas);
 const time=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 const date=new Intl.DateTimeFormat('ru-RU',{weekday:'long',day:'numeric',month:'long'});
@@ -67,6 +67,7 @@ let climate=climateAt(new Date(),weatherOptions),lastStepIndex=0;
 
 let nativeActive=true,active=!document.hidden,move=[],onArrival=null,direction='down-right',seated=null,carrying=null,selectTarget=null,dropAim=null;
 let timeline={},previousSlot=-1,latestClock=0;
+let weeklyQuota=null;
 let toyAim=null,flight=null,gesture=null,walkFacing=direction,walkPhase=0,walkSpeed=0,lastFloorQuip=0,floorQuip=0;
 let restMotion=null,releaseMotion=null;
 function gestureAmount(g,t){
@@ -87,9 +88,16 @@ const catalog=new Map(models.filter(o=>catalogIds.includes(o.id)||o.category).ma
 const roomDefaults=roomFurniture(models);
 function attachedTo(child,parent){
  const original=modelsById.get(parent.id);
- const attachment=attachedPosition(modelsById.get(child.id),original,parent);
+ const base=child.id===streamChair.id?roomDefaults.get(child.id):modelsById.get(child.id);
+ const attachment=attachedPosition(base,original,parent);
  const key=parent.back?'back-'+parent.art:parent.art;
  const top=furnitureSurface(key,[parent.w,parent.d],parent.artFlip);
+ if(child.id===streamChair.id){
+   const shift=top?.shift??0;
+   if(parent.turned)attachment.v-=shift;
+   else attachment.u+=shift;
+   return {...attachment,parts:(parent.turned?turnFixture(base):base).parts};
+ }
  if(top){
    attachment.u+=top.shift;attachment.v-=top.shift;
    attachment.z=parent.kind==='bed'
@@ -144,9 +152,14 @@ function storage(){
  saved.lastLocation=seated?{u:seated.stand[0],v:seated.stand[1]}:{u:eva.u,v:eva.v};localStorage.setItem('room',JSON.stringify(saved));
 }
 function position3D(o){return {...o,z:(o.z||0)+surfaceAt(o.u,o.v)}}
-function publishHUD(){
- const wallet=$('wallet');
- if(wallet){$('balance').textContent=saved.economy.coins;wallet.setAttribute('aria-label','Инвентарь, монет '+saved.economy.coins);}
+function publishWeeklyQuota(week){
+ const valid=Number.isInteger(week?.remaining)&&week.remaining>=0&&week.remaining<=100&&
+   Number.isInteger(week.resetsAt)&&week.resetsAt*1000>Date.now();
+ weeklyQuota=valid?week:null;
+ const value=valid?week.remaining+'%':'—';
+ $('balance').textContent=value;
+ $('wallet').setAttribute('aria-label','Недельный лимит Codex · '+(valid?value+' осталось':'нет данных'));
+ if(sheet==='weekly-limit')renderWeeklyQuota();
 }
 function trade(type,item,extra={}){
  const result=applyEconomy(saved.economy,{type,item,...extra});
@@ -162,17 +175,19 @@ function trade(type,item,extra={}){
  }
  saved.economy=result.state;
  if(['pickup','drop','toggle'].includes(type))refreshObjects();
- storage();publishHUD();dirty=true;wake();return true;
+ storage();dirty=true;wake();return true;
 }
 function say(text,face){
  if(town.playing)return;
  speech.say(EVA_ID,text,now());
+ if(saved.sound&&!sheet)town.speakPhrase(text,saved.volume??.42);
  if(face){mood=face;moodUntil=now()+1750;}
  dirty=true;wake();
 }
 function statusNote(text){speech.report(text,now());wake()}
 function pullClock(){
  const instant=new Date(),label=time.format(instant);
+ if(weeklyQuota&&weeklyQuota.resetsAt*1000<=instant.getTime())publishWeeklyQuota(null);
  $('clock').textContent=label;$('calendar').textContent=date.format(instant);
  const connected=Desk.weatherState()==='connected';
  const widget=connected?widgetWeather(JSON.parse(Desk.weatherLabels())):{};
@@ -306,11 +321,13 @@ function stopRoomActivity(){
 function startRoomActivity(key,automatic=false,fromChat=false){
  const definition=roomActivities[key],fixture=activityFixture(definition);
  if(!fixture&&!definition.spot)return;
+ const chair=key==='computer'&&fixtures.find(item=>item.id===streamChair.id);
+ if(key==='computer'&&!chair)return;
  closeSheet();
  stopRoomActivity();
  if(saved.sound)prepareSound();
  const spot=definition.spot&&worldPoint(section,...definition.spot);
- const target=fixture?around(fixture):[spot.u,spot.v];
+ const target=fixture?around(chair||fixture):[spot.u,spot.v];
  const state={key,definition,fixture,started:false,elapsed:0,fromChat};
  roomActivity=state;
  walkTo(...target,()=>{
@@ -322,7 +339,14 @@ function startRoomActivity(key,automatic=false,fromChat=false){
      return;
    }
    if(fixture)face(fixture);
-   if(definition.rest==='bed'){
+   if(chair){
+     const position={u:chair.u+chair.w/2,v:chair.v+chair.d/2};
+     const monitor=computerLayout(fixture)(.595,.177,0);
+     direction=heading(monitor.u-position.u,monitor.v-position.v,direction);
+     takeSeat({id:chair.id,stand:target,height:chair.seatHeight,depth:.20},position);
+     saved.computerOn=true;
+     say('Так, я в эфире. Чат, как слышно?','pleased');
+   }else if(definition.rest==='bed'){
      direction=fixture.turned?'down-left':'down-right';
      const pillow=fixtures.find(item=>item.id===10);
      const rest=bedRest(fixture,pillow,true);
@@ -352,7 +376,7 @@ function finishRoomActivity(state){
    case 'read':saved.page=(saved.page||0)+1;break;
    case 'water':saved.plant=true;break;
    case 'vinyl':saved.record=true;break;
-   case 'computer':saved.computerOn=true;break;
+   case 'computer':leaveSeat();break;
    case 'tv':saved.channel=(saved.channel||0)%2+1;break;
    case 'nap':leaveSeat();break;
    case 'wash': {
@@ -362,7 +386,7 @@ function finishRoomActivity(state){
    }
    case 'cook': {
      const meal=applyEconomy(saved.economy,{type:'homeMeal'});
-     if(meal.ok){saved.economy=meal.state;publishHUD();}
+     if(meal.ok)saved.economy=meal.state;
      break;
    }
  }
@@ -546,7 +570,7 @@ const descriptions={
  table:[['Открыть или закрыть ящик','desk']],cup:[['Взять кружку','cup']],
  window:[['Открыть или закрыть окно','window']],exit:[['Пройти','exit']],
  bed:[['Лечь спать','sleep'],['Присесть на край','sit']],pillow:[['Взбить','pillow']],blanket:[['Поправить','blanket']],
- computer:[['Поработать за компьютером','useComputer'],['Включить или выключить ПК','computerPower']],
+ computer:[['Начать стрим','useComputer'],['Включить или выключить ПК','computerPower']],
  plant:[['Полить','plant']]
 };
 function actionsFor(o){
@@ -745,7 +769,14 @@ $('layout-delete').onclick=()=>{
 function roomPlacementIssue(o,p){
  if(!fitsRoom(p.u,p.v,o.w,o.d,roomExtra))return 'Оставь место у стены';
  const children=attachedFurniture.get(o.id)||[];
- return placementIssue(o,p,fixtures.filter(f=>!children.includes(f.id)&&f.kind!=='wallArt'),[],[eva],true);
+ const available=fixtures.filter(f=>!children.includes(f.id)&&f.kind!=='wallArt');
+ const issue=placementIssue(o,p,available,[],[eva],true);
+ if(issue||!children.includes(streamChair.id))return issue;
+ const chair=attachedTo(streamChair,{...o,...p});
+ if(!fitsRoom(chair.u,chair.v,chair.w,chair.d,roomExtra)||
+   placementIssue(chair,chair,available.filter(f=>f.id!==o.id),[],[eva],true))
+   return 'Оставь свободное место для кресла перед столом';
+ return '';
 }
 function setDestination(p){
  const o=layout.object;
@@ -878,8 +909,8 @@ function paint(t=now()){
    }
    if(o.kind==='window')continue;
    if(o.kind==='computer'){
-     const typing=playing?.key==='computer';
-     drawComputer(renderer,o,!!saved.computerOn||typing,typing,routinePose?.seconds);
+     const streaming=playing?.key==='computer';
+     drawComputer(renderer,o,!!saved.computerOn||streaming,streaming,routinePose?.seconds);
      continue;
    }
    if(o.kind==='floorDecor'){drawFloorDecor(renderer,o);continue;}
@@ -1045,8 +1076,13 @@ function paint(t=now()){
      opt.grip={...opt.grip,to:[opt.grip.to[0]+(.64-opt.grip.to[0])*lift,
        opt.grip.to[1]+(.30-opt.grip.to[1])*lift]};
    }
-   if(playing.key==='computer'&&opt.grip){
-     opt.grip={...opt.grip,to:[opt.grip.to[0],opt.grip.to[1]+routinePose.amount*.16]};
+   if(playing.key==='computer'){
+     const rhythm=Math.sin(routinePose.seconds*(routinePose.index===2?5:17));
+     opt.lean=(.011+rhythm*.017)*amount;
+     if(opt.grip&&routinePose.index===1){
+       const [handX,handY]=opt.grip.to;
+       opt.grip={...opt.grip,to:[handX+rhythm*.025,handY-routinePose.amount*.07]};
+     }
    }
  }
  const standing=1-ease(amount);
@@ -1187,7 +1223,7 @@ document.addEventListener('visibilitychange',updateHomeVisibility);
 canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();statusNote('Графика приостановлена. Папки доступны.')});
 canvas.addEventListener('webglcontextrestored',()=>location.reload());
 
-$('places').onclick=()=>{
+function openRoom(){
  const out=showSheet('room','Комната Евы');
  out.append(label(autoFollow?'Расписание включено':'Включить расписание',
    'Ева сама занимается своими делами и ложится спать','◷',()=>{
@@ -1208,7 +1244,7 @@ $('places').onclick=()=>{
      panel.append(row);
    }
  }));
-};
+}
 function openFurnishing(){
  const out=showSheet('furnishing','Обстановка');
  const extended=!!roomExtra;
@@ -1244,7 +1280,13 @@ function openRoomActivities(program=Object.keys(roomActivities),title='Заня�
 }
 $('home-menu').onclick=()=>{
  const out=showSheet('home-menu','Дом Евы');
- out.append(label('События','','◷',openTimeline),label('В комнате','','⌂',openRoomObjects));
+ out.append(
+   label('Комната','Обстановка, занятия и распорядок','⌂',openRoom),
+   label('В комнате','Предметы и действия','◇',openRoomObjects),
+   label('События','','◷',openTimeline),
+   label('Карман','','＋',openInventory),
+   label('Звук в комнате','','♫',window.openHomeSound),
+   label('Недавние приложения','Также свайпом вверх от дока','▱',()=>Desk.openRecentApps()));
 };
 function openRoomObjects(){
  const out=showSheet('decor','В комнате');
@@ -1286,21 +1328,37 @@ function openWeather(){
  appendSoundControls(out,openWeather);
 }
 window.openHomeSound=()=>{
- const out=showSheet('sound','Звуки комнаты');
+ const out=showSheet('sound','Звук в комнате');
  appendSoundControls(out,window.openHomeSound);
 };
 function appendSoundControls(out,refresh){
- out.append(label(saved.sound?'Звук включён':'Звук выключен','Погода за окном, шаги и предметы','♪',()=>{
-   saved.sound=!saved.sound;soundSettings(saved.sound,saved.volume??.42);storage();refresh();wake();
- }));
+ const toggle=label('Звук в комнате','Реплики Евы, погода, шаги и занятия','♫',()=>{
+   saved.sound=!saved.sound;
+   if(!saved.sound)town.stopPhrase();
+   else prepareSound();
+   soundSettings(saved.sound,saved.volume??.42);storage();refresh();wake();
+ });
+ toggle.setAttribute('aria-pressed',String(Boolean(saved.sound)));
+ toggle.append(node('span',saved.sound?'Вкл.':'Выкл.','switch'));out.append(toggle);
  const volume=node('label',null,'sound-level'),bar=node('input',null);
  bar.type='range';bar.min='0';bar.max='100';bar.value=String(Math.round((saved.volume??.42)*100));
  volume.append(node('span','Громкость'),bar);
- bar.oninput=()=>{saved.volume=Number(bar.value)/100;soundSettings(saved.sound,saved.volume);};
+ bar.oninput=()=>{saved.volume=Number(bar.value)/100;soundSettings(saved.sound,saved.volume);if(!saved.volume)town.stopPhrase();};
  bar.onchange=storage;
  out.append(volume);
 }
-$('wallet').onclick=openInventory;
+$('wallet').onclick=()=>{
+ showSheet('weekly-limit','Недельный лимит Codex');
+ renderWeeklyQuota();town.refresh();
+};
+function renderWeeklyQuota(){
+ const out=$('content');
+ out.replaceChildren(node('p',weeklyQuota?'Осталось '+weeklyQuota.remaining+'%':'Пока нет данных от Codex.','weather-label'));
+ if(weeklyQuota){
+   const end=new Date(weeklyQuota.resetsAt*1000);
+   out.append(node('p','Сброс · '+date.format(end)+', '+time.format(end),'sub'));
+ }
+}
 function openInventory(){
  const out=showSheet('inventory','Карман');
  const summary=node('div',null,'stock-summary');
@@ -1368,7 +1426,6 @@ window.worldCheck=()=>{
    center,eva,depth:renderer.depthBits,sizeConstant:Math.abs(close-far)<.0001,windowOpen:!!saved.window,
    lamp:saved.lamps,chairs:saved.chairs,flight:flight?.kind||null,economy:saved.economy,timeline:JSON.parse(Desk.timeline())};
 };
-$('place').textContent='Комната';
 soundSettings(Boolean(saved.sound),saved.volume??.42);
 document.addEventListener('click',event=>{
  const button=event.target.closest('button');
@@ -1376,8 +1433,22 @@ document.addEventListener('click',event=>{
 },true);
 for(const key of ['walk-eva','act-eva-front','act-eva-rear','desk-drawer','amber-sconce','closed-umbrella','folded-throw'])renderer.artReady(key);
 refreshObjects();
+if(!saved.roomDecorIntroduced){
+ saved.roomDecorIntroduced=true;
+ const ids=new Set(saved.decor.map(item=>item.id));
+ let id=1024;
+ for(const [model,u,v] of [[708,1.42,1.82],[707,2.80,-1.82],[709,-2.07,.98]]){
+   const fixture=modelsById.get(model),point=worldPoint(room.key,u,v);
+   if(!fitsRoom(point.u,point.v,fixture.w,fixture.d)||
+      placementIssue(fixture,point,fixtures,[],[eva],true))continue;
+   while(ids.has(id))id++;
+   if(id>65534)break;
+   saved.decor.push({id:id++,model,...point});
+   refreshObjects();
+ }
+}
 if(blocks(eva.u,eva.v)){
  const free=blocks(start.u,start.v)?pathTo(start).find(p=>!blocks(p.u,p.v)):start;
  eva={...(free||start)};
 }
-publishHUD();last=now();pullClock();paint();storage();wake();
+last=now();pullClock();paint();storage();wake();

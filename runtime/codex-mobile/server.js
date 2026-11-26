@@ -33,6 +33,7 @@ function openWorkThread(){
 function send(x){if(proc.stdin.writable)proc.stdin.write(JSON.stringify(x)+'\n')}
 function requestCodex(method,params){return new Promise((resolve,reject)=>{const id=++seq; pending.set(id,{resolve,reject}); send({id,method,params});setTimeout(()=>{if(pending.delete(id))reject(Error('Время ожидания ответа Codex истекло'))},30000).unref()})}
 const rpc=createPersonaRpc(requestCodex);
+const accountLimits=require('./rate-limits').createRateLimits(()=>rpc('account/rateLimits/read',{}));
 const petWork=require('./pet-work')(kind=>console.log('EVA_PET_WORK '+kind),'/sdcard/Documents/Codex',path.join(__dirname,'pet-work-results.json'));
 function emit(x){for(const r of clients)r.write('data: '+JSON.stringify(x)+'\n\n')}
 const townChat=require('./town-chat')({rpc,cards:petWork,authenticated:()=>auth.authenticated,root:__dirname,
@@ -48,7 +49,7 @@ let auth={authenticated:false,pending:false,code:'',url:'',error:''}, loginId=nu
 function authView(){return {...auth,ready,checked:accountChecked}}
 async function checkAccount(){if(!ready)return;if(accountCheckPromise)return accountCheckPromise;accountCheckPromise=(async()=>{try{const r=await rpc('account/read',{refreshToken:false});auth.authenticated=!!r.account;accountChecked=true;if(auth.authenticated){auth.pending=false;auth.code='';auth.url='';auth.error='';loginId=null}emit({type:'auth',...authView()})}catch(e){auth.error='Не удалось проверить аккаунт: '+e.message;accountChecked=true;emit({type:'auth',...authView()})}})();try{await accountCheckPromise}finally{accountCheckPromise=null}}
 async function startLogin(){if(!ready)throw Error('Codex ещё запускается');if(auth.pending||auth.authenticated)return authView();auth.pending=true;auth.error='';auth.code='';auth.url='';loginId=null;try{const r=await rpc('account/login/start',{type:'chatgptDeviceCode'});const u=new URL(r.verificationUrl);if(u.protocol!=='https:'||u.hostname!=='auth.openai.com'||!r.loginId||!r.userCode)throw Error('Неполный ответ сервера входа');loginId=r.loginId;auth.code=r.userCode;auth.url=r.verificationUrl;emit({type:'auth',...authView()});return authView()}catch(e){auth.pending=false;auth.error=e.message;throw e}}
-function authEvent(method,p){if(method==='account/login/completed'&&auth.pending&&loginId&&p.loginId===loginId){auth.pending=false;auth.code='';auth.url='';auth.error=p.success?'':String(p.error||'Вход не завершён');loginId=null;checkAccount()}else if(method==='account/updated')checkAccount()}
+function authEvent(method,p){if(method==='account/login/completed'&&auth.pending&&loginId&&p.loginId===loginId){auth.pending=false;auth.code='';auth.url='';auth.error=p.success?'':String(p.error||'Вход не завершён');loginId=null;checkAccount()}else if(method==='account/updated'){accountLimits.clear();checkAccount()}}
 setInterval(()=>{if(auth.pending)checkAccount()},5000).unref();
 const phoneRequests=new Map();
 
@@ -107,11 +108,16 @@ if(req.method==='POST'&&u.pathname==='/models/image'){const o=JSON.parse((await 
 if(req.method==='POST'&&u.pathname==='/models/chat'){const o=JSON.parse((await read(req,600000)).toString());const controller=new AbortController();res.on('close',()=>{if(!res.writableEnded)controller.abort()});const timeout=setTimeout(()=>controller.abort(),120000);try{return json(res,200,await providers.chat(o,controller.signal))}finally{clearTimeout(timeout)}}
 if(req.method==='GET'&&u.pathname==='/voice-settings'){let settings={};try{settings=JSON.parse(fs.readFileSync(path.join(__dirname,'voice-settings.json'),'utf8'))}catch(e){if(e.code!=='ENOENT')throw e}return json(res,200,{settings,sileroAvailable})}
 if(req.method==='POST'&&u.pathname==='/voice-settings'){const o=JSON.parse((await read(req,4096)).toString()),settings={};for(const k of ['voiceName','voicePitch','voiceRate','voiceOutput','silero-accent','silero-yo','eva-codex-access','eva-codex-model','eva-auto-model','eva-main-effort'])if(typeof o[k]==='string'&&o[k].length<=256)settings[k]=o[k];const file=path.join(__dirname,'voice-settings.json'),tmp=file+'.'+crypto.randomBytes(8).toString('hex');try{fs.writeFileSync(tmp,JSON.stringify(settings),{mode:0o600,flag:'wx'});fs.renameSync(tmp,file)}finally{try{fs.unlinkSync(tmp)}catch{}}if(settings.voiceName==='silero-kseniya')setTimeout(warmSelectedVoice,100).unref();return json(res,200,{ok:true})}
-if(req.method==='GET'&&u.pathname==='/limits'){if(!ready)return json(res,503,{error:'Codex ещё запускается'});const data=await rpc('account/rateLimits/read',{});const bucket=data.rateLimitsByLimitId?.codex??data.rateLimits;const windows=[bucket?.primary,bucket?.secondary].filter(Boolean);const findWindow=minutes=>{const w=windows.find(x=>x.windowDurationMins===minutes);if(!w||!Number.isInteger(w.usedPercent)||w.usedPercent<0||w.usedPercent>100||!Number.isInteger(w.resetsAt)||w.resetsAt*1000<=Date.now())return null;return {remaining:100-w.usedPercent,resetsAt:w.resetsAt}};return json(res,200,{fiveHour:findWindow(300),week:findWindow(10080),observedAt:Date.now()})}
+if(req.method==='GET'&&u.pathname==='/limits'){if(!ready)return json(res,503,{error:'Codex ещё запускается'});return json(res,200,await accountLimits.refresh())}
 if(req.method==='GET'&&u.pathname==='/account'){await checkAccount();return json(res,200,authView())}
 if(req.method==='POST'&&u.pathname==='/account/login')return json(res,200,await startLogin());
 if(req.method==='POST'&&u.pathname==='/account/cancel'){if(loginId)await rpc('account/login/cancel',{loginId});loginId=null;auth.pending=false;auth.code='';auth.url='';return json(res,200,authView())}
-if(req.method==='POST'&&u.pathname==='/town')return json(res,200,await townChat.run(JSON.parse((await read(req,48000)).toString())));
+if(req.method==='POST'&&u.pathname==='/town'){
+ const request=JSON.parse((await read(req,48000)).toString());
+ const result=await townChat.run(request);
+ if(request.op==='state')result.week=ready&&auth.authenticated?accountLimits.week():null;
+ return json(res,200,result);
+}
 if(req.method==='GET'&&u.pathname==='/pet-work')return json(res,200,{cards:petWork.list()});
 if(req.method==='POST'&&u.pathname==='/pet-work/read'){const o=JSON.parse((await read(req,2048)).toString());petWork.read(o.thread,o.turn,o.request);return json(res,200,{ok:true})}
 if(req.method==='GET'&&u.pathname==='/status')return json(res,200,{ready,authenticated:auth.authenticated});

@@ -30,12 +30,16 @@ public final class TownService extends Service {
  private final Messenger incoming=new Messenger(new Handler(Looper.getMainLooper(),m->{
   final Messenger reply=m.replyTo;final String request=m.getData().getString("json","");
   if(reply==null||request.length()>160000)return true;
-  try{JSONObject o=new JSONObject(request);if("synthesize".equals(o.optString("op"))){if(home)voice.speak(o,reply);return true;}}catch(JSONException ignored){return true;}
+  try{
+   JSONObject o=new JSONObject(request);String op=o.optString("op");
+   if("synthesize".equals(op)){if(home)voice.speak(o,reply);return true;}
+   if("stopVoice".equals(op)){voice.stop(o.optString("id"));return true;}
+  }catch(JSONException ignored){return true;}
   io.execute(()->{
    JSONObject response=new JSONObject();String op="";
    try{
     JSONObject o=new JSONObject(request);op=o.getString("op");
-    if(!op.matches("state|send|open|read"))throw new IOException();
+    if(!op.matches("state|send|read"))throw new IOException();
     if(!op.equals("state"))awaitRuntime();
     response=post(o);
    }catch(Exception e){try{response.put("error","Чат ещё не на связи. Попробуй через пару секунд.");}catch(JSONException ignored){}}

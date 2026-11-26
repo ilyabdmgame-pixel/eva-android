@@ -40,6 +40,7 @@ import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 
 public final class MainActivity extends Activity implements CodexService.Listener {
+  public static final String ROOM_CHAT="ru.eva.extra.ROOM_CHAT";
   private static final PetAppPolicy.ChatVisibility visibleChats=new PetAppPolicy.ChatVisibility();
   private WebView web;
   private boolean assistantVoice=false, petChat=false, resumed=false, pendingPetPermission=false;
@@ -57,6 +58,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
   private boolean nativeStartPending=false;
   private boolean wakeStartPending=false;
   private boolean editorActive=false;
+  private int pendingRoomChat;
   private String recognitionLanguage="ru-RU";
   private static final int FILES=102, MIC=103, TERMUX_PERMISSION=104;
   private CodexService service; private boolean bound, assistantPending, pageReady; private String loadedUrl="";
@@ -74,6 +76,10 @@ public final class MainActivity extends Activity implements CodexService.Listene
     CodexService.refreshPet();
   }
   private void updateLaunchMode(Intent i){
+    if(i.hasExtra(ROOM_CHAT)){
+      pendingRoomChat=i.getBooleanExtra(ROOM_CHAT,false)?2:1;
+      i.removeExtra(ROOM_CHAT);
+    }
     boolean assistant=isAssist(i);
     petChat=PetOverlay.OPEN_CHAT.equals(i.getAction());
     petAnchor=petChat?i.getParcelableExtra(PetOverlay.COMPOSER_ANCHOR):null;
@@ -147,10 +153,8 @@ public final class MainActivity extends Activity implements CodexService.Listene
     }
     getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
     getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT);
-    getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        |android.view.View.SYSTEM_UI_FLAG_FULLSCREEN|android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-        |android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE|android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-        |android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+    getWindow().getDecorView().setSystemUiVisibility(android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+        |android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE|android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
   }
   @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);if(hasFocus&&!editorActive)enableFullscreen();}
   @Override public void onConfigurationChanged(android.content.res.Configuration configuration){
@@ -181,6 +185,10 @@ public final class MainActivity extends Activity implements CodexService.Listene
         ");document.body.classList.toggle('eva-pet-compose-details',"+(usesSmallComposer()&&petComposerDetails)+
         ");window.evaPetComposer?.("+usesSmallComposer()+", "+themed+");window.evaPetWorkCards?.("+petChat+")",null);
     if(assistantPending){assistantPending=false;web.evaluateJavascript("window.evaStartAssistant?.()",null);}
+    if(pendingRoomChat!=0){
+      web.evaluateJavascript("window.evaOpenRoomChat?.("+(pendingRoomChat==2)+")",null);
+      pendingRoomChat=0;
+    }
   }
   private void startBackend(){if(bound){if(service!=null)changed();return;}showWelcome("Запускаю Еву…");Intent i=new Intent(this,CodexService.class);startService(i);bound=bindService(i,connection,BIND_AUTO_CREATE);}
   private void showWelcome(String explanation){LinearLayout layout=new LinearLayout(this);layout.setOrientation(1);layout.setGravity(android.view.Gravity.CENTER);layout.setPadding(40,80,40,40);layout.setBackgroundColor(Color.rgb(20,25,35));TextView title=new TextView(this);title.setText("Ева");title.setTextSize(28);title.setTextColor(Color.rgb(151,222,199));title.setGravity(android.view.Gravity.CENTER);layout.addView(title);TextView info=new TextView(this);info.setText(explanation);info.setTextSize(16);info.setTextColor(Color.LTGRAY);info.setGravity(android.view.Gravity.CENTER);LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-2,-2);textParams.setMargins(0,20,0,28);layout.addView(info,textParams);if(explanation.contains("Запуска")||explanation.contains("Подготавли")||explanation.contains("Перенош")){android.widget.ProgressBar progress=new android.widget.ProgressBar(this);layout.addView(progress,new LinearLayout.LayoutParams(56,56));}setContentView(layout);layout.setAlpha(0f);layout.animate().alpha(1f).setDuration(450).start();}

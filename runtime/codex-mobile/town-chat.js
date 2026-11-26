@@ -60,7 +60,7 @@ module.exports=function townChat({rpc,cards,authenticated,root,questionPending=(
  function state(){
    const c=card(),settings=settingsForChat();
    return {status:c?.waiting||data.question||questionPending(data.thread)?'question':sending||running.size?'working':data.answer||c?'done':'idle',
-     answer:data.answer||null,voiceName:settings.voiceName||'',rate:Number(settings.voiceRate)||1,accent:settings['silero-accent']!=='0',yo:settings['silero-yo']!=='0',voice:voiceMode||settings.voiceOutput==='1',roomBusy:sending||running.has(data.thread)};
+     answer:data.answer||null,voiceName:settings.voiceName||'',rate:Number(settings.voiceRate)||1,pitch:Number(settings.voicePitch)||.7,accent:settings['silero-accent']!=='0',yo:settings['silero-yo']!=='0',voice:voiceMode||settings.voiceOutput==='1',roomBusy:sending||running.has(data.thread)};
  }
  async function run(o){
    switch(o.op){
@@ -93,6 +93,7 @@ module.exports=function townChat({rpc,cards,authenticated,root,questionPending=(
     }
     case 'read':if(data.answer?.id===o.id){cards.read(data.thread,o.id,null);delete data.answer;save()}return state();
     case 'open':{const c=o.indicator&&card();
+     if(!authenticated())throw Error('Войди в аккаунт Codex, чтобы открыть чат комнаты.');
      const id=c?.waiting?c.thread:o.indicator&&data.question?data.thread:o.indicator&&running.size?[...running.keys()].at(-1):o.indicator&&!data.answer&&c?c.thread:await room();
      navigate={id,card:c?.thread===id?c:null,answer:id===data.thread?data.answer?.id:null};return {open:true};}
     case 'destination':return {id:navigate?.id||null};

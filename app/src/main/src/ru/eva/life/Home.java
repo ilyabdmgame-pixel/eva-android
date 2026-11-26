@@ -13,6 +13,8 @@ import android.view.WindowManager;
 import android.webkit.*;
 import android.widget.Toast;
 import ru.eva.envtest.CodexService;
+import ru.eva.envtest.EvaAccessibility;
+import ru.eva.envtest.MainActivity;
 import org.json.*;
 import java.io.*;
 import java.util.*;
@@ -132,8 +134,23 @@ public final class Home extends Activity {
         @JavascriptInterface public String worldTake(){return TownWorld.take();}
         @JavascriptInterface public void worldResult(String result){TownWorld.report(result);}
         @JavascriptInterface public void town(String raw){runOnUiThread(()->chat.request(raw));}
+        @JavascriptInterface public void openRoomChat(boolean indicator){
+            launch(new Intent(Home.this,MainActivity.class).putExtra(MainActivity.ROOM_CHAT,indicator)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP));
+        }
+        @JavascriptInterface public void openRecentApps(){runOnUiThread(()->{
+            if(!homeActive||EvaAccessibility.openRecentApps())return;
+            new android.app.AlertDialog.Builder(Home.this)
+                .setTitle("Недавние приложения")
+                .setMessage("Чтобы открывать «Недавние» из дока, включи службу Евы в специальных возможностях Android.")
+                .setPositiveButton("Настройки",(dialog,which)->launch(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
+                .setNegativeButton("Закрыть",null).show();
+        });}
         @JavascriptInterface public void townMic(){runOnUiThread(()->chat.microphone());}
-        @JavascriptInterface public void townSpeak(String id,String text){runOnUiThread(()->chat.speak(id,text));}
+        @JavascriptInterface public void townSpeak(String id,String text,float rate,float pitch,float volume){
+            runOnUiThread(()->chat.speak(id,text,rate,pitch,volume));
+        }
+        @JavascriptInterface public void stopRoomVoice(String id){runOnUiThread(()->chat.stopSpeech(id));}
         @JavascriptInterface public String routines(){return LifeState.routines(Home.this).toString();}
         @JavascriptInterface public String roomActivities(){return LifeState.activities(Home.this).toString();}
         @JavascriptInterface public void finishedActivity(String key){LifeState.finishedActivity(Home.this,key);}
