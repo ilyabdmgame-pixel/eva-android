@@ -31,7 +31,7 @@ export function roomFurniture(models){
  const desk=layout.get(1),monitor=layout.get(27);
  layout.set(streamChair.id,{...streamChair,u:monitor.u+.595-streamChair.w/2,v:desk.v+desk.d+.22,sector:room.key});
  layout.set(81,models.find(item=>item.id===81));
- for(const [id,u,v,turned] of [[2,.70,-1.30],[3,-3.26,-.62],[21,-3.30,1.86,true],[24,2.18,-2.44],
+ for(const [id,u,v,turned] of [[2,1.72,-.53],[3,-3.26,-.62],[21,-3.30,1.86,true],[24,2.18,-2.44],
                                [25,-1.65,-2.93],[81,-.56,.04],[300,-.97,2.59],[301,-2.02,2.59],
                                [302,.18,2.59],[303,-3.30,-2.20],[304,-3.35,-3.25],[305,-3.43,-1.26]]){
    const before=layout.get(id);

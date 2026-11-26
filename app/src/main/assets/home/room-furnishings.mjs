@@ -59,11 +59,12 @@ export const roomFurnishings=[
 export function drawFloorDecor(renderer,o){
  const point=(x,y,z)=>[o.u+o.w*x,o.v+o.d*y,z];
  const z=.019;
- const quad=(a,b,c,d,t)=>renderer.panel([point(a,b,z),point(c,b,z),point(c,d,z),point(a,d,z)],t,'cloth',o.id);
- quad(0,0,1,1,[.45,.58,.49]);
- quad(.075,.11,.925,.89,[.63,.69,.55]);
- quad(.15,.19,.85,.81,[.46,.60,.52]);
- for(let i=1;i<5;i++)quad(i/5-.013,.23,i/5+.013,.77,[.59,.65,.53]);
+ const quad=(a,b,c,d,t,layer=0)=>renderer.panel(
+   [point(a,b,z+layer),point(c,b,z+layer),point(c,d,z+layer),point(a,d,z+layer)],t,null,o.id);
+ quad(0,0,1,1,[.41,.52,.46]);
+ quad(.075,.11,.925,.89,[.72,.76,.60],.001);
+ quad(.15,.19,.85,.81,[.51,.64,.54],.002);
+ for(let i=1;i<5;i++)quad(i/5-.013,.23,i/5+.013,.77,[.63,.71,.57],.003);
 }
 
 export function furnishingThumbnail(canvas,model){
