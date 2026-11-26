@@ -10,9 +10,23 @@ export function activityDuration(activity,reduced){
  return reduced?Math.min(1800,duration):duration;
 }
 
-export function activitySample(activity,elapsed,reduced){
+export function activityPlan(activity,random=Math.random()){
+ const [first,last]=activity.loop;
+ const duration=activityDuration(activity,false);
+ const start=activity.beats.slice(0,first).reduce((sum,beat)=>sum+beat[1],0);
+ const cycle=activity.beats.slice(first,last+1).reduce((sum,beat)=>sum+beat[1],0);
+ const min=Math.max(0,Math.ceil((180000-duration)/cycle));
+ const max=Math.max(min,Math.floor((300000-duration)/cycle));
+ const repeats=Math.min(max,min+Math.floor(clamp(random)*(max-min+1)));
+ const extra=cycle*repeats;
+ return {start,cycle,end:start+cycle+extra,duration:duration+extra,extra};
+}
+
+export function activitySample(activity,elapsed,reduced,plan=null){
  const duration=activity.beats.reduce((sum,beat)=>sum+beat[1],0);
- const time=reduced?duration*.53:Math.max(0,Math.min(duration,elapsed));
+ const ms=plan&&elapsed>=plan.start?
+   (elapsed<plan.end?plan.start+(elapsed-plan.start)%plan.cycle:elapsed-plan.extra):elapsed;
+ const time=reduced?duration*.53:Math.max(0,Math.min(duration,ms));
  let passed=0;
  for(const [index,[motion,ms,from,to,strokes]] of activity.beats.entries()){
    if(time>passed+ms&&index<activity.beats.length-1){passed+=ms;continue;}
@@ -20,7 +34,7 @@ export function activitySample(activity,elapsed,reduced){
    const swing=strokes?Math.sin(TAU*strokes*phase):0;
    const cycle=strokes?(1-Math.cos(TAU*strokes*phase))/2:ease(phase);
    const amount=actionBeat(activity.beats,index,time-passed,mix(from,to,cycle));
-   return {motion,amount,index,phase,swing,progress:time/duration,seconds:time/1000};
+   return {motion,amount,index,phase,swing,progress:time/duration,seconds:(plan&&!reduced?elapsed:time)/1000};
  }
 }
 

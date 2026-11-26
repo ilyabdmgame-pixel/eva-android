@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {activityDuration,activityEffects,activityLine,activitySample,drawRoomActivity,nextActivity,scheduledPeriod}
+import {activityDuration,activityEffects,activityLine,activityPlan,activitySample,drawRoomActivity,nextActivity,scheduledPeriod}
   from '../../../app/src/main/assets/home/room-activities.mjs';
 import {roomFurniture,roomApproach,roomWindowFixture} from '../../../app/src/main/assets/home/room.mjs';
 import {worldObjects,worldPoint,district} from '../../../app/src/main/assets/home/district.mjs';
 import {roomSeat} from '../../../app/src/main/assets/home/seat-motion.mjs';
 import {roomWalk} from '../../../app/src/main/assets/home/room-walk.mjs';
 import {computerGesture,drawComputer,streamChair} from '../../../app/src/main/assets/home/room-furnishings.mjs';
+
+import {roomDialogue} from '../../../app/src/main/assets/home/room-dialogue.mjs';
+import {drawStreamFrame} from '../../../app/src/main/assets/home/stream-game.mjs';
 
 const assets=new URL('../../../app/src/main/assets/home/',import.meta.url);
 const read=name=>JSON.parse(readFileSync(new URL(name,assets),'utf8'));
@@ -34,7 +37,7 @@ test('every room activity has a distinct animated track and effect, plus rotatin
      const sample=activitySample(activity,duration*n/30,false),frame=[];
      assert(sample.amount>=0&&sample.amount<=1,key);
      assert(Number.isFinite(sample.swing)&&sample.progress>=0&&sample.progress<=1,key);
-     const renderer=Object.fromEntries(['box','triangle','sprite','panel'].map(type=>[type,(...args)=>frame.push([type,args.filter(arg=>arg!==undefined)])]));
+     const renderer=Object.fromEntries(['box','triangle','sprite','panel','streamPanel'].map(type=>[type,(...args)=>frame.push([type,args.filter(arg=>arg!==undefined)])]));
      if(key==='computer'){
        const pc={id:27,u:-13.07,v:.42,z:.9};
        drawComputer(renderer,pc,true,true,sample.seconds,computerGesture(pc,sample));
@@ -80,4 +83,56 @@ test('the daily programme uses local time and skips unavailable activities witho
  assert.deepEqual(nextActivity(programme,1,key=>key==='tea'),{key:'tea',next:1});
  assert.deepEqual(nextActivity(programme,2,()=>true),{key:'wash',next:0});
  assert.equal(nextActivity(programme,0,()=>false),null);
+});
+
+test('every session lasts three to five minutes and only sustains its specified beats',()=>{
+ for(const [key,activity] of Object.entries(activities)){
+   for(const sample of [0,.5,1]){
+     const plan=activityPlan(activity,sample);
+     assert(plan.duration>=180000&&plan.duration<=300000,key);
+     const [first,last]=activity.loop;
+     assert(first>=0&&last>=first&&last<activity.beats.length,key);
+     const sustained=activitySample(activity,plan.start+plan.cycle*2+1,false,plan);
+     assert.equal(sustained.index,first,key);
+     assert.equal(activitySample(activity,plan.duration,false,plan).index,activity.beats.length-1,key);
+     assert.deepEqual(activitySample(activity,60000,true,plan),
+       activitySample(activity,150000,true,plan),key);
+   }
+ }
+});
+
+test('stream repeats typing and mouse phases, then releases the hands exactly once',()=>{
+ const activity=activities.computer,plan=activityPlan(activity,.5);
+ const phase=ms=>activitySample(activity,ms,false,plan).index;
+ assert.equal(phase(20),0);
+ assert.equal(phase(plan.start+plan.cycle*4+10),1);
+ assert.equal(phase(plan.start+plan.cycle*4+activity.beats[1][1]+10),2);
+ assert.equal(phase(plan.end+20),3);
+ assert.equal(phase(plan.duration),3);
+});
+
+test('simulated stream chat asks a question and Eva replies without needing a model response',()=>{
+ assert.equal(roomDialogue('computer','Творчество',13000,0),null);
+ const chat=roomDialogue('computer','Творчество',14500,0);
+ const reply=roomDialogue('computer','Творчество',21000,0);
+ assert(chat.chat&&chat.text.includes('?'));
+ assert(!reply.chat&&reply.text.length>12);
+ assert.equal(reply.id,chat.id+1);
+ assert.equal(roomDialogue('computer','Творчество',19300,0),null);
+ assert.notEqual(roomDialogue('computer','Творчество',37500,0).text,chat.text);
+ assert(roomDialogue('read','Отдых',14500,0).text.length>10);
+});
+
+test('the stream monitor paints a colored scrolling game with a visible jump',()=>{
+ const records=frame=>{
+   const calls=[];
+   drawStreamFrame({fillRect(...args){calls.push([this.fillStyle,...args]);}},frame);
+   return calls;
+ };
+ const running=records(6),jump=records(17);
+ assert(running.length>100);
+ assert(new Set(running.map(([color])=>color)).size>16);
+ const player=calls=>calls.filter(([color])=>color==='#a885e1').map(([,x,y])=>y);
+ assert(Math.min(...player(jump))<Math.min(...player(running))-12);
+ assert.notDeepEqual(records(1300),running);
 });

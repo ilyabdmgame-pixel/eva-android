@@ -106,3 +106,32 @@ test('both forearms reach the keyboard through fixed shoulders in either desk or
    assert.equal(last[0].reach+last[1].reach,0);
  }
 });
+
+test('bed entry pauses above the mattress before reclining, and exiting reverses the same path',()=>{
+ const layout=roomFurniture(worldObjects({}));
+ const bed=layout.get(3);
+ for(const [fixture,pillow] of [[bed,layout.get(10)],[turnFixture(bed),attachedPosition(layout.get(10),bed,turnFixture(bed))]]){
+   const seat=roomSeat(fixture,roomWalk([fixture]),pillow,true);
+   assert(seat);
+   const motion=seatMotion(seat,seat.stand,seat.at,seat.facing,0);
+   let onEdge=false,reclined=false;
+   for(let ms=0;ms<=motion.duration;ms+=5){
+     const sample=seatSample(motion,ms);
+     const inside=sample.u>=fixture.u&&sample.u<=fixture.u+fixture.w&&
+       sample.v>=fixture.v&&sample.v<=fixture.v+fixture.d;
+     if(inside)assert(sample.height>=seat.edge.height-.006);
+     if(sample.pose==='sit'&&sample.poseAmount===1)onEdge=true;
+     if(sample.pose==='sleep'){assert(onEdge);reclined=true;}
+   }
+   assert(reclined);
+   const before=seatSample(motion,1000);
+   const reverse=seatMotion(seat,before,seat.stand,seat.facing,1000,before.amount,0);
+   assert.deepEqual(seatSample(reverse,1000),before);
+   assert.deepEqual(seatSample(reverse,1001+reverse.duration),{
+     ...seat.stand,complete:true,amount:0,pose:'sit',poseAmount:0,height:0
+   });
+   const end=seatSample(motion,motion.duration);
+   assert.equal(end.u,pillow.u+pillow.w/2);
+   assert.equal(end.v,pillow.v+pillow.d/2);
+ }
+});

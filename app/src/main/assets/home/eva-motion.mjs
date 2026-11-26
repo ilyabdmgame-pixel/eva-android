@@ -73,12 +73,11 @@ export function pointOnCel(corners,[x,y]){
 }
 
 export function seatedUpperBody(corners,grip,anchor,amount,floor){
+ const upper={anchor,scale:amount*.19};
+ if(!grip.foot)return {...grip,upper};
  const [top,,,bottom]=corners;
  const y=(top[2]-floor)/(top[2]-bottom[2]);
- return {...grip,
-   foot:{...grip.foot,to:[grip.foot.to[0],y]},
-   upper:{anchor,scale:amount*.19}
- };
+ return {...grip,foot:{...grip.foot,to:[grip.foot.to[0],y]},upper};
 }
 
 export function gripGrid(corners,grip,flip){

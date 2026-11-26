@@ -186,13 +186,13 @@ export function drawComputer(renderer,o,powered,streaming,seconds=0,gesture=null
  box(.974,.27,.137,.058,.058,.075,bezel);
  screen(.323,.186,.547,.235,powered?[.185,.32,.37]:[.18,.20,.22],powered?'glow':undefined);
  if(streaming){
-   screen(.349,.364,.061,.025,[.98,.28,.32],'glow');
-   screen(.348,.222,.278,.118,[.30,.54,.56],'glow');
-   screen(.433,.272,.075,.049,[.76,.51,.48],'glow');
-   screen(.406,.229,.13,.038,[.49,.36,.57],'glow');
+   const display=[[.330,.414],[.749,.414],[.749,.193],[.330,.193]]
+     .map(([x,z])=>point(x,.180,z)).map(p=>[p.u,p.v,p.z]);
+   renderer.streamPanel(display,o.id,seconds);
+   screen(.773,.382,.073,.018,[.94,.29,.34],'glow');
    for(let row=0;row<5;row++){
-     const length=.075+((Math.floor(seconds*2)+row*3)%4)*.024;
-     screen(.655,.34-row*.028,length,.009,row%2?[.57,.78,.73]:[.74,.68,.50],'glow');
+     const length=.039+((Math.floor(seconds*2)+row*3)%4)*.011;
+     screen(.765,.35-row*.029,length,.008,row%2?[.57,.78,.73]:[.74,.68,.50],'glow');
    }
  }else if(powered){
    screen(.35,.383,.077,.009,[.57,.78,.77],'glow');

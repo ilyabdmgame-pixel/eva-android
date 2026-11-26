@@ -6,6 +6,7 @@ import {furnitureCorners,surfaceTriangles} from './occlusion.mjs';
 import {parts} from './painted-parts.mjs';
 import {gait} from './orientation.mjs';
 import {seatedUpperBody,gripGrid} from './eva-motion.mjs';
+import {drawStreamFrame} from './stream-game.mjs';
 
 const vertexSize=10;
 export const cameraScale=.174;
@@ -77,6 +78,7 @@ export function createScene(canvas) {
     uniform bool glow;
     uniform bool cutout;
     uniform vec4 evaStep;
+    uniform float evaStepRow;
     uniform vec4 evaFeet;
     uniform vec4 evaShoeTravel;
     uniform vec3 deskHands;
@@ -166,7 +168,7 @@ export function createScene(canvas) {
           travel*=smoothstep(.57,.74,local.y);
           vec2 low=evaStep.zw+vec2(.0005),high=evaStep.zw+extent-vec2(.0005);
           currentUV=clamp(coord-travel*extent*evaStep.y,low,high);
-          nextUV=clamp(coord+travel*extent*(1.-evaStep.y),low,high)+vec2(evaStep.x,0.);
+          nextUV=clamp(coord+travel*extent*(1.-evaStep.y),low,high)+vec2(evaStep.x,evaStepRow);
         }
         px=texture(source,currentUV);
         if(evaStep.y>0.){
@@ -224,7 +226,7 @@ export function createScene(canvas) {
   gl.disable(gl.DITHER);
   const hasCoverage=gl.getParameter(gl.SAMPLES)>1;
   const shadowStencil=gl.getParameter(gl.STENCIL_BITS)>0;
-  const uniforms=Object.fromEntries(['placingPart','partMatrix','partInfo','partMotion','view','size','pick','ambient','lamps[0]','shadow','glow','cutout','structure','coverage','revealCenter','castStrength','materialMeters','wave','wavePhase','evaStep','evaFeet','evaShoeTravel','deskHands'].map(name=>[name,gl.getUniformLocation(program,name)]));
+  const uniforms=Object.fromEntries(['placingPart','partMatrix','partInfo','partMotion','view','size','pick','ambient','lamps[0]','shadow','glow','cutout','structure','coverage','revealCenter','castStrength','materialMeters','wave','wavePhase','evaStep','evaStepRow','evaFeet','evaShoeTravel','deskHands'].map(name=>[name,gl.getUniformLocation(program,name)]));
   const buf=gl.createBuffer();
   function vertexArray(buffer){
     const vao=gl.createVertexArray();
@@ -535,7 +537,7 @@ export function createScene(canvas) {
   }
   function bindTexture(key){
     const tex=textures.get(key);
-    gl.uniform1i(uniforms.glow,key==='glow'||key==='room-window'?1:0);
+    gl.uniform1i(uniforms.glow,key==='glow'||key==='room-window'||key==='stream-game'?1:0);
     gl.uniform1i(uniforms.cutout,tex.cutout?1:0);
     gl.uniform1i(uniforms.wave,key==='foam'?1:0);
     gl.bindTexture(gl.TEXTURE_2D,tex.t);
@@ -564,6 +566,7 @@ export function createScene(canvas) {
       gl.uniform1f(uniforms.materialMeters,scale);
       if(step){
         gl.uniform4f(uniforms.evaStep,step.offset,step.weight,step.x,step.y);
+        gl.uniform1f(uniforms.evaStepRow,step.offsetY);
         gl.uniform4fv(uniforms.evaFeet,step.feet);
         gl.uniform4fv(uniforms.evaShoeTravel,step.travel);
       }else gl.uniform4f(uniforms.evaStep,0,0,0,0);
@@ -652,17 +655,34 @@ export function createScene(canvas) {
   if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error('Нет буфера касаний');
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   const pixel=new Uint8Array(4);
-  return {sleepingSprite,prepare,structure,scenery,
-    windowPanel(points,id,image){
-      const first=!textures.has('room-window');
-      if(first)texture('room-window');
-      if(image){
-        gl.bindTexture(gl.TEXTURE_2D,textures.get('room-window').t);
-        if(first)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
-        else gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,image);
-      }
-      quad(points,id,[1,1,1],'room-window');
-    },
+  function imagePanel(key,points,id,image,pixelated=false){
+    const first=!textures.has(key);
+    if(first)texture(key);
+    if(image){
+      gl.bindTexture(gl.TEXTURE_2D,textures.get(key).t);
+      if(first){
+        if(pixelated)gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
+      }else gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,image);
+    }
+    quad(points,id,[1,1,1],key);
+  }
+  let streamCanvas,streamFrame=-1;
+  function streamPanel(points,id,seconds){
+    if(!streamCanvas){
+      streamCanvas=document.createElement('canvas');
+      streamCanvas.width=128;streamCanvas.height=64;
+    }
+    const frame=Math.floor(seconds*10);
+    if(frame===streamFrame)imagePanel('stream-game',points,id,null,true);
+    else{
+      streamFrame=frame;
+      drawStreamFrame(streamCanvas.getContext('2d'),frame);
+      imagePanel('stream-game',points,id,streamCanvas,true);
+    }
+  }
+  return {sleepingSprite,prepare,structure,scenery,streamPanel,
+    windowPanel(points,id,image){imagePanel('room-window',points,id,image);},
     shadeBand(points,contact){quad(points,0,[1,1,1],contact?'cornerShade':'groundShade');},box,panel,artPanel,sprite,triangle,illustratedPart,ball,shadow,castFloor,foam,flush,
     setLightingFocus(at,day){reveal=[at.u,at.v,at.z];lightDay=day;},
     setWavePhase(value){wavePhase=value;},

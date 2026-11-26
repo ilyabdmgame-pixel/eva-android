@@ -11,12 +11,12 @@ import {editableFixture,placementIssue} from './layout.mjs';
 import {drawNotice,castFurniture} from './street-furniture.mjs';
 import {migrateTown} from './town-plan.mjs';
 import {fixtureTop,canPlace,hitsFixture} from './contact.mjs';
-import {activityDuration,activityLine,activitySample,drawRoomActivity,nextActivity,scheduledPeriod} from './room-activities.mjs';
+import {activityPlan,activityLine,activitySample,drawRoomActivity,nextActivity,scheduledPeriod} from './room-activities.mjs';
 import {project,worldAtHeight,inView} from './camera.mjs';
 import {createScene} from './render.mjs';
 import {room,roomOffset,roomEdge,roomView,expandedRoom,inRoom,fitsRoom,roomWindowFixture,drawRoom,drawRoomWindow,
   attachedPosition,attachedFurniture,furnitureOwners as parents,roomFurniture,roomApproach,drawBedding} from './room.mjs';
-import {computerGesture,drawComputer,drawComputerArms,drawFloorDecor,furnishingThumbnail,roomDesk,roomFurnishings,streamChair} from './room-furnishings.mjs';
+import {computerGesture,computerLayout,drawComputer,drawComputerArms,drawFloorDecor,furnishingThumbnail,roomDesk,roomFurnishings,streamChair} from './room-furnishings.mjs';
 import {windowWeather,windowWeatherMoves} from './window-weather.mjs';
 import {places} from './places.mjs';
 import {startFlight,flightPoint,advanceFlight,drawToy} from './toys.mjs';
@@ -31,9 +31,11 @@ import {names as activityNames,lines as activityLines,prepareSound,sound} from '
 
 import {townChat} from './town-chat.mjs';
 import {roomWalk} from './room-walk.mjs';
+import {roomDialogue} from './room-dialogue.mjs';
 const town=townChat({world:worldSnapshot,apply:useNearby,note:statusNote,quip:()=>say(remark('touch'),'wry'),usage:publishWeeklyQuota});
 const canvas=$('scene');
 const EVA_ID=15;
+const STREAM_CHAT='stream-chat';
 const paintWindow=windowWeather(()=>{dirty=true;wake();});
 const speech=createSpeech($('speech'),$('world-status'),()=>document.querySelectorAll('.now,.top-status,#folders button,#actions button,#dock,#town-mark:not([hidden])'));
 const renderer=createScene(canvas);
@@ -70,7 +72,8 @@ let nativeActive=true,active=!document.hidden,move=[],onArrival=null,direction='
 let timeline={},previousSlot=-1,latestClock=0;
 let weeklyQuota=null;
 let toyAim=null,flight=null,gesture=null,walkFacing=direction,walkPhase=0,walkSpeed=0,lastFloorQuip=0,floorQuip=0;
-let restMotion=null,releaseMotion=null;
+let restMotion=null,releaseMotion=null,walkHold=null,walkStarted=-Infinity;
+const footSettleTime=170;
 function gestureAmount(g,t){
  const x=Math.min(1,Math.max(0,(t-g.start)/(g.until-g.start)));
  return ease(Math.min(1,x/.32,(1-x)/.32));
@@ -156,7 +159,7 @@ function refreshObjects(){
  }
  navigation=roomWalk(fixtures,roomExtra);
  if(move.some((point,i)=>!navigation.clear(move[i-1]??eva,point,carrying))){
-   move=[];onArrival=null;walkSpeed=0;automaticWalk=false;
+   move=[];onArrival=null;walkSpeed=0;walkHold=null;automaticWalk=false;
    if(!roomActivity?.started)roomActivity=null;
  }
  if(!seated&&!restMotion)eva=navigation.recover(eva,start);
@@ -272,7 +275,8 @@ function takeSeat(seat){
 function leaveSeat(){
  if(!seated)return true;
  const exit=seated.stand;
- if(!navigation.clear(seated.at,exit,seated.id)){
+ const edge=seated.edge??seated.at;
+ if(!navigation.clear(seated.at,edge,seated.id)||!navigation.clear(edge,exit,seated.id)){
    say('Перед сиденьем занято. Встану, когда проход освободится.','wry');
    return false;
  }
@@ -294,15 +298,24 @@ function walkTo(u,v,done,automatic=false,exact=false){
  if(gesture&&!reduceMotion)releaseMotion={motion:gesture.motion,facing:direction,from:gestureAmount(gesture,now()),start:now()};
  gesture=null;
  const starting=!move.length;
+ walkHold=null;
  move=(carrying?roomWalk(fixtures,roomExtra,carrying):navigation).path(eva,{u,v},exact);
  if(starting){
-   walkSpeed=0;
-   // Idle time before a tap should not count toward the first step.
-   last=now();
+   walkSpeed=0;walkPhase=gait.stride*.25;lastStepIndex=0;
+   walkStarted=last=now();
  }
  onArrival=done||null;
- if(!move.length){automaticWalk=false;const callback=onArrival;onArrival=null;callback?.();}
+ if(!move.length&&!restMotion)finishWalk();
  dirty=true;wake();
+}
+
+function finishWalk(){
+ walkHold=null;
+ if(!automaticWalk)nextPastime=now()+30000;
+ automaticWalk=false;
+ const callback=onArrival;
+ onArrival=null;callback?.();
+ storage();
 }
 function around(o,actor=eva){
  return roomApproach(o,fixtures,actor,blocks);
@@ -329,7 +342,7 @@ function activityAvailable(key){
 }
 function stopRoomActivity(){
  if(!roomActivity)return;
- if(!roomActivity.started){move=[];onArrival=null;automaticWalk=false;walkSpeed=0;}
+ if(!roomActivity.started){move=[];onArrival=null;automaticWalk=false;walkSpeed=0;walkHold=null;}
  const pose=roomActivity.sample;
  if(!reduceMotion&&!seated&&pose&&(pose.motion==='reach'||pose.motion==='stoop')&&pose.amount){
    releaseMotion={motion:pose.motion,facing:direction,from:pose.amount,start:now()};
@@ -353,7 +366,7 @@ function startRoomActivity(key,automatic=false,fromChat=false){
    return;
  }
  const target=seat?[seat.stand.u,seat.stand.v]:fixture?around(fixture):[spot.u,spot.v];
- const state={key,definition,fixture,started:false,elapsed:0,fromChat};
+ const state={key,definition,fixture,started:false,startedAt:null,plan:activityPlan(definition),fromChat};
  roomActivity=state;
  walkTo(...target,()=>{
    if(roomActivity!==state)return;
@@ -367,7 +380,7 @@ function startRoomActivity(key,automatic=false,fromChat=false){
    if(seat)takeSeat(seat);
    if(chair)saved.computerOn=true;
    else if(sleeper)speech.clear();
-   state.started=true;state.sample=activitySample(definition,0,reduceMotion);
+   state.started=true;state.sample=activitySample(definition,0,reduceMotion,state.plan);
    statusNote(definition.title);
    if(definition.sound&&key!=='computer')sound(definition.sound);
    dirty=true;
@@ -406,16 +419,28 @@ function finishRoomActivity(state){
  if(state.fromChat)Desk.worldResult?.('Выполнено: '+definition.title);
  storage();dirty=true;
 }
-function advanceRoomActivity(dt){
+function advanceRoomActivity(){
  const state=roomActivity;
  if(!state?.started||seated&&restMotion&&!seatSample(restMotion,now(),reduceMotion).complete)return;
- if(!state.elapsed&&state.key==='computer'){
-   say('Так, я в эфире. Чат, как слышно?','pleased');
-   sound(state.definition.sound);
+ const time=Date.now();
+ if(state.startedAt===null){
+   state.startedAt=time;
+   if(state.key==='computer'){
+     say('Так, я в эфире. Чат, как слышно?','pleased');
+     sound(state.definition.sound);
+   }
  }
- state.elapsed+=dt*1000;
- if(state.elapsed>=activityDuration(state.definition,reduceMotion)){finishRoomActivity(state);return;}
- state.sample=activitySample(state.definition,state.elapsed,reduceMotion);
+ const elapsed=Math.max(0,time-state.startedAt);
+ if(elapsed>=state.plan.duration){finishRoomActivity(state);return;}
+ if(state.plan.duration-elapsed>10000&&!town.composing&&!town.playing){
+   const cue=roomDialogue(state.key,state.definition.category,elapsed,saved.roomActivityCounts[state.key]||0);
+   if(cue&&state.lastCue!==cue.id){
+     state.lastCue=cue.id;
+     if(cue.chat){speech.say(STREAM_CHAT,'Чат стрима · '+cue.text,now());dirty=true;}
+     else say(cue.text);
+   }
+ }
+ state.sample=activitySample(state.definition,elapsed,reduceMotion,state.plan);
  if(state.key==='air'&&state.sample.progress>.32&&!saved.window){saved.window=true;storage();}
  if(!reduceMotion)dirty=true;
 }
@@ -618,12 +643,16 @@ function floorAt(event){
 function pauseInitiative(){
  nextPastime=now()+30000;
  stopRoomActivity();
- if(automaticWalk){move=[];onArrival=null;automaticWalk=false;walkSpeed=0;dirty=true;}
+ if(automaticWalk){move=[];onArrival=null;walkHold=null;automaticWalk=false;walkSpeed=0;dirty=true;}
 }
 function tapAt(hit,longPress=false){
  if(!view||sheet)return;
- pauseInitiative();
  const {id,p}=hit;
+ if(id===EVA_ID&&!longPress&&!selectTarget&&!toyAim&&!dropAim){
+   if(!roomActivity?.started)pauseInitiative();
+   town.tap();wake();return;
+ }
+ pauseInitiative();
  if(id!==EVA_ID)town.close();
  if(longPress&&(selectTarget||toyAim||dropAim))return;
  if(dropAim){
@@ -698,7 +727,7 @@ function chooseFixture(o){
 }
 function beginLayout(o){
  closeSheet();town.close();pauseInitiative();leaveSeat();
- move=[];onArrival=null;carrying=null;selectTarget=null;dropAim=null;toyAim=null;
+ move=[];onArrival=null;walkHold=null;carrying=null;selectTarget=null;dropAim=null;toyAim=null;
  layout={undo:[],object:null,point:null,issue:'',gesture:null};
  $('screen').classList.add('arranging');$('layout-tools').hidden=false;
  if(o)chooseFixture(o);else layoutHUD();
@@ -1063,14 +1092,18 @@ function paint(t=now()){
  lamps.fill(0);
  sources.slice(0,4).forEach((source,i)=>lamps.set(source,i*4));
  const rest=restMotion,sample=rest&&seatSample(rest,t,reduceMotion);
- const seat=rest?.seat,amount=sample?.amount??0;
- const target=seat?(seat.sleep?'sleep':'sit'):routinePose?.motion!=='idle'&&routinePose?.motion||
+ const seat=rest?.seat,amount=sample?.poseAmount??sample?.amount??0;
+ const recline=sample?.recline??0;
+ const target=seat?(sample?.pose??'sit'):routinePose?.motion!=='idle'&&routinePose?.motion||
    gesture?.motion||releaseMotion?.motion;
  const use=routinePose?.amount??(gesture?gestureAmount(gesture,t):
    releaseMotion?releaseMotion.from*(1-ease(Math.min(1,Math.max(0,(t-releaseMotion.start)/190)))):0);
+ const gaitWeight=walkHold?ease(Math.min(1,Math.max(0,(t-walkHold)/footSettleTime))):
+   1-ease(Math.min(1,Math.max(0,(t-walkStarted)/footSettleTime)));
+ const walking=(move.length||walkHold)&&!reduceMotion;
  const pose=target?registeredPose(actionPose(rest?.facing||releaseMotion?.facing||direction,target,seat?amount:use),
    seat?amount:use):
-   move.length&&!reduceMotion?evaPose(walkFacing,'walk',walkPhase):actionPose(direction,'idle',0,mood);
+   walking?evaPose(walkFacing,'walk',walkPhase,gaitWeight):actionPose(direction,'idle',0,mood);
  const ready=renderer.artReady(pose.key),shown=ready?pose:{...standingPose('eva',direction),height:1.62};
  const at=position3D(eva),opt={...shown};
  if(roomPulse&&!target&&!move.length){
@@ -1080,17 +1113,24 @@ function paint(t=now()){
  }
  if(seat){
    at.u=sample.u;at.v=sample.v;
-   at.z=surfaceAt(at.u,at.v)+seat.height*amount;
+   at.z=surfaceAt(at.u,at.v)+(sample.height??seat.height*amount);
    if(ready){
-     const [anchorX,anchorY]=actionAnchors[pose.key][seat.sleep?'pillow':'seat'];
-     const anchor=[anchorX,anchorY+(seat.sleep?0:.030)];
-     const sole=pose.grip?.foot?.to??[.5,gait.anchorY];
-     opt.anchor=[sole[0]+(anchor[0]-sole[0])*amount,sole[1]+(anchor[1]-sole[1])*amount];
-     if(seat.sleep){opt.bedPlane=at.z;opt.restAmount=amount;}
-     else{
+     const {seat:[x,y],pillow}=actionAnchors[pose.key];
+     const anchor=[x,y+.030];
+     if(target==='sleep'){
+       opt.anchor=anchor.map((value,i)=>value+(pillow[i]-value)*recline);
+       opt.bedPlane=Math.max(seat.edge.height+.035,at.z);
+       opt.restAmount=ease(Math.min(1,recline*2.5));
+       opt.bias=.14*(1-opt.restAmount);
+       opt.seatScale={anchor,amount:1-opt.restAmount};
+     }else{
+       const sole=pose.grip?.foot?.to??[.5,gait.anchorY];
+       opt.anchor=anchor.map((value,i)=>sole[i]+(value-sole[i])*amount);
        opt.bias=amount*(seat.id===streamChair.id?.055:.14);
        opt.footFloor=surfaceAt(at.u,at.v)+.012+opt.bias;
        opt.seatScale={anchor,amount};
+       if(!reduceMotion&&amount>0&&amount<1)
+         opt.lean=Math.sin(Math.PI*amount)*.043*(orientation(rest.facing).flip?-1:1);
      }
    }
  }
@@ -1119,10 +1159,13 @@ function paint(t=now()){
  const resting=playing?.key==='rest'&&!reduceMotion?Math.sin(routinePose.seconds*2)*.014:0;
  const breath=target||move.length||reduceMotion?0:Math.sin(t*.002)*.002;
  const head=renderer.sprite(EVA_ID,shown.key,at,
-   shown.height*(1+breath+stretch+resting+(seat?.sleep ? .14*amount : 0)),shown.flip,opt,true);
+   shown.height*(1+breath+stretch+resting+(.14*recline)),shown.flip,opt,true);
  motionFrames[EVA_ID]=shown;
  if(head)heads.set(EVA_ID,head);
- if(stream)drawComputerArms(renderer,at,playing.fixture,stream);
+ if(stream){
+   drawComputerArms(renderer,at,playing.fixture,stream);
+   heads.set(STREAM_CHAT,computerLayout(playing.fixture)(.82,.18,.43));
+ }
  if(playing&&playing.key!=='computer'){
    const o=playing.key==='tv'?fixtures.find(fixture=>fixture.id===26):playing.fixture;
    let point=at;
@@ -1151,8 +1194,8 @@ function paint(t=now()){
  town.anchor(anchor,sheet);
 }
 function advanceWalker(dt){
- if(restMotion||releaseMotion)return;
- if(!move.length)return;
+ if(restMotion||releaseMotion||walkHold||!move.length)return;
+ if(!walkSpeed)walkStarted=now();
  const step=paceRoute(eva,move,dt,walkSpeed,1.62);
  walkSpeed=step.speed;
  walkFacing=walkHeading(step.du,step.dv,walkFacing);direction=walkFacing;walkPhase+=step.distance;
@@ -1160,7 +1203,10 @@ function advanceWalker(dt){
  if(beat!==lastStepIndex){
    lastStepIndex=beat;footstep('wood');
  }
- if(!move.length){if(!automaticWalk)nextPastime=now()+30000;automaticWalk=false;const callback=onArrival;onArrival=null;callback?.();storage();}
+ if(!move.length){
+   if(reduceMotion)finishWalk();
+   else walkHold=now();
+ }
  dirty=true;
 }
 let timer=0;
@@ -1175,14 +1221,21 @@ function loop(t){
  const elapsed=Math.max(.001,(t-last)/1000),dt=Math.min(.085,elapsed);last=t;
  if(releaseMotion&&t-releaseMotion.start>=190)releaseMotion=null;
  let rest=restMotion&&seatSample(restMotion,t,reduceMotion);
- if(rest?.complete&&!seated){restMotion=null;rest=null;dirty=true}
+ if(rest?.complete&&!seated){
+   restMotion=null;rest=null;dirty=true;
+   if(!move.length)finishWalk();
+ }
  const settling=rest&&!rest.complete;
+ if(walkHold&&!sheet&&!layout){
+   dirty=true;
+   if(t-walkHold>=footSettleTime)finishWalk();
+ }
  if(settling||releaseMotion)dirty=true;
  if(!sheet&&t>=nextWorldSync){syncWorld();nextWorldSync=t+2200}
  if(t>latestClock){pullClock();latestClock=t+5000;}
  if(!sheet&&!layout){
    advanceWalker(dt);
-   advanceRoomActivity(dt);
+   advanceRoomActivity();
 
    if(flight){
      dirty=true;
@@ -1219,7 +1272,8 @@ function loop(t){
  if(speech.tick(t))dirty=true;
  const animated=!sheet&&windowWeatherMoves(climate,reduceMotion);
  const ambientDue=animated&&t+1>=nextAmbientFrame;
- const responsive=!sheet&&(releaseMotion||settling||gesture||roomPulse||move.length||flight||roomActivity?.started);
+ const responsive=!sheet&&(releaseMotion||settling||gesture||roomPulse||move.length||walkHold||flight);
+ const performing=!sheet&&!layout&&roomActivity?.started;
  const paintScene=dirty||!sheet&&(Boolean(gesture)||ambientDue);
  if(paintScene){
    paint(t);dirty=false;
@@ -1228,7 +1282,7 @@ function loop(t){
  if(!sheet)ambience(climate.weather,section,false,Boolean(saved.window));
  if(responsive)wake();
  else if(!nextFrame){
-   const delay=sheet?750:animated?Math.max(8,nextAmbientFrame-t-8):
+   const delay=sheet?750:performing?(reduceMotion?480:25):animated?Math.max(8,nextAmbientFrame-t-8):
      speech.waiting||mood?75:300;
    timer=setTimeout(wake,delay);
  }
@@ -1308,7 +1362,7 @@ function openFurnishing(){
        return;
      }
      closeSheet();pauseInitiative();
-     move=[];onArrival=null;flight=null;carrying=null;selectTarget=null;dropAim=null;toyAim=null;
+     move=[];onArrival=null;walkHold=null;flight=null;carrying=null;selectTarget=null;dropAim=null;toyAim=null;
      roomExtra=extended?0:expandedRoom;saved.roomExpanded=!extended;
      center=roomView(roomExtra).centre;
      if(!inRoom(eva.u,eva.v,.17,roomExtra)){eva={...start};seated=restMotion=null;}
@@ -1473,7 +1527,7 @@ window.worldCheck=()=>{
    sound:audioState(),outdoors:false,
    anchors:Object.fromEntries(speechAnchors),move:move.length,direction,
    activity:roomActivity?.key||null,activityPhase:roomActivity?.sample?.index??null,
-   pose:seated?.sleep?'sleep':seated?'sit':move.length?'walk':roomActivity?.sample?.motion||gesture?.motion||'idle',
+   pose:seated?.sleep?'sleep':seated?'sit':move.length||walkHold?'walk':roomActivity?.sample?.motion||gesture?.motion||'idle',
    center,eva,depth:renderer.depthBits,sizeConstant:Math.abs(close-far)<.0001,windowOpen:!!saved.window,
    lamp:saved.lamps,chairs:saved.chairs,flight:flight?.kind||null,economy:saved.economy,timeline:JSON.parse(Desk.timeline())};
 };

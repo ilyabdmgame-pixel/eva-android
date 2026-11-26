@@ -9,6 +9,8 @@ header{top:max(6.5%,50px)}#folders{top:22%;grid-template-columns:repeat(auto-fil
 #speech{position:absolute;inset:0;pointer-events:none;z-index:2}
 .speech-balloon{position:absolute;left:0;top:0;width:max-content;max-width:min(190px,57vw);padding:8px 11px;border-radius:13px;background:#fff7e8;color:#2c2727;box-shadow:0 2px 12px #1115;font-size:clamp(13px,3.6vw,16px);line-height:1.28;overflow-wrap:anywhere;pointer-events:none;visibility:hidden}
 .speech-balloon::after{content:"";position:absolute;left:var(--tail-x,50%);top:calc(100% - 1px);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:var(--tail-height,9px) solid #fff7e8;transform:translateX(-50%)}
+.speech-balloon[data-speaker="stream-chat"]{background:#deeee9;color:#183739}
+.speech-balloon[data-speaker="stream-chat"]::after{border-top-color:#deeee9}
 #world-status{position:absolute;z-index:2;left:50%;bottom:calc(12% + 86px);max-width:82%;width:max-content;transform:translateX(-50%);padding:7px 11px;border-radius:9px;background:#222e2eeb;color:#fff8e9;font-size:13px;pointer-events:none}
 #sheet{z-index:5}#scrim{z-index:4}
 

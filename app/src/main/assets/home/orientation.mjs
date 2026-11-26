@@ -44,15 +44,24 @@ const shoes=[
  [[70,209,152,214],[82,211,132,217],[92,186,108,215],[97,182,102,216],[73,215,150,213],[82,217,142,214],[96,186,106,216],[81,220,122,191]]
 ];
 
-export function evaPose(direction,activity,phase=0){
+const standingShoes=[[91,217,119,201],[91,209,121,219]];
+
+export function evaPose(direction,activity,phase=0,settle=0){
   if(activity==='walk'){
     const pose=walkPose('eva',direction,phase);
     const step=(phase%gait.stride)*gait.frames/gait.stride;
-    const next=(pose.column+1)%gait.frames;
-    const weight=step-pose.column;
-    const travel=shoes[pose.row][pose.column].map((value,i)=>(shoes[pose.row][next][i]-value)/(i%2?252:210));
-    const feet=shoes[pose.row][pose.column].map((value,i)=>value/(i%2?252:210)+travel[i]*weight);
-    return {...pose,height:1.62,step:{offset:(next-pose.column)/gait.columns,weight,feet,travel}};
+    let target={...pose,column:(pose.column+1)%gait.frames},weight=step-pose.column;
+    if(settle>0){
+      pose.column=Math.round(step)%gait.frames;
+      target=standingPose('eva',direction);
+      weight=Math.min(1,settle);
+    }
+    const next=target.row<5?shoes[target.row][target.column]:standingShoes[target.row-5];
+    const current=shoes[pose.row][pose.column];
+    const travel=current.map((value,i)=>(next[i]-value)/(i%2?252:210));
+    const feet=current.map((value,i)=>value/(i%2?252:210)+travel[i]*weight);
+    return {...pose,height:1.62,step:{offset:(target.column-pose.column)/gait.columns,
+      offsetY:(target.row-pose.row)/gait.rows,weight,feet,travel}};
   }
   return actionPose(direction,activity,phase);
 }

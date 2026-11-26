@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {actionBeat,gripGrid,pointOnCel,registeredPose} from '../../../app/src/main/assets/home/eva-motion.mjs';
-import {actionPose,evaPose,gait} from '../../../app/src/main/assets/home/orientation.mjs';
+import {actionPose,evaPose,gait,standingPose} from '../../../app/src/main/assets/home/orientation.mjs';
 import {attachedPosition,bedRest,drawBedding,expandedRoom,fitsRoom,inRoom,roomFurniture,roomView}
   from '../../../app/src/main/assets/home/room.mjs';
 import {computerLayout,drawComputer,furnishingThumbnail,roomFurnishings,streamChair} from '../../../app/src/main/assets/home/room-furnishings.mjs';
@@ -50,11 +50,23 @@ test('Eva interpolates to the first step at the end of each walking cycle',()=>{
    assert.equal(end.column,7);
    assert.equal(end.step.offset,-7/8);
    assert.equal(end.step.weight,.5);
+   assert.equal(end.step.offsetY,0);
    const restart=evaPose(facing,'walk',gait.stride);
    for(const [i,shoe] of end.step.feet.entries())
      assert(Math.abs(shoe+end.step.travel[i]*.5-restart.step.feet[i])<1e-9);
    assert.equal(evaPose(facing,'walk',gait.stride).column,0);
    assert.equal(evaPose(facing,'walk',gait.stride).step.weight,0);
+ }
+});
+
+test('Eva can settle either facing into its stationary drawing with both feet registered',()=>{
+ for(const facing of ['down-right','down-left','up-right','up-left','up','left','right','down']){
+   const standing=standingPose('eva',facing);
+   const stop=evaPose(facing,'walk',gait.stride*.59,1);
+   assert.equal(stop.step.weight,1);
+   assert.equal(stop.column+stop.step.offset*gait.columns,standing.column);
+   assert.equal(stop.row+stop.step.offsetY*gait.rows,standing.row);
+   assert(stop.step.feet.every(value=>value>0&&value<1));
  }
 });
 
@@ -104,7 +116,7 @@ test('the desktop PC rotates with the desk, and its monitor and keyboard animate
      assert(Math.abs(chair.u+chair.w/2-center.u)<1e-8);
      assert(chair.v>table.v+table.d);
    }
-   const render=(on,time)=>{const calls=[];const r={box(...p){calls.push(p);},panel(...p){calls.push(p);}};
+   const render=(on,time)=>{const calls=[];const r={box(...p){calls.push(p);},panel(...p){calls.push(p);},streamPanel(...p){calls.push(p);}};
      drawComputer(r,pc,on,on,time);return calls;};
    assert(render(false,0).length>20);
    assert.notDeepEqual(render(false,0),render(true,0));
