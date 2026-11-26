@@ -5,7 +5,7 @@ import {propArt} from './prop-art.mjs';
 import {furnitureCorners,surfaceTriangles} from './occlusion.mjs';
 import {parts} from './painted-parts.mjs';
 import {gait} from './orientation.mjs';
-import {seatedUpperBody,gripGrid} from './eva-motion.mjs';
+import {groundSole,gripGrid} from './eva-motion.mjs';
 import {drawStreamFrame} from './stream-game.mjs';
 
 const vertexSize=10;
@@ -491,8 +491,7 @@ export function createScene(canvas) {
     }
     const batch=options?.foliage?'leaves:'+sheet:sheet;
     const contact=options?.grip;
-    const posed=contact&&(options.seatScale?
-      seatedUpperBody(corners,contact,options.seatScale.anchor,options.seatScale.amount,options.footFloor):contact);
+    const posed=contact&&(options.footFloor==null?contact:groundSole(corners,contact,options.footFloor));
     const grip=posed&&gripGrid(corners,posed,flip);
     if(volume){
       if(!batches.has(batch))batches.set(batch,[]);

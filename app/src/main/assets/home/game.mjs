@@ -1122,13 +1122,11 @@ function paint(t=now()){
        opt.bedPlane=Math.max(seat.edge.height+.035,at.z);
        opt.restAmount=ease(Math.min(1,recline*2.5));
        opt.bias=.14*(1-opt.restAmount);
-       opt.seatScale={anchor,amount:1-opt.restAmount};
      }else{
        const sole=pose.grip?.foot?.to??[.5,gait.anchorY];
        opt.anchor=anchor.map((value,i)=>sole[i]+(value-sole[i])*amount);
        opt.bias=amount*(seat.id===streamChair.id?.055:.14);
        opt.footFloor=surfaceAt(at.u,at.v)+.012+opt.bias;
-       opt.seatScale={anchor,amount};
        if(!reduceMotion&&amount>0&&amount<1)
          opt.lean=Math.sin(Math.PI*amount)*.043*(orientation(rest.facing).flip?-1:1);
      }
@@ -1156,10 +1154,9 @@ function paint(t=now()){
  opt.crown=actionAnchors[shown.key]?.heads[shown.row]?.[shown.column];
  if(!seat)opt.cast={ground:surfaceAt(at.u,at.v),inside:true};
  const stretch=playing?.key==='stretch'&&!reduceMotion?routinePose.amount*.043:0;
- const resting=playing?.key==='rest'&&!reduceMotion?Math.sin(routinePose.seconds*2)*.014:0;
  const breath=target||move.length||reduceMotion?0:Math.sin(t*.002)*.002;
  const head=renderer.sprite(EVA_ID,shown.key,at,
-   shown.height*(1+breath+stretch+resting+(.14*recline)),shown.flip,opt,true);
+   shown.height*(1+breath+stretch),shown.flip,opt,true);
  motionFrames[EVA_ID]=shown;
  if(head)heads.set(EVA_ID,head);
  if(stream){

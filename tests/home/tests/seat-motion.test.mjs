@@ -8,7 +8,7 @@ import {computerArms,computerGesture,streamChair} from '../../../app/src/main/as
 import {turnFixture} from '../../../app/src/main/assets/home/prop-finish.mjs';
 import {worldObjects} from '../../../app/src/main/assets/home/district.mjs';
 import {actionPose} from '../../../app/src/main/assets/home/orientation.mjs';
-import {seatedUpperBody,gripGrid,registeredPose} from '../../../app/src/main/assets/home/eva-motion.mjs';
+import {groundSole,gripGrid,registeredPose} from '../../../app/src/main/assets/home/eva-motion.mjs';
 
 const seat={id:7};
 const floor={u:2,v:3};
@@ -76,21 +76,35 @@ test('each chair uses its open side and a clear transfer after rotation',()=>{
  }
 });
 
-test('sitting keeps head and torso scale while grounding the painted sole',()=>{
+test('the head has one registered size through every frame of a sit, rise or recline',()=>{
+ const corners=[[-.41,.86,1.56],[.50,-.05,1.56],[.50,-.05,-.27],[-.41,.86,-.27]];
+ const width=corners[1][0]-corners[0][0];
  for(const facing of ['down-left','down-right','up-left','up-right']){
-   const source=registeredPose(actionPose(facing,'sit',1),1);
-   const corners=[[-.41,.86,1.56],[.50,-.05,1.56],[.50,-.05,-.27],[-.41,.86,-.27]];
-   const anchor=[.38,.675];
-   const before=gripGrid(corners,seatedUpperBody(corners,source.grip,anchor,0,.012),source.flip);
-   const full=gripGrid(corners,seatedUpperBody(corners,source.grip,anchor,1,.012),source.flip);
-   const scale=(mesh)=>{
-     const a=mesh.move(.40,.38),b=mesh.move(.60,.38);
-     return Math.hypot(a[0]-b[0],a[1]-b[1]);
-   };
-   assert(Math.abs(scale(full)/scale(before)-1.19)<1e-8);
-   const [x,y]=source.grip.foot.from,shoe=source.flip?1-x:x;
-   assert(Math.abs(full.move(shoe,y)[2]-.012)<1e-8);
-   assert(full.head.z>before.head.z);
+   let reference;
+   for(const [motion,start] of [['sit',0],['sleep',3/7]]){
+     for(let frame=0;frame<=120;frame++){
+       const amount=start+(1-start)*frame/120;
+       const {grip,flip}=registeredPose(actionPose(facing,motion,amount),amount);
+       const mesh=gripGrid(corners,groundSole(corners,grip,.012),flip);
+       const [x,y]=grip.crown.from,half=grip.body.width/420;
+       const fx=flip?1-x:x;
+       const left=mesh.move(fx-half,y+16/252),right=mesh.move(fx+half,y+16/252);
+       const headSize=right[0]-left[0];
+       reference??=headSize;
+       assert(Math.abs(headSize-reference)<1e-8);
+       assert(Math.abs(headSize-(width*grip.body.reference/210))<1e-8);
+       assert(Math.abs(left[2]-right[2])<1e-8);
+       const skull=mesh.move(fx,y),brow=mesh.move(fx,y+grip.body.width/504);
+       assert(Math.abs(skull[2]-brow[2]-(corners[0][2]-corners[3][2])*grip.body.reference/504)<1e-8);
+       if(grip.foot){
+         const [x,y]=grip.foot.from;
+         assert(Math.abs(mesh.move(flip?1-x:x,y)[2]-.012)<1e-8);
+       }
+     }
+   }
+   const sit=registeredPose(actionPose(facing,'sit',1),1);
+   const lie=registeredPose(actionPose(facing,'sleep',3/7),3/7);
+   assert.deepEqual(sit.grip.crown,lie.grip.crown);
  }
 });
 
