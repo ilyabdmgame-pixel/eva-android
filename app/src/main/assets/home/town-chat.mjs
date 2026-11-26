@@ -45,6 +45,9 @@ export function townChat({note,quip,world,apply,usage}){
   if(open){close();return;}
   if(!answer)quip();
   open=true;layout();post('state',{activate:true});
+  if(!form.hidden&&!matchMedia('(prefers-reduced-motion: reduce)').matches)form.animate?.([
+   {opacity:.58,translate:'0 6px'},{opacity:1,translate:'0 0'}
+  ],{duration:170,easing:'cubic-bezier(.2,.8,.3,1)'});
  }
  function playVoice(id,text,volume,options){
   if(options.voiceName==='silero-kseniya')post('synthesize',{...options,id,text,volume});

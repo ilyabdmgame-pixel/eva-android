@@ -605,28 +605,84 @@ function animateAvatarPresence(kind){
  const [duration,displacement,angle]=values;
  const distance=Math.max(1,Math.min(7,figure.offsetHeight*Math.abs(displacement)))*Math.sign(displacement);
  portraitBeat?.cancel();
- portraitBeat=figure.animate([
-   {translate:'0 0',rotate:'0deg'},{translate:'0 '+distance+'px',rotate:angle+'deg'},
-   {translate:'0 0',rotate:'0deg'}
- ],{duration,easing:'ease-in-out'});
+ const arc=[[0,0,0],[.19,.19,.10],[.39,.78,.64],[.54,1,1],[.72,.72,.86],[.9,.18,.30],[1,0,0]];
+ portraitBeat=figure.animate(arc.map(([offset,travel,turn])=>({
+   offset,translate:'0 '+distance*travel+'px',rotate:angle*turn+'deg',easing:'ease-in-out'
+ })),{duration});
 }
-document.addEventListener('visibilitychange',()=>{if(document.hidden)portraitBeat?.cancel()});
 // Mouth frames are loaded only when speech or preview needs them.
 const avatarMouthFrames=[["speech-01","/root/.codex/generated_images/eva-builtin-20261116/speech/01-a-mid.png"],["speech-02","/root/.codex/generated_images/eva-builtin-20261116/speech/02-a-full.png"],["speech-03","/root/.codex/generated_images/eva-builtin-20261116/speech/03-e-mid.png"],["speech-04","/root/.codex/generated_images/eva-builtin-20261116/speech/04-e-full.png"],["speech-05","/root/.codex/generated_images/eva-builtin-20261116/speech/05-o-mid.png"],["speech-06","/root/.codex/generated_images/eva-builtin-20261116/speech/06-o-full.png"],["speech-07","/root/.codex/generated_images/eva-builtin-20261116/speech/07-u-mid.png"],["speech-08","/root/.codex/generated_images/eva-builtin-20261116/speech/08-u-full.png"],["speech-09","/root/.codex/generated_images/eva-builtin-20261116/speech/09-m-mid.png"],["speech-10","/root/.codex/generated_images/eva-builtin-20261116/speech/10-m-full.png"],["speech-11","/root/.codex/generated_images/eva-builtin-20261116/speech/11-f-mid.png"],["speech-12","/root/.codex/generated_images/eva-builtin-20261116/speech/12-f-full.png"]];
 const avatarMouthNodes=avatarMouthFrames.map(([key,src])=>{const img=document.createElement('img');img.className='avatar-expression avatar-speech-frame avatar-expression-'+key;img.dataset.src='/chat-image?token='+encodeURIComponent(token)+'&path='+encodeURIComponent(src);img.alt='';img.setAttribute('aria-hidden','true');avatarStage.querySelector('.avatar-head').appendChild(img);return img});
-let mouthGeneration=0,mouthTimer=null,mouthLoad=null,mouthLast=-1;
-function stopAvatarMouth(){mouthGeneration++;clearTimeout(mouthTimer);mouthTimer=null;avatarStage.classList.remove('avatar-multimouth-ready');for(const img of avatarMouthNodes)img.classList.remove('avatar-speech-visible');mouthLast=-1}
-async function startAvatarMouth(){const generation=++mouthGeneration;if(reducedMotion.matches||avatarStage.hidden||document.hidden)return;try{if(!mouthLoad)mouthLoad=Promise.all(avatarMouthNodes.map(async img=>{if(!img.getAttribute('src'))img.src=img.dataset.src;if(img.decode)await img.decode()})).catch(err=>{mouthLoad=null;throw err});await mouthLoad;if(generation!==mouthGeneration||!voiceIsAudible||avatarStage.hidden||document.hidden)return;avatarStage.classList.add('avatar-multimouth-ready');let sample=null;const step=()=>{if(generation!==mouthGeneration)return;if(!voiceIsAudible||reducedMotion.matches){stopAvatarMouth();return}if(document.hidden||avatarStage.hidden){mouthTimer=setTimeout(step,200);return}let level=null;if(voiceAnalyser){sample=sample||new Uint8Array(voiceAnalyser.fftSize);voiceAnalyser.getByteTimeDomainData(sample);let sum=0;for(const x of sample){const v=(x-128)/128;sum+=v*v}level=Math.sqrt(sum/sample.length)}let next;if(level!==null&&level<0.012)next=9;else{const choices=level!==null&&level<0.035?[0,2,4,6,8,10]:[1,3,5,7,10,11];next=choices[Math.floor(Math.random()*choices.length)];if(next===mouthLast)next=choices[(choices.indexOf(next)+1)%choices.length]}if(mouthLast!==next){if(mouthLast>=0)avatarMouthNodes[mouthLast].classList.remove('avatar-speech-visible');avatarMouthNodes[next].classList.add('avatar-speech-visible');mouthLast=next}mouthTimer=setTimeout(step,145+Math.floor(Math.random()*75))};step()}catch(e){console.warn('Кадры речи недоступны, используется обычная анимация:',e);if(generation===mouthGeneration)stopAvatarMouth()}}
+let mouthGeneration=0,mouthTimer=null,mouthLoad=null;
+let shownMouth=[];
+function setMouth(frames){
+ for(const [index] of shownMouth)if(!frames.some(([next])=>next===index))avatarMouthNodes[index].style.removeProperty('opacity');
+ for(const [index,opacity] of frames)avatarMouthNodes[index].style.opacity=opacity.toFixed(3);
+ shownMouth=frames;
+}
+function stopAvatarMouth(){
+ mouthGeneration++;clearTimeout(mouthTimer);mouthTimer=null;setMouth([]);
+ avatarStage.classList.remove('avatar-multimouth-ready');
+}
+const mouthVisible=()=>!avatarStage.hidden&&!document.hidden&&!document.body.classList.contains('eva-pet-chat');
+async function startAvatarMouth(){
+ const generation=++mouthGeneration;
+ if(reducedMotion.matches||!mouthVisible())return;
+ try{
+   if(!mouthLoad)mouthLoad=Promise.all(avatarMouthNodes.map(async img=>{
+     if(!img.getAttribute('src'))img.src=img.dataset.src;
+     if(img.decode)await img.decode();
+   })).catch(err=>{mouthLoad=null;throw err});
+   await mouthLoad;
+   if(generation!==mouthGeneration||!voiceIsAudible||!mouthVisible())return;
+   avatarStage.classList.add('avatar-multimouth-ready');
+   let audio=null,opening=0,start=performance.now(),shape=0,since=0;
+   const shapes=[0,2,4,6];
+   const step=()=>{
+     if(generation!==mouthGeneration)return;
+     if(!voiceIsAudible||reducedMotion.matches||!mouthVisible()){stopAvatarMouth();return}
+     const now=performance.now(),elapsed=now-start,analyser=voiceAnalyser;
+     let target=.14+.75*Math.sin(Math.PI*(elapsed%205)/205)**2;
+     if(analyser){
+       if(audio?.length!==analyser.fftSize)audio=new Uint8Array(analyser.fftSize);
+       analyser.getByteTimeDomainData(audio);
+       let sum=0;
+       for(const sample of audio){const x=(sample-128)/128;sum+=x*x}
+       target=Math.max(0,Math.min(1,(Math.sqrt(sum/audio.length)-.010)/.080));
+     }
+     opening+=(target-opening)*(target>opening?.58:.42);
+     if(now-since>145&&opening<.32){
+       shape=(shape+1+Math.floor(Math.random()*3))%shapes.length;
+       since=now;
+     }
+     const wide=Math.max(0,Math.min(1,(opening-.31)/.66));
+     const mid=Math.min(1,opening/.31);
+     setMouth(opening<.04?[]:[[shapes[shape],mid],[shapes[shape]+1,wide]]);
+     mouthTimer=setTimeout(step,48);
+   };
+   step();
+ }catch(e){
+   console.warn('Кадры речи недоступны, используется обычная анимация:',e);
+   if(generation===mouthGeneration)stopAvatarMouth();
+ }
+}
+function syncPortraitMotion(){
+ if(!mouthVisible()||reducedMotion.matches){
+   portraitBeat?.cancel();stopAvatarMouth();
+ }else if(voiceIsAudible&&mouthTimer==null)startAvatarMouth();
+}
+document.addEventListener('visibilitychange',syncPortraitMotion);
 
 avatarStage.hidden=localStorage.getItem('avatar-hidden')==='1';
-function showAvatar(show){avatarStage.hidden=!show;localStorage.setItem('avatar-hidden',show?'0':'1');scheduleFaceFade()}
+function showAvatar(show){avatarStage.hidden=!show;localStorage.setItem('avatar-hidden',show?'0':'1');scheduleFaceFade();syncPortraitMotion()}
 $('avatar-toggle').onclick=()=>showAvatar(avatarStage.hidden);$('avatar-hide').onclick=()=>showAvatar(false);
 let thoughtBegan=0,emotionHoldTimer=null,avatarActivity=null,avatarPendingEmotion=null;
-function updateAvatar(){if(busy||convoSpeaking||voiceIsAudible)avatarStage.classList.remove('avatar-idle-yawn','avatar-idle-scratch','avatar-idle-calm');const status=$('status').textContent;if(busy||convoSpeaking||voiceIsAudible)avatarStage.classList.remove('avatar-is-happy','avatar-is-surprised');const activity=busy&&!voiceIsAudible?avatarActivity:null;const thinking=!!(busy||convoSpeaking)&&!voiceIsAudible&&!activity;if(thinking&&!avatarStage.classList.contains('avatar-thinking'))thoughtBegan=Date.now();if(!thinking&&!voiceIsAudible&&!activity&&avatarStage.classList.contains('avatar-thinking')&&Date.now()-thoughtBegan<1800){clearTimeout(emotionHoldTimer);emotionHoldTimer=setTimeout(updateAvatar,1800-(Date.now()-thoughtBegan));return}clearTimeout(emotionHoldTimer);avatarStage.classList.remove('avatar-speaking','avatar-listening','avatar-thinking','avatar-is-reading','avatar-is-searching','avatar-is-working','avatar-is-music');if(voiceIsAudible){avatarStage.classList.add('avatar-speaking');$('avatar-state').textContent='Говорю'}else if(activity){const states={reading:['avatar-is-reading','Читаю'],search:['avatar-is-searching','Ищу'],work:['avatar-is-working','Работаю'],music:['avatar-is-music','Музыка']};const state=states[activity];if(state){avatarStage.classList.add(state[0]);$('avatar-state').textContent=state[1]}}else if(thinking){avatarStage.classList.add('avatar-thinking');$('avatar-state').textContent=convoSpeaking?'Готовлю речь…':'Думаю…'}else if(status.includes('Слушаю')){avatarStage.classList.add('avatar-listening');$('avatar-state').textContent='Слушаю тебя'}else $('avatar-state').textContent='На связи'}
+function updateAvatar(){if(busy||convoSpeaking||voiceIsAudible)avatarStage.classList.remove('avatar-idle-yawn','avatar-idle-scratch','avatar-idle-calm');const status=$('status').textContent;window.evaMiniPresence?.(voiceIsAudible?'speaking':busy||convoSpeaking?'working':$('mic').classList.contains('listening')?'listening':'idle');if(busy||convoSpeaking||voiceIsAudible)avatarStage.classList.remove('avatar-is-happy','avatar-is-surprised');const activity=busy&&!voiceIsAudible?avatarActivity:null;const thinking=!!(busy||convoSpeaking)&&!voiceIsAudible&&!activity;if(thinking&&!avatarStage.classList.contains('avatar-thinking'))thoughtBegan=Date.now();if(!thinking&&!voiceIsAudible&&!activity&&avatarStage.classList.contains('avatar-thinking')&&Date.now()-thoughtBegan<1800){clearTimeout(emotionHoldTimer);emotionHoldTimer=setTimeout(updateAvatar,1800-(Date.now()-thoughtBegan));return}clearTimeout(emotionHoldTimer);avatarStage.classList.remove('avatar-speaking','avatar-listening','avatar-thinking','avatar-is-reading','avatar-is-searching','avatar-is-working','avatar-is-music');if(voiceIsAudible){avatarStage.classList.add('avatar-speaking');$('avatar-state').textContent='Говорю'}else if(activity){const states={reading:['avatar-is-reading','Читаю'],search:['avatar-is-searching','Ищу'],work:['avatar-is-working','Работаю'],music:['avatar-is-music','Музыка']};const state=states[activity];if(state){avatarStage.classList.add(state[0]);$('avatar-state').textContent=state[1]}}else if(thinking){avatarStage.classList.add('avatar-thinking');$('avatar-state').textContent=convoSpeaking?'Готовлю речь…':'Думаю…'}else if(status.includes('Слушаю')){avatarStage.classList.add('avatar-listening');$('avatar-state').textContent='Слушаю тебя'}else $('avatar-state').textContent='На связи'}
 new MutationObserver(updateAvatar).observe($('status'),{childList:true,subtree:true,characterData:true});updateAvatar();
 
 // Random pauses and occasional double blinks; pause motion when hidden.
 const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+reducedMotion.addEventListener('change',syncPortraitMotion);
 const blinkFrame=document.querySelector('.avatar-blink');
 function avatarCanMove(){return !avatarStage.hidden&&!document.hidden&&!reducedMotion.matches}
 function runBlink(){if(!avatarCanMove())return;blinkFrame.classList.add('is-blinking');avatarStage.classList.add('avatar-blinking');setTimeout(()=>{blinkFrame.classList.remove('is-blinking');avatarStage.classList.remove('avatar-blinking')},110+Math.random()*80)}
@@ -705,7 +761,7 @@ function clearAvatarExpression(){avatarEmotionGeneration++;avatarStage.classList
 async function tryShowAvatarEmotion(){if(!avatarPendingEmotion||busy||convoSpeaking||voiceIsAudible||avatarActivity||avatarStage.hidden||document.hidden)return;const emotion=avatarPendingEmotion;avatarPendingEmotion=null;clearAvatarExpression();const generation=avatarEmotionGeneration;const pair=generatedAvatarTransitions[emotion];if(pair){try{const imgs=pair.map(key=>avatarStage.querySelector('.avatar-expression-'+key));for(const img of imgs){if(!img)throw Error('Missing frame');if(!img.getAttribute('src'))img.src=img.dataset.src;if(img.decode)await img.decode()}if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;if(!reducedMotion.matches){avatarStage.classList.add('avatar-expression-'+pair[0]+'-active');await new Promise(r=>setTimeout(r,500));if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden){avatarStage.classList.remove('avatar-expression-'+pair[0]+'-active');return}}avatarStage.classList.add('avatar-expression-'+pair[1]+'-active');avatarStage.classList.remove('avatar-expression-'+pair[0]+'-active');clearTimeout(avatarHappyTimer);avatarHappyTimer=setTimeout(clearAvatarExpression,4500);return}catch(err){console.warn('Переход аватара недоступен:',err);avatarStage.classList.remove(...pair.map(key=>'avatar-expression-'+key+'-active'))}}if(avatarExpressions.includes(emotion)){const img=avatarStage.querySelector('.avatar-expression-'+emotion);if(!img)return;if(!img.src&&img.dataset.src)img.src=img.dataset.src;try{if(img.decode)await img.decode()}catch{return}if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;if(emotion==='laugh'&&!reducedMotion.matches){const mid=avatarStage.querySelector('.avatar-expression-smile-mid');if(mid){if(!mid.src&&mid.dataset.src)mid.src=mid.dataset.src;try{if(mid.decode)await mid.decode();if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;avatarStage.classList.add('avatar-expression-smile-mid-active');await new Promise(r=>setTimeout(r,500));avatarStage.classList.remove('avatar-expression-smile-mid-active')}catch{}}}if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;avatarStage.classList.add('avatar-expression-'+emotion+'-active')}else if(emotion==='surprised')avatarStage.classList.add('avatar-is-surprised');else return;clearTimeout(avatarHappyTimer);avatarHappyTimer=setTimeout(clearAvatarExpression,4500)}
 
 // One context-sensitive control for recording and stopping work or speech.
-function refreshVoiceButton(){const listening=!!recognition||!!(conversation&&convoRecognizer);$('mic').innerHTML=uiIcon('mic');$('mic').classList.toggle('listening',listening);$('mic').title='Голосовой ввод';$('mic').setAttribute('aria-label','Голосовой ввод');$('mic').setAttribute('aria-pressed',String(listening));$('stop').hidden=!(busy||voiceIsAudible||convoSpeaking||listening)}
+function refreshVoiceButton(){const listening=!!recognition||!!(conversation&&convoRecognizer);$('mic').innerHTML=uiIcon('mic');$('mic').classList.toggle('listening',listening);window.evaMiniPresence?.(voiceIsAudible?'speaking':listening?'listening':busy||convoSpeaking?'working':'idle');$('mic').title='Голосовой ввод';$('mic').setAttribute('aria-label','Голосовой ввод');$('mic').setAttribute('aria-pressed',String(listening));$('stop').hidden=!(busy||voiceIsAudible||convoSpeaking||listening)}
 // The menu floats above the portrait and stays hidden until requested.
 $('header-toggle').onclick=()=>$('menu').click();
 $('chat-tools').addEventListener('toggle',()=>{if($('chat-tools').open)refreshLimits()});

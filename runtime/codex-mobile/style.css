@@ -326,7 +326,6 @@ body .avatar-glow{animation:evaGlow 8s ease-in-out infinite alternate}
 
 /* Speech overlays show only the mouth; the original eyes and hair remain stable. */
 .avatar-speech-frame{z-index:7;opacity:0;clip-path:polygon(36% 31%,64% 31%,64% 38%,36% 38%);-webkit-mask-image:radial-gradient(ellipse 14% 3.5% at 50% 34.2%,#000 55%,transparent 100%);mask-image:radial-gradient(ellipse 14% 3.5% at 50% 34.2%,#000 55%,transparent 100%);transition:opacity .10s linear;pointer-events:none}
-.avatar-speech-frame.avatar-speech-visible{opacity:1}
 .avatar-multimouth-ready.avatar-speaking .avatar-talking{animation:none;opacity:0}
 .avatar-expression-speech-01-active .avatar-expression-speech-01{opacity:1}
 .avatar-expression-speech-02-active .avatar-expression-speech-02{opacity:1}

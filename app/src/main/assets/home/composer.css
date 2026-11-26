@@ -30,3 +30,9 @@
 .eva-composer-send,#form.eva-composer #send::before { --icon-x:33.3333%; width:36px; height:36px; filter:none; }
 .eva-composer-expand { --icon-x:66.6667%; }
 #form.eva-composer :is(#mic,#send) > .ui-icon { display:none; }
+
+@media (prefers-reduced-motion:no-preference) {
+  .eva-composer .listening :is(.eva-composer-icon,.ui-icon),
+  #form.eva-composer #mic.listening::before { animation:eva-mic-listening .8s ease-in-out infinite alternate; }
+}
+@keyframes eva-mic-listening { from { opacity:.65; scale:.92; } to { opacity:1; scale:1.09; } }

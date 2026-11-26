@@ -76,11 +76,20 @@ export function createScene(canvas) {
     uniform float castStrength;
     uniform bool glow;
     uniform bool cutout;
+    uniform vec4 evaStep;
+    uniform vec4 evaFeet;
+    uniform vec4 evaShoeTravel;
 
 
     uniform vec3 ambient;
     uniform vec4 lamps[4];
     out vec4 outColor;
+
+    float shoeWeight(vec2 delta){
+      float radius=length(delta*vec2(4.5,3.6));
+      float w=max(0.,1.-radius);
+      return w*w/(.004+radius*radius);
+    }
 
     void main(){
       // Gradients are evaluated before the cutaway discards any neighbouring fragment.
@@ -129,6 +138,7 @@ export function createScene(canvas) {
       }
       if(pick&&!cutout){outColor=vec4(mod(id,256.)/255.,floor(id/256.)/255.,0.,1.);return;}
       vec4 px;
+      vec2 currentUV=coord,nextUV=coord;
       if(materialMeters>0.){
         vec2 mirrorUV=1.-abs(mod(tile,2.)-1.);
         vec2 localUV=(materialMeters==2.8||(materialMeters==3.4&&cell.y>.25))?fract(tile):mirrorUV;
@@ -146,13 +156,40 @@ export function createScene(canvas) {
         if(structure==1&&n.z<max(n.x,n.y)*.25&&world.z<2.73){
           px.rgb*=mix(.73,1.,smoothstep(0.,.31,2.73-world.z));
         }
-      }else px=texture(source,coord);
-      if(cutout&&px.a<.49)discard;
+      }else{
+        if(evaStep.y>0.){
+          vec2 extent=vec2(.125,1./7.);
+          vec2 local=(coord-evaStep.zw)/extent;
+          float a=shoeWeight(local-evaFeet.xy),b=shoeWeight(local-evaFeet.zw);
+          vec2 travel=(a*evaShoeTravel.xy+b*evaShoeTravel.zw)/(.35+a+b);
+          travel*=smoothstep(.57,.74,local.y);
+          vec2 low=evaStep.zw+vec2(.0005),high=evaStep.zw+extent-vec2(.0005);
+          currentUV=clamp(coord-travel*extent*evaStep.y,low,high);
+          nextUV=clamp(coord+travel*extent*(1.-evaStep.y),low,high)+vec2(evaStep.x,0.);
+        }
+        px=texture(source,currentUV);
+        if(evaStep.y>0.){
+          vec4 next=texture(source,nextUV);
+          vec3 rgb=mix(px.rgb*px.a,next.rgb*next.a,evaStep.y);
+          float a=mix(px.a,next.a,evaStep.y);
+          px=vec4(rgb/max(.001,a),a);
+        }
+      }
+      if(cutout&&evaStep.y>0.&&!pick&&coverage){
+        if(px.a<.035)discard;
+        opacity*=px.a;
+      }else if(cutout&&px.a<.49)discard;
       // An inner ink line stays inside the illustrated silhouette, including in the pick pass.
       if(cutout&&!pick){
         vec2 edge=min(uvWidth*.90,vec2(2.6)/vec2(textureSize(source,0)));
-        float neighbour=min(min(texture(source,coord+vec2(edge.x,0.)).a,texture(source,coord-vec2(edge.x,0.)).a),
-                            min(texture(source,coord+vec2(0.,edge.y)).a,texture(source,coord-vec2(0.,edge.y)).a));
+        float neighbour=min(min(texture(source,currentUV+vec2(edge.x,0.)).a,texture(source,currentUV-vec2(edge.x,0.)).a),
+                            min(texture(source,currentUV+vec2(0.,edge.y)).a,texture(source,currentUV-vec2(0.,edge.y)).a));
+        if(evaStep.y>0.){
+          vec2 c=nextUV;
+          float other=min(min(texture(source,c+vec2(edge.x,0.)).a,texture(source,c-vec2(edge.x,0.)).a),
+                          min(texture(source,c+vec2(0.,edge.y)).a,texture(source,c-vec2(0.,edge.y)).a));
+          neighbour=mix(neighbour,other,evaStep.y);
+        }
         float ink=1.-smoothstep(.24,.88,neighbour);
         px.rgb=mix(px.rgb,px.rgb*vec3(.50,.47,.54)+vec3(.033,.026,.037),ink*.77);
       }
@@ -180,7 +217,7 @@ export function createScene(canvas) {
   gl.disable(gl.DITHER);
   const hasCoverage=gl.getParameter(gl.SAMPLES)>1;
   const shadowStencil=gl.getParameter(gl.STENCIL_BITS)>0;
-  const uniforms=Object.fromEntries(['placingPart','partMatrix','partInfo','partMotion','view','size','pick','ambient','lamps[0]','shadow','glow','cutout','structure','coverage','revealCenter','castStrength','materialMeters','wave','wavePhase'].map(name=>[name,gl.getUniformLocation(program,name)]));
+  const uniforms=Object.fromEntries(['placingPart','partMatrix','partInfo','partMotion','view','size','pick','ambient','lamps[0]','shadow','glow','cutout','structure','coverage','revealCenter','castStrength','materialMeters','wave','wavePhase','evaStep','evaFeet','evaShoeTravel'].map(name=>[name,gl.getUniformLocation(program,name)]));
   const buf=gl.createBuffer();
   function vertexArray(buffer){
     const vao=gl.createVertexArray();
@@ -377,6 +414,7 @@ export function createScene(canvas) {
   const crowns={'iso-idle':.537,'rear-idle':.552,'iso-sit':.447,'rear-sit':.378,
     'front-stoop':.452,'rear-stoop':.614,'front-reach':.303,'rear-reach':.317,
     'mood-wry':.510,'mood-pleased':.512,'mood-surprised':.515,'mood-curious':.498};
+  let evaStep;
   function sprite(id,key,{u,v,z=0},h,flip,options,actor=false){
     if(!artReady(key))return;
     const frame=propArt[key];
@@ -395,6 +433,7 @@ export function createScene(canvas) {
     const x=atlas?(options.column%gait.columns)/gait.columns:frame?.[1]??0;
     const y=atlas?(options.row*rowsPerView+Math.floor(options.column/gait.columns))/rows:frame?.[2]??0;
     const rightU=atlas?x+1/gait.columns:frame?.[3]??1,bottomV=atlas?y+1/rows:frame?.[4]??1;
+    if(key==='walk-eva')evaStep=options?.step?{...options.step,x,y}:null;
     // Offsets along the view axis preserve screen placement and adjust occlusion.
     const bias=options?.bias??0;
     const foot=options?.floor?h*(1-anchorY)+.016:0;
@@ -456,9 +495,10 @@ export function createScene(canvas) {
         vertex(x,y);vertex(right,bottom);vertex(x,bottom);
       }
     }else quad(corners,id,[1,1,1],batch,uv);
-    const crown=options?.crown?.[0]??crowns[key]??.5;
+    const crownPoint=options?.grip?.crown?.to??options?.crown;
+    const crown=crownPoint?.[0]??crowns[key]??.5;
     const crownX=span*((flip?1-crown:crown)-anchor)+lean;
-    return {u:u+crownX,v:v-crownX,z:top-h*(options?.crown?.[1]??(atlas?.027:0)),
+    return {u:u+crownX,v:v-crownX,z:top-h*(crownPoint?.[1]??(atlas?.027:0)),
       hand:grip?.hand,otherHand:grip?.other};
   }
   function sleepingSprite(id,{u,v,z},key='eva-asleep'){
@@ -507,10 +547,15 @@ export function createScene(canvas) {
     gl.uniform3fv(uniforms.revealCenter,reveal);
     gl.uniform1f(uniforms.castStrength,.18+.16*lightDay);
     gl.uniform1i(uniforms.coverage,hasCoverage?1:0);
-    function material(key){
+    function material(key,step){
       const scale=key==='roofs'?2.8:key==='coast'?2.4:key==='terrain'?4.3:key==='building'?3.4:
         key==='material'||key==='district'?2.7:0;
       gl.uniform1f(uniforms.materialMeters,scale);
+      if(step){
+        gl.uniform4f(uniforms.evaStep,step.offset,step.weight,step.x,step.y);
+        gl.uniform4fv(uniforms.evaFeet,step.feet);
+        gl.uniform4fv(uniforms.evaShoeTravel,step.travel);
+      }else gl.uniform4f(uniforms.evaStep,0,0,0,0);
       bindTexture(key);
     }
     function geometry(){
@@ -531,7 +576,7 @@ export function createScene(canvas) {
 
         const key=shell?batch.slice(6):leaves?batch.slice(7):batch;
         gl.uniform1i(uniforms.structure,shell?1:leaves?2:0);
-        material(key);
+        material(key,batch==='walk-eva'?evaStep:null);
         uploadDynamic(vertices);
         gl.drawArrays(gl.TRIANGLES,0,vertices.length/vertexSize);
       }
@@ -550,6 +595,7 @@ export function createScene(canvas) {
       gl.uniform1i(uniforms.placingPart,0);
     }
     gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+    gl.uniform4f(uniforms.evaStep,0,0,0,0);
     if(pick)return;
     gl.uniform1i(uniforms.structure,0);gl.uniform1i(uniforms.wave,0);
     gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);

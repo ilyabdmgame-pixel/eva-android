@@ -38,7 +38,8 @@ final class PetMotion {
         WALK_SECOND_HALF,WALK_SECOND_HALF+1,WALK_SECOND_HALF+2,WALK_SECOND_HALF+3,
         WALK_FINAL_PHASES,WALK_FINAL_PHASES+1,WALK_FINAL_PHASES+2,WALK_FINAL_PHASES+3};
     static final class Pose {
-        int frame, nextFrame=-1;
+        int frame, nextFrame=-1, nearbyFrame=-1, blendOrigin=-1;
+        float nearbyWeight, nearbyFootX;
         float blend, shiftX, shiftY, gaitFootX, angle,airPhase=-1,airAmplitude=1;
         boolean mirrored, seatedPivot;
     }
@@ -77,9 +78,27 @@ final class PetMotion {
         // Sample the legs by distance. The window already carries the whole body continuously.
         float sequence=(start+strideCycles(distance,width))*2*GENERATED_FRAMES;
         int key=Math.round(sequence);
-        int phase=key%(2*GENERATED_FRAMES);
-        pose.gaitFootX=(key-sequence)*GAIT_CYCLE/(2*GENERATED_FRAMES);
-        pose.frame=((phase&1)==0?GAIT:GAIT_MID)+phase/2;
+        int neighbor=sequence<key?key-1:key+1;
+        float artUnits=GAIT_CYCLE/(2*GENERATED_FRAMES);
+        pose.gaitFootX=(key-sequence)*artUnits;
+        pose.nearbyFootX=(neighbor-sequence)*artUnits;
+        pose.frame=pose.blendOrigin=gaitCel(key);
+        pose.nearbyFrame=gaitCel(neighbor);
+        pose.nearbyWeight=Math.abs(sequence-key);
+        pose.nextFrame=-1;
+    }
+
+    private static int gaitCel(int key){
+        int phase=Math.floorMod(key,2*GENERATED_FRAMES);
+        return ((phase&1)==0?GAIT:GAIT_MID)+phase/2;
+    }
+
+    static void inBetween(Pose pose,int first,int count,float progress){
+        float index=clamp(progress,0,count-1);
+        int main=Math.round(index);
+        pose.frame=pose.blendOrigin=first+main;
+        pose.nearbyFrame=first+Math.max(0,Math.min(count-1,index<main?main-1:main+1));
+        pose.nearbyWeight=Math.abs(index-main);
         pose.nextFrame=-1;
     }
 
@@ -99,8 +118,7 @@ final class PetMotion {
 
     static void depart(Pose p,long time,float distance,float total,int width){
         if(time<WALK_PIVOT_MS){
-            p.frame=WALK_PIVOT+Math.min(WALK_PIVOTS-1,(int)(poseTime(time)*WALK_PIVOTS/WALK_PIVOT_MS));
-            p.nextFrame=-1;
+            inBetween(p,WALK_PIVOT,WALK_PIVOTS,time*(WALK_PIVOTS-1f)/WALK_PIVOT_MS);
             p.shiftX=0;
             return;
         }
@@ -278,7 +296,8 @@ final class PetMotion {
         p.frame=IDLE;
         p.airPhase=-1;
         p.airAmplitude=1;
-        p.nextFrame=-1;
+        p.nextFrame=p.nearbyFrame=-1;
+        p.nearbyWeight=0;
         p.blend=0;
         p.shiftX=p.shiftY=p.gaitFootX=0;
         p.angle=0;
@@ -312,40 +331,40 @@ final class PetMotion {
                 // The standing character's textured rig performs these gestures.
                 break;
             case HOP:
-                if(time<TAKEOFF_MS){
-                    float takeoff=time/(float)TAKEOFF_MS;
+                if(elapsed<TAKEOFF_MS){
+                    float takeoff=elapsed/(float)TAKEOFF_MS;
                     spring(p,takeoff<.6f?ease(takeoff/.6f):1-.8f*ease((takeoff-.6f)/.4f));
                 }else if(time<duration-TOUCHDOWN_MS){
                     air(p,airborne(time,duration),clamp((duration-TAKEOFF_MS-TOUCHDOWN_MS)/650f,.55f,1));
-                }else spring(p,landingBend((time-duration+TOUCHDOWN_MS)/(float)TOUCHDOWN_MS));
+                }else spring(p,landingBend((elapsed-duration+TOUCHDOWN_MS)/(float)TOUCHDOWN_MS));
                 p.mirrored=left;
                 break;
             case EDGE_LEAN:
             case PERCH_LOOK:
                 p.mirrored=left;
-                float reach=ease(t/.36f)*(1f-ease((t-.68f)/.32f));
-                p.frame=LEAN_FRAME+Math.round(reach*(mode==PERCH_LOOK?23:17));
+                float reach=ease(motion/.36f)*(1f-ease((motion-.68f)/.32f));
+                inBetween(p,LEAN_FRAME,GENERATED_FRAMES,reach*(mode==PERCH_LOOK?23:17));
                 break;
             case SEATED_PEEK:
                 p.mirrored=left;
                 p.seatedPivot=true;
                 p.frame=SEAT_SWING;
-                long seatTime=time%12000;
-                if(time<duration-1500){
-                    if(seatTime>=2400&&seatTime<4800)p.frame+=loopFrame(seatTime-2400,1200);
-                    else if(seatTime>=7600&&seatTime<10000)p.frame+=loopFrame(seatTime-7600,1200);
+                long seatTime=elapsed%12000;
+                if(elapsed<duration-1500){
+                    if(seatTime>=2400&&seatTime<4800)seatSwing(p,seatTime-2400,1200);
+                    else if(seatTime>=7600&&seatTime<10000)seatSwing(p,seatTime-7600,1200);
                 }
                 break;
             case PERCH_STAND:
             case PERCH_SIT:
                 p.mirrored=left;
-                p.frame=RISE_FRAME+Math.round((GENERATED_FRAMES-1)*standingAmount(t,mode==PERCH_SIT));
+                inBetween(p,RISE_FRAME,GENERATED_FRAMES,(GENERATED_FRAMES-1)*standingAmount(motion,mode==PERCH_SIT));
                 break;
             case IDLE_BOOK:
             case IDLE_TEA:
                 int base=mode==IDLE_BOOK?REACH_BOOK:REACH_TEA;
-                float reachProp=ease(time/1100f)*ease((duration-time)/1100f);
-                p.frame=base+Math.round(reachProp*(GENERATED_FRAMES-1));
+                float reachProp=ease(elapsed/1100f)*ease((duration-elapsed)/1100f);
+                inBetween(p,base,GENERATED_FRAMES,reachProp*(GENERATED_FRAMES-1));
                 p.angle=reachProp*(mode==IDLE_BOOK?2f:-4f)*(float)Math.sin(Math.PI*t);
                 break;
             case ROPE_REACH:
@@ -364,10 +383,10 @@ final class PetMotion {
                 break;
             case ROPE_SETTLE:
                 p.mirrored=left;
-                p.frame=ROPE_RECOVER+Math.round((ROPE_KEYS-1)*clamp((time-LOAD_HOLD_MS)/(float)RECOVER_MS,0,1));
+                inBetween(p,ROPE_RECOVER,ROPE_KEYS,(ROPE_KEYS-1)*(elapsed-LOAD_HOLD_MS)/(float)RECOVER_MS);
                 break;
             case LOOK_AROUND:
-                spring(p,.38f*(float)Math.sin(Math.PI*t));
+                spring(p,.38f*(float)Math.sin(Math.PI*motion));
                 p.angle=3.5f*(float)Math.sin(2*Math.PI*t);
                 p.mirrored=left;
                 break;
@@ -377,14 +396,14 @@ final class PetMotion {
                 break;
             case LANDING:
                 p.mirrored=left;
-                spring(p,landingBend(t));
+                spring(p,landingBend(motion));
                 break;
             case CRAWLING:
                 p.mirrored=left;
                 int fold=Math.min(CRAWL_FOLD_MS,duration/3);
                 if(elapsed<fold||elapsed>duration-fold){
-                    float amount=Math.min(time,duration-time)/(float)fold;
-                    p.frame=CRAWL_FOLD+Math.round(23*clamp(amount,0,1));
+                    float amount=Math.min(elapsed,duration-elapsed)/(float)fold;
+                    inBetween(p,CRAWL_FOLD,GENERATED_FRAMES,(GENERATED_FRAMES-1)*amount);
                 }else{
                     p.frame=crawlStep(travel(crawlTravel(motion,duration)),crawlCycles);
                 }
@@ -437,7 +456,7 @@ final class PetMotion {
     }
 
     private static void spring(Pose p,float bend){
-        p.frame=SPRING+Math.round(clamp(bend,0,1)*(GENERATED_FRAMES-1));
+        inBetween(p,SPRING,GENERATED_FRAMES,bend*(GENERATED_FRAMES-1));
     }
 
     static float landingBend(float time){
@@ -453,7 +472,20 @@ final class PetMotion {
             landingBend(time>=duration?1:clamp(poseTime(time)/(float)duration,0,1),impact));
     }
 
-    private static int loopFrame(long time,int cycle){return (int)((time%cycle)*GENERATED_FRAMES/cycle);}
+    static void sampleLanding(Pose pose,long time,int duration,float impact){
+        spring(pose,landingBend(clamp(time/(float)duration,0,1),impact));
+    }
+
+    private static void seatSwing(Pose pose,long time,int cycle){
+        float index=(time%cycle)*GENERATED_FRAMES/(float)cycle;
+        inBetween(pose,SEAT_SWING,GENERATED_FRAMES,index);
+        if(index>GENERATED_FRAMES-1){
+            float tail=index-(GENERATED_FRAMES-1);
+            pose.frame=pose.blendOrigin=SEAT_SWING+(tail<.5f?GENERATED_FRAMES-1:0);
+            pose.nearbyFrame=SEAT_SWING+(tail<.5f?0:GENERATED_FRAMES-1);
+            pose.nearbyWeight=Math.min(tail,1-tail);
+        }
+    }
 
     static int ropeHandX(int width,boolean mirrored){
         return Math.round(width*(mirrored?1f-ROPE_HAND_X:ROPE_HAND_X));

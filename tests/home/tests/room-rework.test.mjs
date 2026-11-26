@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {actionBeat,gripGrid,pointOnCel,registeredPose} from '../../../app/src/main/assets/home/eva-motion.mjs';
-import {actionPose} from '../../../app/src/main/assets/home/orientation.mjs';
+import {actionPose,evaPose,gait} from '../../../app/src/main/assets/home/orientation.mjs';
 import {attachedPosition,bedRest,drawBedding,expandedRoom,fitsRoom,inRoom,roomFurniture,roomView}
   from '../../../app/src/main/assets/home/room.mjs';
 import {computerLayout,drawComputer,furnishingThumbnail,roomFurnishings,streamChair} from '../../../app/src/main/assets/home/room-furnishings.mjs';
@@ -14,7 +14,7 @@ test('room hands stay on the visible clean drawings as pose and facing change',(
  const corners=[[0,2,1.6],[1,1,1.6],[1,1,0],[0,2,0]];
  const distance=(a,b)=>Math.hypot(a.u-b.u,a.v-b.v,a.z-b.z);
  for(const facing of ['down-right','down-left','up-right','up-left'])for(const motion of ['reach','stoop','sit','sleep']){
-   let previous;
+   let previous,previousCrown;
    for(let frame=0;frame<=70;frame++){
      const phase=frame/70,pose=registeredPose(actionPose(facing,motion,phase),phase);
      const grid=gripGrid(corners,pose.grip,pose.flip);
@@ -22,6 +22,16 @@ test('room hands stay on the visible clean drawings as pose and facing change',(
      const [u,v,z]=grid.move(pose.flip?1-x:x,y);
      assert([0,3,7,...(motion==='sleep'?[5]:[])].includes(pose.column));
      assert(distance({u,v,z},grid.hand)<1e-8);
+     const mirror=([x,y])=>[pose.flip?1-x:x,y];
+     const {crown,other,otherFrom,support}=pose.grip;
+     const pinned=[[crown.from,crown.to],...(other?[[otherFrom,other]]:[]),...(support?[[support,support]]:[])];
+     for(const [from,to] of pinned){
+       const [u,v,z]=grid.move(...mirror(from));
+       assert(distance({u,v,z},pointOnCel(corners,mirror(to)))<1e-8);
+     }
+     const head=pointOnCel(corners,mirror(crown.to));
+     if(previousCrown)assert(distance(previousCrown,head)<.05);
+     previousCrown=head;
      if(previous)assert(distance(previous,grid.hand)<.047);
      previous=grid.hand;
    }
@@ -31,6 +41,21 @@ test('room hands stay on the visible clean drawings as pose and facing change',(
  const left=gripGrid(corners,p.grip,true).hand;
  assert(Math.abs(right.u+left.u-1)<1e-8);
  assert.equal(pointOnCel(corners,[0,0]).z,1.6);
+});
+
+test('Eva interpolates to the first step at the end of each walking cycle',()=>{
+ const distance=gait.stride*(gait.frames-.5)/gait.frames;
+ for(const facing of ['down-right','down-left','up-right','up-left','up','left','right','down']){
+   const end=evaPose(facing,'walk',distance);
+   assert.equal(end.column,7);
+   assert.equal(end.step.offset,-7/8);
+   assert.equal(end.step.weight,.5);
+   const restart=evaPose(facing,'walk',gait.stride);
+   for(const [i,shoe] of end.step.feet.entries())
+     assert(Math.abs(shoe+end.step.travel[i]*.5-restart.step.feet[i])<1e-9);
+   assert.equal(evaPose(facing,'walk',gait.stride).column,0);
+   assert.equal(evaPose(facing,'walk',gait.stride).step.weight,0);
+ }
 });
 
 test('changing motion leaves and enters the shared neutral frame',()=>{

@@ -266,6 +266,16 @@ public final class PetMotionTest {
             PetMotion.depart(pose,PetMotion.WALK_PIVOT_MS,0,350,306);
             check(pose.frame==PetMotion.GAIT+7&&pose.shiftX==0,"Enter the same profile used by the drawn pivot endpoint");
         }
+        PetMotion.inBetween(pose,PetMotion.RISE_FRAME,PetMotion.GENERATED_FRAMES,8.25f);
+        check(pose.frame==PetMotion.RISE_FRAME+8&&pose.nearbyFrame==pose.frame+1&&pose.nearbyWeight==.25f,
+            "Standing must include an interpolated sample between neighboring drawings");
+        PetMotion.inBetween(pose,PetMotion.RISE_FRAME,PetMotion.GENERATED_FRAMES,8.75f);
+        check(pose.nearbyFrame==pose.frame-1&&pose.nearbyWeight==.25f,
+            "The neighboring sample must stay continuous when the nearest drawing changes");
+        PetMotion.sampleLanding(pose,0,670,1);
+        check(pose.frame==PetMotion.landingFrame(0,670,1),"Landing must keep the first contact image");
+        PetMotion.sample(pose,PetMotion.GREET,0,false);
+        check(pose.nearbyFrame<0,"A new motion must clear the previous neighboring drawing");
         pose.frame=PetMotion.RISE_FRAME+23;pose.nextFrame=-1;
         check(PetMotion.frontForWalk(pose),"Standing from a seat must turn towards the first step");
         check(PetMotion.mantleArtwork(PetMotion.mantleSample(6.51f))==PetMotion.MANTLE_BETWEEN+6&&
@@ -281,6 +291,10 @@ public final class PetMotionTest {
                 int key=pose.frame>=PetMotion.GAIT_MID?2*(pose.frame-PetMotion.GAIT_MID)+1:2*(pose.frame-PetMotion.GAIT);
                 // The planted foot in the baked images travels five design pixels per half-key.
                 float contact=sign*(d-key*5+PetMotion.gaitOffsetAt(520,pose.gaitFootX));
+                int next=pose.nearbyFrame>=PetMotion.GAIT_MID?2*(pose.nearbyFrame-PetMotion.GAIT_MID)+1:
+                    2*(pose.nearbyFrame-PetMotion.GAIT);
+                float paired=sign*(d-next*5+PetMotion.gaitOffsetAt(520,pose.nearbyFootX));
+                check(Math.abs(contact-paired)<.001f,"Both walking drawings must place the planted shoe together");
                 if(i>0)check(Math.abs(contact-previousContact)<.001f,"Planted shoe must stay put across keys");
                 previousContact=contact;
                 check(PetMotion.gaitOffsetAt(300,pose.gaitFootX)==0,"Shoe correction must not pin the torso");

@@ -1,4 +1,6 @@
-// Registered to the clean drawings in the 210 x 252 action atlas. The other columns contain blended silhouettes.
+import {actionAnchors} from './action-anchors.mjs';
+
+// Registered to the clean drawings in the 210 x 252 action atlas.
 const clean=[[0,3,7],[0,3,7],[0,3,7],[0,3,5,7]];
 const wrists={
  'act-eva-front':[
@@ -29,8 +31,16 @@ export function registeredPose(pose,amount){
  const part=end===start?0:(phase-columns[start])/(columns[end]-columns[start]);
  const source=part<.5?start:end;
  const row=wrists[pose.key][pose.row];
- const grip={from:ratio(row[source]),to:ratio(mix(row[start],row[end],part))};
- if(pose.row===2)grip.other=ratio(mix(lap[pose.key][start],lap[pose.key][end],part));
+ const heads=actionAnchors[pose.key].heads[pose.row];
+ const grip={
+   from:ratio(row[source]),to:ratio(mix(row[start],row[end],part)),
+   crown:{from:heads[columns[source]],to:mix(heads[columns[start]],heads[columns[end]],part)}
+ };
+ if(pose.row===2){
+   grip.other=ratio(mix(lap[pose.key][start],lap[pose.key][end],part));
+   grip.otherFrom=ratio(lap[pose.key][source]);
+ }
+ if(pose.row!==3)grip.support=[.5,.935];
  return {...pose,column:columns[source],grip};
 }
 
@@ -59,16 +69,27 @@ export function pointOnCel(corners,[x,y]){
 
 export function gripGrid(corners,grip,flip){
  const mirror=([x,y])=>[flip?1-x:x,y];
- const from=mirror(grip.from),to=mirror(grip.to);
- const initial=pointOnCel(corners,from),target=pointOnCel(corners,to);
- const delta=[target.u-initial.u,target.v-initial.v,target.z-initial.z];
- const move=(x,y)=>{
-   const xFall=Math.max(0,1-Math.abs(x-from[0])/.33);
-   const yFall=Math.max(0,1-Math.abs(y-from[1])/.30);
-   const p=pointOnCel(corners,[x,y]),weight=xFall*yFall;
-   return [p.u+delta[0]*weight,p.v+delta[1]*weight,p.z+delta[2]*weight];
+ const landmark=(first,last)=>{
+   const from=mirror(first),to=mirror(last);
+   return {from,dx:to[0]-from[0],dy:to[1]-from[1]};
  };
- const grid=coordinate=>[...new Set([0,.25,.5,.75,1,coordinate])].sort((a,b)=>a-b);
- return {hand:target,other:grip.other?pointOnCel(corners,mirror(grip.other)):null,
-   xs:grid(from[0]),ys:grid(from[1]),move,warped:delta.some(x=>Math.abs(x)>.0005)};
+ const points=[landmark(grip.from,grip.to)];
+ if(grip.crown)points.push(landmark(grip.crown.from,grip.crown.to));
+ if(grip.otherFrom)points.push(landmark(grip.otherFrom,grip.other));
+ if(grip.support)points.push(landmark(grip.support,grip.support));
+ const move=(x,y)=>{
+   let dx=0,dy=0,total=1;
+   for(const point of points){
+     const distance=Math.hypot((x-point.from[0])/.45,(y-point.from[1])/.42);
+     if(distance<1e-8){dx=point.dx;dy=point.dy;total=1;break;}
+     if(distance>=1)continue;
+     const weight=(1-distance)**2/distance**2;
+     dx+=weight*point.dx;dy+=weight*point.dy;total+=weight;
+   }
+   const p=pointOnCel(corners,[x+dx/total,y+dy/total]);
+   return [p.u,p.v,p.z];
+ };
+ const grid=axis=>[...new Set([0,.25,.5,.75,1,...points.map(point=>point.from[axis])])].sort((a,b)=>a-b);
+ return {hand:pointOnCel(corners,mirror(grip.to)),other:grip.other?pointOnCel(corners,mirror(grip.other)):null,
+   xs:grid(0),ys:grid(1),move,warped:points.some(point=>Math.hypot(point.dx,point.dy)>.0005)};
 }

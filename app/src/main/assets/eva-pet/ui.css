@@ -66,3 +66,19 @@ body.eva-pet-chat #eva-pet-work-cards {display:block;flex:none;max-height:32%;ov
 @media(prefers-reduced-motion:reduce){#eva-pet-games .volley-court.flying img {animation:none;}}
 #eva-pet-games .game-actions {display:flex;gap:10px;flex-wrap:wrap;}
 #eva-pet-games .game-actions .game-primary {background:#a8e5ce;color:#1d3833;font-weight:650;}
+
+.eva-mini-presence { display:flex; width:24px; height:24px; flex:0 0 auto; gap:2px;
+  align-items:center; justify-content:center; color:#a4dfce; border-radius:50%; background:#223e43; }
+.eva-mini-presence i { width:2px; height:9px; border-radius:2px; background:currentColor;
+  transform:scaleY(.35); transition:transform .16s ease-out; }
+.eva-mini-presence:is([data-state="speaking"],[data-state="listening"],[data-state="working"]) i { transform:scaleY(.7); }
+@media (prefers-reduced-motion:no-preference) {
+  .eva-mini-presence:is([data-state="speaking"],[data-state="listening"],[data-state="working"]) i {
+    animation:eva-mini-voice .82s ease-in-out infinite alternate;
+  }
+  .eva-mini-presence[data-state="working"] i { animation-duration:1.35s; }
+  .eva-mini-presence i:nth-child(2) { animation-delay:-.35s; }
+  .eva-mini-presence i:nth-child(3) { animation-delay:-.64s; }
+}
+@keyframes eva-mini-voice { from { transform:scaleY(.36); } to { transform:scaleY(1.15); } }
+@media (prefers-reduced-motion:reduce) { .eva-mini-presence i { transition:none; } }

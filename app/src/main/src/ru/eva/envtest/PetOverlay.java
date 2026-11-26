@@ -11,6 +11,8 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.hardware.Sensor;
@@ -800,7 +802,7 @@ final class PetOverlay {
         else if(mode==PetMotion.SEATED_PEEK&&seat.activity!=null)mood.seated(seat,time);
         else mood.motion(mode,PetMotion.poseTime(time),landingImpact);
         if(PetGesture.handled(mode))PetGesture.sample(gamePose,mode,PetMotion.poseTime(time),duration,mood);
-        if(mode==PetMotion.LANDING)pose.frame=PetMotion.landingFrame(Math.min(time,duration),duration,landingImpact);
+        if(mode==PetMotion.LANDING)PetMotion.sampleLanding(pose,Math.min(time,duration),duration,landingImpact);
         float progress=PetMotion.clamp(time/(float)duration,0,1);
         int walkDuration=turningIntoWalk?duration-PetMotion.WALK_PIVOT_MS:duration;
         float walkProgress=turningIntoWalk?PetMotion.clamp((time-PetMotion.WALK_PIVOT_MS)/(float)walkDuration,0,1):progress;
@@ -2064,6 +2066,8 @@ final class PetOverlay {
     private final class Sprite extends View {
         final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
         final RectF dest=new RectF();
+        final PetMotion.Pose chairPose=new PetMotion.Pose();
+        final PorterDuffXfermode addFrames=new PorterDuffXfermode(PorterDuff.Mode.ADD);
         final float[] rearMesh=new float[(PetLadderMotion.COLS+1)*(PetLadderMotion.ROWS+1)*2];
 
         private void drawFrame(Canvas canvas,Frame frame,float w,float h,float opacity){
@@ -2077,11 +2081,11 @@ final class PetOverlay {
         // Bend only the trouser legs to hold each planted shoe between artwork samples.
         private static final int GAIT_ROWS=12;
         private final float[] gaitMesh=new float[(GAIT_ROWS+1)*4];
-        private void drawGait(Canvas canvas,Frame frame){
+        private void drawGait(Canvas canvas,Frame frame,float w,float h,float footX){
             Rect area=frame.area;
             for(int row=0;row<=GAIT_ROWS;row++){
                 float y=area.top+area.height()*row/(float)GAIT_ROWS;
-                float shift=PetMotion.gaitOffsetAt(y,pose.gaitFootX);
+                float shift=PetMotion.gaitOffsetAt(y,footX);
                 int i=row*4;
                 gaitMesh[i]=area.left+shift;
                 gaitMesh[i+1]=y;
@@ -2089,9 +2093,34 @@ final class PetOverlay {
                 gaitMesh[i+3]=y;
             }
             canvas.save();
-            canvas.scale(bodyWidth/(float)FRAME_WIDTH,bodyHeight/(float)FRAME_HEIGHT);
+            canvas.scale(w/FRAME_WIDTH,h/FRAME_HEIGHT);
             canvas.drawBitmapMesh(frame.bitmap,1,GAIT_ROWS,gaitMesh,0,null,0,paint);
             canvas.restore();
+        }
+
+        private void drawCel(Canvas canvas,Frame frame,float w,float h,float alpha,boolean gait,float footX){
+            if(gait){
+                paint.setAlpha(Math.round(255*alpha));
+                drawGait(canvas,frame,w,h,footX);
+                paint.setAlpha(255);
+            }else drawFrame(canvas,frame,w,h,alpha);
+        }
+
+        private void drawPose(Canvas canvas,Frame frame,PetMotion.Pose sample,float w,float h,float opacity){
+            boolean gait=PetMotion.gaitFrame(sample.frame);
+            float mix=sample.nearbyWeight;
+            if(!motionEnabled||touched||sample.frame!=sample.blendOrigin||sample.nextFrame>=0||
+                sample.nearbyFrame<0||sample.nearbyFrame==sample.frame||mix<.015f){
+                drawCel(canvas,frame,w,h,opacity,gait,sample.gaitFootX);
+                return;
+            }
+            // Add weighted premultiplied pixels in isolation so edge overlap keeps its expected opacity.
+            int layer=canvas.saveLayer(0,0,w,h,null);
+            drawCel(canvas,frame,w,h,opacity*(1-mix),gait,sample.gaitFootX);
+            paint.setXfermode(addFrames);
+            drawCel(canvas,frames[sample.nearbyFrame],w,h,opacity*mix,gait,sample.nearbyFootX);
+            paint.setXfermode(null);
+            canvas.restoreToCount(layer);
         }
 
         private void drawRear(Canvas canvas,Frame frame){
@@ -2235,8 +2264,9 @@ final class PetOverlay {
             boolean viewing=parked&&!appParkingMove&&!touched&&mode==PetMotion.SEATED_PEEK&&watchingPlayer();
             if(!staging&&parked&&!appParkingMove&&mode==PetMotion.SEATED_PEEK&&motionEnabled&&!viewing&&!editingInApp()){
                 long swing=(chair.deployed?chair.seatedFor(now):now)%7200;
-                pose.frame=PetMotion.SEAT_SWING+Math.round((1-(float)Math.cos(2*Math.PI*swing/7200))*4);
-                postInvalidateDelayed(240);
+                PetMotion.inBetween(pose,PetMotion.SEAT_SWING,PetMotion.GENERATED_FRAMES,
+                    (1-(float)Math.cos(2*Math.PI*swing/7200))*4);
+                postInvalidateDelayed(67);
             }
             if(mode==PetMotion.SEATED_PEEK&&!touched&&(phase>0||staging)){
                 float open=PetChair.unfolding(phase);
@@ -2256,11 +2286,12 @@ final class PetOverlay {
                 if(staging||!chair.deployed)postInvalidateOnAnimation();
             }
             float sitting=PetChair.sitting(phase);
-            Frame frame=staging?frames[PetMotion.RISE_FRAME+
-                Math.round((PetMotion.GENERATED_FRAMES-1)*(1-sitting))]:artwork();
+            if(staging)PetMotion.inBetween(chairPose,PetMotion.RISE_FRAME,PetMotion.GENERATED_FRAMES,
+                (PetMotion.GENERATED_FRAMES-1)*(1-sitting));
+            Frame frame=staging?frames[chairPose.frame]:artwork();
             if(viewing){
                 float turned=staging?PetMotion.ease((sitting-.65f)/.35f):1;
-                if(turned<1)drawFrame(canvas,frame,w,h,1-turned);
+                if(turned<1)drawPose(canvas,frame,chairPose,w,h,1-turned);
                 if(turned>0){
                     paint.setAlpha(Math.round(255*turned));
                     canvas.scale(w/FRAME_WIDTH,h/FRAME_HEIGHT);
@@ -2272,8 +2303,8 @@ final class PetOverlay {
             }
             if(staging){
                 float settled=PetChair.seatedBlend(sitting);
-                if(settled<1)drawFrame(canvas,frame,w,h,1-settled);
-                if(settled>0)drawFrame(canvas,artwork(),w,h,settled);
+                if(settled<1)drawPose(canvas,frame,chairPose,w,h,1-settled);
+                if(settled>0)drawPose(canvas,artwork(),pose,w,h,settled);
                 canvas.restore();
                 return;
             }
@@ -2294,9 +2325,7 @@ final class PetOverlay {
                 canvas.restore();
                 return;
             }
-            dest.set(area.left*w/FRAME_WIDTH,area.top*h/FRAME_HEIGHT,area.right*w/FRAME_WIDTH,area.bottom*h/FRAME_HEIGHT);
-            if(PetMotion.gaitFrame(pose.frame))drawGait(canvas,frame);
-            else canvas.drawBitmap(frame.bitmap,null,dest,paint);
+            drawPose(canvas,frame,pose,w,h,1);
             if(!touched&&(mood.face!=PetMood.Face.NEUTRAL||mood.quip!=null)){
                 canvas.scale(w/FRAME_WIDTH,h/FRAME_HEIGHT);
                 playArt.bodyFace(canvas,pose.frame,mood);

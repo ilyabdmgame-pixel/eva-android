@@ -35,8 +35,25 @@ export function walkPose(actor,direction,distance){
   return {key:'walk-'+actor,flip,row:row??(rear?1:0),column};
 }
 
+// Shoe centres in pixels on the 210 × 252 cells, ordered across each view.
+const shoes=[
+ [[69,183,151,216],[63,176,135,207],[78,170,116,202],[85,184,124,210],[76,175,142,221],[73,166,131,214],[96,166,103,203],[73,192,155,211]],
+ [[83,222,143,169],[76,221,133,181],[88,201,97,183],[81,214,144,172],[71,221,147,186],[60,222,136,188],[89,177,116,205],[91,217,143,166]],
+ [[95,198,112,212],[98,198,113,217],[94,175,107,218],[95,181,109,216],[98,212,115,183],[99,219,113,202],[99,215,116,181],[101,217,120,187]],
+ [[96,195,111,213],[96,205,110,221],[101,193,104,222],[94,177,111,215],[99,212,113,191],[100,223,114,204],[96,188,111,218],[94,209,115,185]],
+ [[70,209,152,214],[82,211,132,217],[92,186,108,215],[97,182,102,216],[73,215,150,213],[82,217,142,214],[96,186,106,216],[81,220,122,191]]
+];
+
 export function evaPose(direction,activity,phase=0){
-  if(activity==='walk')return {...walkPose('eva',direction,phase),height:1.62};
+  if(activity==='walk'){
+    const pose=walkPose('eva',direction,phase);
+    const step=(phase%gait.stride)*gait.frames/gait.stride;
+    const next=(pose.column+1)%gait.frames;
+    const weight=step-pose.column;
+    const travel=shoes[pose.row][pose.column].map((value,i)=>(shoes[pose.row][next][i]-value)/(i%2?252:210));
+    const feet=shoes[pose.row][pose.column].map((value,i)=>value/(i%2?252:210)+travel[i]*weight);
+    return {...pose,height:1.62,step:{offset:(next-pose.column)/gait.columns,weight,feet,travel}};
+  }
   return actionPose(direction,activity,phase);
 }
 

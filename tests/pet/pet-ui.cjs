@@ -8,12 +8,13 @@ class Element {
     this.tagName = tagName;
     this.children = [];
     this.attributes = {};
+    this.dataset = {};
     this.events = new Map();
     this.value = '';
     const classes = new Set();
     this.classList = { toggle: (name, on) => on ? classes.add(name) : classes.delete(name), contains: name => classes.has(name) };
   }
-  append(child) { this.children.push(child); }
+  append(...children) { this.children.push(...children); }
   prepend(child) { this.children.unshift(child); }
   insertAdjacentElement(position, child) {
     assert.equal(position, 'afterend');
@@ -46,6 +47,7 @@ const EvaApp = Object.fromEntries(
 const script = fs.readFileSync(path.join(__dirname, '../../app/src/main/assets/eva-pet/ui.js'), 'utf8');
 const window = {};
 const globals = { document, EvaApp, window, localStorage, Event, queueMicrotask,
+  matchMedia: () => ({ matches:false }),
   uiIcon: icon => '<svg aria-hidden="true" data-icon="'+icon+'"></svg>' };
 vm.runInNewContext(script, globals);
 vm.runInNewContext(script, globals);
@@ -55,7 +57,11 @@ assert.equal(head.children[0].href, '/eva-pet-ui.css');
 assert.equal(head.children[1].href, '/eva-composer.css');
 assert.equal(settings.inserted.id, 'eva-pet-controls');
 settings.inserted.click();
-const [title, ...buttons] = body.children[0].children;
+const [presence, title, ...buttons] = body.children[0].children;
+assert.equal(presence.attributes['aria-hidden'], 'true');
+assert.equal(presence.children.length, 3);
+window.evaMiniPresence('listening');
+assert.equal(presence.dataset.state, 'listening');
 const control = label => buttons.find(button => button.attributes['aria-label'] === label);
 const expand = form.children[0], close = control('Закрыть мини-чат');
 const profile = control('Поведение в приложении');

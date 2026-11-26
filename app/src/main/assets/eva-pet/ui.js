@@ -21,7 +21,12 @@
   header.id = 'eva-pet-header';
   const title = document.createElement('strong');
   title.textContent = 'Ева';
-  header.append(title);
+  const presence = document.createElement('span');
+  presence.className = 'eva-mini-presence';
+  presence.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 3; i++) presence.append(document.createElement('i'));
+  header.append(presence, title);
+  window.evaMiniPresence = state => { if (presence.dataset.state !== state) presence.dataset.state = state; };
   const voiceStatus = document.createElement('span');
   voiceStatus.id = 'eva-mini-listening';
   voiceStatus.setAttribute('role', 'status');
@@ -73,6 +78,12 @@
     expand.hidden = !themed;
     window.updateComposerActions?.();
     if (active === composing) return;
+    if (active && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      [header, composer].forEach(node => node?.animate?.([
+        { opacity: .65, translate: '0 5px' }, { opacity: 1, translate: '0 0' }
+      ], { duration: 175, easing: 'cubic-bezier(.2,.8,.3,1)' }));
+    }
+    window.syncPortraitMotion?.();
     composing = active;
     if (composing && !input.value) {
       input.value = localStorage.getItem(draftKey()) || '';
