@@ -11,8 +11,11 @@ import android.provider.Settings;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.*;
+import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 import ru.eva.envtest.CodexService;
+import ru.eva.envtest.EvaPresence;
 import ru.eva.envtest.MainActivity;
 import org.json.*;
 import java.io.*;
@@ -47,6 +50,9 @@ public final class Home extends Activity {
     private final Map<String,ResolveInfo> entries=new HashMap<>();
     private String catalog="[]";
     private WebView web;
+    private FrameLayout scene;
+    private Button recovery;
+    private long rendererLostAt = -1;
     private boolean homeActive;
     private int batteryLevel=-1;
     private boolean batteryCharging;
@@ -55,6 +61,7 @@ public final class Home extends Activity {
     };
     private WeatherWidget weather;
     private TownChat chat;
+    private DeviceMonitor monitor;
     void townEvent(JSONObject data){if(web!=null)web.evaluateJavascript("window.townEvent?.("+data.toString()+")",null);}
     public void onRequestPermissionsResult(int code,String[] names,int[] grants){
         super.onRequestPermissionsResult(code,names,grants);
@@ -129,6 +136,31 @@ public final class Home extends Activity {
         if(web!=null)web.evaluateJavascript("window.setHomeBattery?.("+batteryLevel+","+batteryCharging+")",null);
     }
     public final class Bridge{
+        @JavascriptInterface public String presenceProfile(){return EvaPresence.webProfile(Home.this);}
+        @JavascriptInterface public void deviceSnapshot(String tab,long request){
+            runOnUiThread(()->{
+                if(!homeActive||web==null||worker.isShutdown())return;
+                WebView owner=web;
+                worker.execute(()->{
+                    JSONObject snapshot;
+                    try{snapshot=monitor.read(tab);}
+                    catch(RuntimeException|JSONException error){
+                        snapshot=new JSONObject(Collections.singletonMap("error","Данные Android недоступны"));
+                    }
+                    String data=snapshot.toString();
+                    runOnUiThread(()->{
+                        if(homeActive&&web==owner)owner.evaluateJavascript("window.evaDeviceSnapshot?.("+request+","+data+")",null);
+                    });
+                });
+            });
+        }
+        @JavascriptInterface public void deviceSettings(String page){
+            String action="usage".equals(page)?Settings.ACTION_USAGE_ACCESS_SETTINGS:Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS;
+            launch(new Intent(action));
+        }
+        @JavascriptInterface public void reloadRoom(){
+            runOnUiThread(()->{if(homeActive&&web!=null)web.reload();});
+        }
         @JavascriptInterface public void worldSnapshot(String raw){TownWorld.publish(raw);}
         @JavascriptInterface public String worldTake(){return TownWorld.take();}
         @JavascriptInterface public void worldResult(String result){TownWorld.report(result);}
@@ -201,19 +233,47 @@ public final class Home extends Activity {
                 :WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             getWindow().setAttributes(params);
         }
-        android.widget.FrameLayout scene=new android.widget.FrameLayout(this);
-        chat=new TownChat(this);weather=new WeatherWidget(this,scene);web=new WebView(this);
-        if((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE)!=0)WebView.setWebContentsDebuggingEnabled(true);web.setBackgroundColor(0xff293335);scene.addView(web);setContentView(scene);
+        scene=new FrameLayout(this);setContentView(scene);
+        chat=new TownChat(this);weather=new WeatherWidget(this,scene);monitor=new DeviceMonitor(this);
+        createRoomView();
+    }
+    private void createRoomView(){
+        if(recovery!=null){scene.removeView(recovery);recovery=null;}
+        web=new WebView(this);
+        if((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE)!=0)WebView.setWebContentsDebuggingEnabled(true);
+        web.setBackgroundColor(0xff293335);scene.addView(web,new FrameLayout.LayoutParams(-1,-1));
         WebSettings w=web.getSettings();w.setJavaScriptEnabled(true);w.setDomStorageEnabled(true);w.setAllowFileAccess(false);w.setAllowContentAccess(false);w.setBlockNetworkLoads(true);
         web.setWebViewClient(new WebViewClient(){
             public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){return serve(r.getUrl());}
             public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}
             @Override public void onPageFinished(WebView v,String url){
+                if(v!=web)return;
                 v.evaluateJavascript("window.refreshApps?.(); window.setHomeActive?.("+homeActive+")",null);
                 showBattery();
             }
+            @Override public boolean onRenderProcessGone(WebView v,RenderProcessGoneDetail detail){
+                if(v!=web)return true;
+                discardRoomView();
+                long now=SystemClock.elapsedRealtime();
+                boolean repeated=rendererLostAt>=0&&now-rendererLostAt<10000;
+                rendererLostAt=now;
+                if(homeActive&&!repeated)createRoomView();
+                else if(repeated)showRecovery();
+                return true;
+            }
         });
         web.addJavascriptInterface(new Bridge(),"Desk");web.loadUrl("https://"+HOST+"/index.html");
+    }
+    private void discardRoomView(){
+        if(web==null)return;
+        WebView old=web;web=null;
+        scene.removeView(old);old.destroy();
+    }
+    private void showRecovery(){
+        recovery=new Button(this);recovery.setText("Восстановить комнату");
+        FrameLayout.LayoutParams params=new FrameLayout.LayoutParams(-2,-2,android.view.Gravity.CENTER);
+        scene.addView(recovery,params);
+        recovery.setOnClickListener(view->createRoomView());
     }
     protected void onStart(){
         super.onStart();visible=this;CodexService.desktopVisibilityChanged();weather.start();
@@ -230,7 +290,12 @@ public final class Home extends Activity {
         if(request==WeatherWidget.BIND||request==WeatherWidget.CONFIGURE)weather.result(request,code);
     }
     protected void onNewIntent(Intent i){super.onNewIntent(i);if(web!=null)web.evaluateJavascript("window.closeSheet?.()",null);}
-    protected void onResume(){super.onResume();homeActive=true;chat.resume();web.onResume();web.evaluateJavascript("window.setHomeActive?.(true)",null);refresh();}
+    protected void onResume(){
+        super.onResume();homeActive=true;chat.resume();
+        if(web==null&&recovery==null)createRoomView();
+        if(web!=null){web.onResume();web.evaluateJavascript("window.setHomeActive?.(true)",null);}
+        refresh();
+    }
     protected void onPostResume(){super.onPostResume();LifeService.updateSchedule(this);}
     @Override public void onWindowFocusChanged(boolean focused){
         super.onWindowFocusChanged(focused);
@@ -239,7 +304,11 @@ public final class Home extends Activity {
             if(controller!=null)controller.show(android.view.WindowInsets.Type.navigationBars());
         }
     }
-    protected void onPause(){homeActive=false;chat.pause();web.evaluateJavascript("window.setHomeActive?.(false)",null);web.onPause();super.onPause();}
-    public void onBackPressed(){web.evaluateJavascript("window.backLayout?.() || window.closeTown?.() || window.closeSheet?.()",null);}
-    protected void onDestroy(){chat.destroy();worker.shutdownNow();web.destroy();web=null;super.onDestroy();}
+    protected void onPause(){
+        homeActive=false;chat.pause();
+        if(web!=null){web.evaluateJavascript("window.setHomeActive?.(false)",null);web.onPause();}
+        super.onPause();
+    }
+    public void onBackPressed(){if(web!=null)web.evaluateJavascript("window.backLayout?.() || window.closeTown?.() || window.closeSheet?.()",null);}
+    protected void onDestroy(){chat.destroy();worker.shutdownNow();discardRoomView();super.onDestroy();}
 }

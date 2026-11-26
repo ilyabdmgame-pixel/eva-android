@@ -77,6 +77,7 @@ final class PetOverlay {
     }
 
     private final Context context,windowContext;
+    private EvaPresence.Curve greetCurve,lookCurve,settleCurve;
 
     private final WindowManager windows;
     private final DisplayManager displays;
@@ -2196,6 +2197,22 @@ final class PetOverlay {
             canvas.translate(-w/2f,-h/2f);
             canvas.translate(w*pose.shiftX,h*pose.shiftY);
             if(pose.angle!=0)canvas.rotate(pose.angle,w/2f,h*(pose.seatedPivot?PetPlacement.SEAT_CONTACT:PetHomeMap.SOLE_CONTACT));
+            if(motionEnabled&&!touched&&!parked){
+                if(greetCurve==null){
+                    greetCurve=EvaPresence.curve(context,"acknowledge");
+                    lookCurve=EvaPresence.curve(context,"consider");
+                    settleCurve=EvaPresence.curve(context,"settle");
+                }
+                EvaPresence.Curve motion=mode==PetMotion.GREET?greetCurve:
+                    mode==PetMotion.LOOK_AROUND?lookCurve:mode==PetMotion.LANDING?settleCurve:null;
+                if(motion!=null){
+                    long elapsed=SystemClock.uptimeMillis()-began;
+                    if(mode==PetMotion.LANDING)elapsed-=Math.max(0,motionTime-motion.duration);
+                    float amount=motion.amount(elapsed), sole=h*PetHomeMap.SOLE_CONTACT;
+                    canvas.rotate(amount*motion.angle*(pose.mirrored?-1:1),w/2,sole);
+                    canvas.scale(1f,1f-amount*Math.abs(motion.displacement),w/2,sole);
+                }
+            }
             if(pose.mirrored)canvas.scale(-1f,1f,w/2,h);
             if(!touched&&ascent!=null&&(mode==PetMotion.PLACE_LADDER||mode==PetMotion.LADDER_UP)){
                 drawRear(canvas,rearFrames[ladderPose.key]);

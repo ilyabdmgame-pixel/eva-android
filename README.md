@@ -37,10 +37,29 @@ gradle :app:assembleDebug
 ## Проверки
 
 ```sh
-TZ=Europe/Moscow node --test tests/town-chat.test.cjs tests/home/tests/*.test.mjs tests/pet/*.cjs
-node --test tests/codex-persona.test.cjs tests/providers.test.cjs
-python3 -m unittest discover -s tests -p 'test_runtime_pack.py'
+bash tools/check.sh
 ```
+
+Эту же команду запускает GitHub Actions для `main` и pull request. Локальные аккаунты, ключи и APK в проверках не используются.
+
+## Установка APK
+
+Подключи устройство к ADB, добавь в `PATH` платформенные инструменты Android SDK и Android Build Tools (`adb`, `aapt`, `apksigner`), затем запусти:
+
+```sh
+python3 tools/install_apk.py app/build/outputs/apk/debug/app-debug.apk --check
+python3 tools/install_apk.py app/build/outputs/apk/debug/app-debug.apk
+```
+
+Проверка сверяет идентификатор пакета, версию и сертификат. Несовместимая сборка останавливается до установки. Для обновления используется `adb install -r`, которое сохраняет данные установленной копии. Если подключено несколько устройств, укажи `--serial`.
+
+Перед публикацией проверь, что APK соответствует текущим исходникам и не содержит локальных настроек или истории:
+
+```sh
+python3 tools/audit_apk.py путь/к/Ева.apk
+```
+
+«Диспетчер» на рабочем столе показывает заряд и температуру аккумулятора, статус нагрева Android, память, свободное место и нагрузку процесса Евы. В списках видны процессы, которые Android возвращает приложению, и активные службы Евы. История использования приложений появляется после отдельного разрешения в настройках Android.
 
 Проверки app-server используют локальную имитацию Responses API. Токен OpenAI и подключение к аккаунту для них не требуются. Бинарник Codex можно указать через `EVA_TEST_CODEX`.
 

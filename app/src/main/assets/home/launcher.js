@@ -20,6 +20,7 @@ function showSheet(id,title){
  $('content').scrollTop=0;
  $('content').replaceChildren();
  if(!$('sheet').contains(document.activeElement))$('close').focus({preventScroll:true});
+ window.evaMonitorChanged?.();
  window.homeSheetChanged?.();
  return $('content');
 }
@@ -30,10 +31,18 @@ window.closeSheet=()=>{
  const focus=(sheetOpener?.isConnected&&sheetOpener!==document.body?sheetOpener:folderButton(folderAnchor))||$('all');
  focus.focus({preventScroll:true});
  sheetOpener=folderAnchor=null;
+ window.evaMonitorChanged?.();
  window.homeSheetChanged?.();
  return true;
 };
 $('close').onclick=$('scrim').onclick=closeSheet;
+function repairHomeSheet(){
+ const open=Boolean(sheet)&&!$('sheet').hidden&&!$('scrim').hidden;
+ if(!open&&sheet){closeSheet();return}
+ $('screen').inert=open;
+ if(!open)$('sheet').hidden=$('scrim').hidden=true;
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)repairHomeSheet()});
 window.setHomeBattery=(level,charging)=>{
  const battery=$('battery');
  if(!Number.isInteger(level)||level<0||level>100){battery.hidden=true;return}

@@ -3,7 +3,10 @@ import android.app.*;
 import android.content.*;
 import android.os.*;
 import java.io.*;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Foreground owner of Eva's private Linux runtime. No Activity owns the child. */
 public final class CodexService extends Service {
@@ -16,6 +19,7 @@ public final class CodexService extends Service {
  private static CodexService active;
  private final Handler handler=new Handler(Looper.getMainLooper());
  private final ExecutorService io=Executors.newSingleThreadExecutor();
+ private final AtomicBoolean starting=new AtomicBoolean();
  public static boolean running(){return active!=null;}
  public void attach(Listener l){listener=l;l.changed();}
  public void detach(Listener l){if(listener==l)listener=null;}
@@ -25,7 +29,7 @@ public final class CodexService extends Service {
   notificationShowsPet=petNotificationEnabled();
   startForeground(11,notification(notificationShowsPet));
   try{pet=new PetOverlay(this);applyPetPresentation();}catch(RuntimeException error){android.util.Log.w("EvaPet","Could not initialise overlay",error);}
-  io.execute(this::startProcess);
+  retry();
  }catch(Exception e){report("Ошибка запуска: "+e.getMessage());}}
  private boolean petNotificationEnabled(){
   return PetOverlay.enabled(this)&&android.provider.Settings.canDrawOverlays(this);
@@ -80,12 +84,31 @@ public final class CodexService extends Service {
   if(pet!=null)pet.configurationChanged();
  }
  @Override public IBinder onBind(Intent i){return new LocalBinder();}
- private void unpack(String asset,File root)throws Exception{
+ public void retry(){
+  if(!url.isEmpty()||io.isShutdown()||!starting.compareAndSet(false,true))return;
+  io.execute(()->{try{startProcess();}finally{starting.set(false);}});
+ }
+ private void unpack(String asset,File root,String expected)throws Exception{
   File archive=new File(getCacheDir(),asset);
-  try(InputStream in=getAssets().open(asset);OutputStream out=new FileOutputStream(archive)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}
-  java.lang.Process p=new ProcessBuilder("/system/bin/tar","-xzf",archive.getAbsolutePath(),"-C",root.getAbsolutePath()).redirectErrorStream(true).start();
-  ByteArrayOutputStream errors=new ByteArrayOutputStream();try(InputStream in=p.getInputStream()){byte[] b=new byte[4096];int n;while((n=in.read(b))!=-1)if(errors.size()<8192)errors.write(b,0,n);}
-  if(p.waitFor()!=0)throw new IOException("Распаковка "+asset+" не завершена: "+errors.toString("UTF-8"));archive.delete();
+  try{
+   MessageDigest hash=MessageDigest.getInstance("SHA-256");
+   try(InputStream in=new DigestInputStream(getAssets().open(asset),hash);
+       FileOutputStream out=new FileOutputStream(archive)){
+    byte[] b=new byte[65536];int n;
+    while((n=in.read(b))!=-1)out.write(b,0,n);
+   }
+   StringBuilder digest=new StringBuilder(64);
+   for(byte part:hash.digest())digest.append(Character.forDigit((part>>4)&15,16)).append(Character.forDigit(part&15,16));
+   if(!expected.contentEquals(digest))throw new IOException("Повреждён архив "+asset);
+   java.lang.Process p=new ProcessBuilder("/system/bin/tar","-xzf",archive.getAbsolutePath(),"-C",root.getAbsolutePath()).redirectErrorStream(true).start();
+   try{
+    ByteArrayOutputStream errors=new ByteArrayOutputStream();
+    try(InputStream in=p.getInputStream()){
+     byte[] b=new byte[4096];int n;while((n=in.read(b))!=-1)if(errors.size()<8192)errors.write(b,0,n);
+    }
+    if(p.waitFor()!=0)throw new IOException("Распаковка "+asset+" не завершена: "+errors.toString("UTF-8"));
+   }finally{p.destroy();}
+  }finally{archive.delete();}
  }
  private String[] runtimeVersions() throws IOException {
   try(BufferedReader reader=new BufferedReader(new InputStreamReader(getAssets().open("eva-runtime.version"),"US-ASCII"))){
@@ -104,7 +127,7 @@ public final class CodexService extends Service {
   if(current)return;
   if(!root.isDirectory()&&!root.mkdirs())throw new IOException("Не удалось создать каталог среды");
   report(status);
-  unpack(asset,root);
+  unpack(asset,root,version);
   File staged=new File(root,markerName+".tmp");
   try(Writer output=new FileWriter(staged)){output.write(version+"\n");}
   android.system.Os.rename(staged.getAbsolutePath(),marker.getAbsolutePath());
@@ -122,6 +145,6 @@ public final class CodexService extends Service {
   b.environment().put("LD_LIBRARY_PATH",dir.getAbsolutePath()+":"+lib.getAbsolutePath());b.environment().put("PROOT_TMP_DIR",getCacheDir().getAbsolutePath());b.redirectError(new File(dir,"runtime-error.log"));process=b.start();
   try(BufferedReader in=new BufferedReader(new InputStreamReader(process.getInputStream(),"UTF-8"))){String line;while((line=in.readLine())!=null){if(line.equals("EVA_PET_WORK done")||line.equals("EVA_PET_WORK waiting")){boolean waiting=line.endsWith("waiting");handler.post(()->{if(pet!=null)pet.workNotice(waiting);});}else if(line.startsWith("EVA_READY ")){String ready=line.substring(10);if(ready.matches("^http://127\\.0\\.0\\.1:[0-9]{1,5}/#[0-9a-f]{48}$")){url=ready;report("Ева готова");}}}}
   url="";report("Среда остановлена. Откройте приложение заново.");
- }catch(Exception e){report("Ошибка запуска: "+e.getMessage());}}
+  }catch(Exception e){url="";if(process!=null)process.destroy();report("Ошибка запуска: "+e.getMessage());}}
  @Override public void onDestroy(){if(active==this)active=null;if(pet!=null)pet.destroy();if(process!=null)process.destroy();io.shutdownNow();handler.removeCallbacksAndMessages(null);super.onDestroy();}
 }

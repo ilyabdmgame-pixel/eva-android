@@ -43,6 +43,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
   public static final String ROOM_CHAT="ru.eva.extra.ROOM_CHAT";
   private static final PetAppPolicy.ChatVisibility visibleChats=new PetAppPolicy.ChatVisibility();
   private WebView web;
+  private long chatRendererLostAt=-1;
   private boolean assistantVoice=false, petChat=false, resumed=false, pendingPetPermission=false;
   private boolean petComposerDetails;
   private Rect petAnchor;
@@ -191,7 +192,11 @@ public final class MainActivity extends Activity implements CodexService.Listene
     }
   }
   private void startBackend(){if(bound){if(service!=null)changed();return;}showWelcome("Запускаю Еву…");Intent i=new Intent(this,CodexService.class);startService(i);bound=bindService(i,connection,BIND_AUTO_CREATE);}
-  private void showWelcome(String explanation){LinearLayout layout=new LinearLayout(this);layout.setOrientation(1);layout.setGravity(android.view.Gravity.CENTER);layout.setPadding(40,80,40,40);layout.setBackgroundColor(Color.rgb(20,25,35));TextView title=new TextView(this);title.setText("Ева");title.setTextSize(28);title.setTextColor(Color.rgb(151,222,199));title.setGravity(android.view.Gravity.CENTER);layout.addView(title);TextView info=new TextView(this);info.setText(explanation);info.setTextSize(16);info.setTextColor(Color.LTGRAY);info.setGravity(android.view.Gravity.CENTER);LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-2,-2);textParams.setMargins(0,20,0,28);layout.addView(info,textParams);if(explanation.contains("Запуска")||explanation.contains("Подготавли")||explanation.contains("Перенош")){android.widget.ProgressBar progress=new android.widget.ProgressBar(this);layout.addView(progress,new LinearLayout.LayoutParams(56,56));}setContentView(layout);layout.setAlpha(0f);layout.animate().alpha(1f).setDuration(450).start();}
+  private void showWelcome(String explanation){LinearLayout layout=new LinearLayout(this);layout.setOrientation(1);layout.setGravity(android.view.Gravity.CENTER);layout.setPadding(40,80,40,40);layout.setBackgroundColor(Color.rgb(20,25,35));TextView title=new TextView(this);title.setText("Ева");title.setTextSize(28);title.setTextColor(Color.rgb(151,222,199));title.setGravity(android.view.Gravity.CENTER);layout.addView(title);TextView info=new TextView(this);info.setText(explanation);info.setTextSize(16);info.setTextColor(Color.LTGRAY);info.setGravity(android.view.Gravity.CENTER);LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-2,-2);textParams.setMargins(0,20,0,28);layout.addView(info,textParams);if(explanation.contains("Запуска")||explanation.contains("Подготавли")||explanation.contains("Перенош")){android.widget.ProgressBar progress=new android.widget.ProgressBar(this);layout.addView(progress,new LinearLayout.LayoutParams(56,56));}if(explanation.startsWith("Ошибка запуска:")||explanation.startsWith("Среда остановлена")){
+      Button retry=new Button(this);retry.setText("Запустить заново");layout.addView(retry);
+      retry.setOnClickListener(v->{if(service!=null){service.retry();showWelcome("Запускаю Еву…");}else startBackend();});
+    }
+    setContentView(layout);layout.setAlpha(0f);layout.animate().alpha(1f).setDuration(450).start();}
   private void showWeb(String url){pageReady=false;if(web!=null){web.destroy();web=null;}web=new WebView(this);web.setBackgroundColor(Color.TRANSPARENT);web.getSettings().setJavaScriptEnabled(true);web.getSettings().setMediaPlaybackRequiresUserGesture(false);web.getSettings().setDomStorageEnabled(true);WebView.setWebContentsDebuggingEnabled((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0);web.getSettings().setAllowFileAccess(false);web.getSettings().setAllowContentAccess(true);web.addJavascriptInterface(new NativeVoiceBridge(),"NativeVoice");web.addJavascriptInterface(new EvaBridge(),"EvaApp");web.addJavascriptInterface(new NativePhoneBridge(),"NativePhone");web.setWebViewClient(new WebViewClient(){@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest request){
     Uri target=request.getUrl();
     if(sameLocalOrigin(url,target.toString())){
@@ -214,7 +219,19 @@ public final class MainActivity extends Activity implements CodexService.Listene
       }
     }
     return super.shouldInterceptRequest(v,request);
-  }@Override public void onPageFinished(WebView v,String loaded){super.onPageFinished(v,loaded);if(v!=web||!sameLocalOrigin(url,loaded))return;pageReady=true;installPetUi();startAssistantIfReady();}@Override public boolean shouldOverrideUrlLoading(WebView v,String target){Uri u=Uri.parse(target);if(("http".equals(u.getScheme())||"https".equals(u.getScheme()))&&!("127.0.0.1".equals(u.getHost())&&u.getPort()==Uri.parse(url).getPort())){try{startActivity(new Intent(Intent.ACTION_VIEW,u));}catch(Exception ignored){}return true;}return !"http".equals(u.getScheme())||!"127.0.0.1".equals(u.getHost())||u.getPort()!=Uri.parse(url).getPort();}@Override public void onReceivedError(WebView v,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame())startBackend();}});
+  }
+  @Override public boolean onRenderProcessGone(WebView lost,RenderProcessGoneDetail detail){
+    if(lost!=web)return true;
+    if(lost.getParent() instanceof ViewGroup)((ViewGroup)lost.getParent()).removeView(lost);
+    pageReady=false;web=null;lost.destroy();
+    long now=android.os.SystemClock.elapsedRealtime();
+    boolean rapid=chatRendererLostAt>=0&&now-chatRendererLostAt<10000;
+    chatRendererLostAt=now;
+    if(resumed&&!rapid&&!loadedUrl.isEmpty())showWeb(loadedUrl);
+    else{loadedUrl="";showWelcome("Открой Еву ещё раз, чтобы восстановить окно чата.");}
+    return true;
+  }
+  @Override public void onPageFinished(WebView v,String loaded){super.onPageFinished(v,loaded);if(v!=web||!sameLocalOrigin(url,loaded))return;pageReady=true;installPetUi();startAssistantIfReady();}@Override public boolean shouldOverrideUrlLoading(WebView v,String target){Uri u=Uri.parse(target);if(("http".equals(u.getScheme())||"https".equals(u.getScheme()))&&!("127.0.0.1".equals(u.getHost())&&u.getPort()==Uri.parse(url).getPort())){try{startActivity(new Intent(Intent.ACTION_VIEW,u));}catch(Exception ignored){}return true;}return !"http".equals(u.getScheme())||!"127.0.0.1".equals(u.getHost())||u.getPort()!=Uri.parse(url).getPort();}@Override public void onReceivedError(WebView v,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame())startBackend();}});
   web.setWebChromeClient(new WebChromeClient(){@Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> cb,FileChooserParams params){if(fileCallback!=null)fileCallback.onReceiveValue(null);fileCallback=cb;try{Intent choose=new Intent(Intent.ACTION_OPEN_DOCUMENT);choose.addCategory(Intent.CATEGORY_OPENABLE);choose.setType("*/*");choose.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);startActivityForResult(choose,FILES);return true;}catch(Exception e){fileCallback=null;return false;}}@Override public void onPermissionRequest(PermissionRequest req){runOnUiThread(()->{Uri origin=req.getOrigin();if(!"http".equals(origin.getScheme())||!"127.0.0.1".equals(origin.getHost())||origin.getPort()!=Uri.parse(url).getPort()){req.deny();return;}if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){req.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});}else{pendingMic=req;requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},MIC);}});}});setContentView(web);web.loadUrl(url);}
   @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==105){if(phoneId==null)return;if(results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)performPhone();else{String id=phoneId;phoneId=null;phoneReply(id,null,"Android не предоставил разрешение");}return;}if(request==MIC){boolean allowed=results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED;if(wakeStartPending){wakeStartPending=false;if(allowed)EvaVoiceService.setEnabled(this,true);else getSharedPreferences("eva_wake",0).edit().putString("status","Нет разрешения на микрофон").apply();}if(pendingMic!=null){if(allowed)pendingMic.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});else pendingMic.deny();pendingMic=null;}if(nativeStartPending){nativeStartPending=false;if(allowed)startNativeRecognition();else sendRecognitionFinish("not-allowed");}}}
   @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==106){String id=photoId;photoId=null;if(id==null)return;if(result!=RESULT_OK||data==null||data.getExtras()==null){phoneReply(id,null,"Снимок отменён или не получен");return;}Object image=data.getExtras().get("data");if(!(image instanceof android.graphics.Bitmap)){phoneReply(id,null,"Приложение камеры не вернуло снимок");return;}try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();((android.graphics.Bitmap)image).compress(android.graphics.Bitmap.CompressFormat.JPEG,90,bytes);phoneReply(id,Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP),null);}catch(Exception e){phoneReply(id,null,"Не удалось сохранить снимок");}return;}if(request!=FILES||fileCallback==null)return;Uri[] values=null;if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null){int n=data.getClipData().getItemCount();values=new Uri[n];for(int j=0;j<n;j++)values[j]=data.getClipData().getItemAt(j).getUri();}else if(data.getData()!=null)values=new Uri[]{data.getData()};}fileCallback.onReceiveValue(values);fileCallback=null;}
@@ -356,6 +373,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
     finish();
   }
   public final class EvaBridge {
+    @JavascriptInterface public String presenceProfile(){return EvaPresence.webProfile(MainActivity.this);}
     @JavascriptInterface public void openHome(){
       runOnUiThread(()->{if(Home.enabled(MainActivity.this))Home.openDefaultHome(MainActivity.this);});
     }
@@ -421,6 +439,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
   @Override protected void onResume(){
     super.onResume();
     resumed=true;
+    if(web==null&&service!=null&&!service.url.isEmpty())changed();
     if(pendingPetPermission){
       pendingPetPermission=false;
       if(Settings.canDrawOverlays(this))PetOverlay.setEnabled(this,true);

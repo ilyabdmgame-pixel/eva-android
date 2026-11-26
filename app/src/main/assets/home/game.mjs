@@ -74,8 +74,14 @@ function gestureAmount(g,t){
  const x=Math.min(1,Math.max(0,(t-g.start)/(g.until-g.start)));
  return ease(Math.min(1,x/.32,(1-x)/.32));
 }
-let mood=null,moodUntil=0;
+let mood=null,moodUntil=0,roomPulse=null,nextPresence=0,graphicsLost=false,graphicsRestored=false;
 const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const presenceProfile=JSON.parse(Desk.presenceProfile?.()||'{}');
+function reactInRoom(kind){
+ if(reduceMotion||!presenceProfile[kind])return;
+ roomPulse={start:now(),curve:presenceProfile[kind]};
+ dirty=true;wake();
+}
 const lampIsOn=o=>o.kind==='placedLamp'?o.on:saved.lamps[o.id]??(o.id===5||night>.44);
 const drawerOpen=id=>saved.drawers?.[id]??(id===1&&Boolean(saved.desk));
 const now=()=>performance.now();
@@ -181,7 +187,7 @@ function say(text,face){
  if(town.playing)return;
  speech.say(EVA_ID,text,now());
  if(saved.sound&&!sheet)town.speakPhrase(text,saved.volume??.42);
- if(face){mood=face;moodUntil=now()+1750;}
+ if(face){mood=face;moodUntil=now()+1750;reactInRoom(face==='curious'?'consider':'acknowledge');}
  dirty=true;wake();
 }
 function statusNote(text){speech.report(text,now());wake()}
@@ -1056,6 +1062,11 @@ function paint(t=now()){
    move.length&&!reduceMotion?evaPose(walkFacing,'walk',walkPhase):actionPose(direction,'idle',0,mood);
  const ready=renderer.artReady(pose.key),shown=ready?pose:{...standingPose('eva',direction),height:1.62};
  const at=position3D(eva),opt={...shown};
+ if(roomPulse&&!target&&!move.length){
+   const [duration,lean]=roomPulse.curve;
+   const phase=Math.min(1,Math.max(0,(t-roomPulse.start)/duration));
+   opt.lean=lean*Math.sin(Math.PI*phase)**2;
+ }
  if(seat){
    at.u=sample.u;at.v=sample.v;
    at.z=surfaceAt(at.u,at.v)+seat.height*amount;
@@ -1138,7 +1149,7 @@ function advanceWalker(dt){
 }
 let timer=0;
 function wake(){
- if(!active||document.hidden||nextFrame)return;
+ if(!active||document.hidden||nextFrame||graphicsLost)return;
  clearTimeout(timer);timer=0;
  nextFrame=requestAnimationFrame(loop);
 }
@@ -1180,10 +1191,19 @@ function loop(t){
  }
  if(gesture&&t>=gesture.until){gesture=null;dirty=true;}
  if(mood&&t>=moodUntil){mood=null;dirty=true;}
+ if(roomPulse){
+   if(t-roomPulse.start>=roomPulse.curve[0])roomPulse=null;
+   dirty=true;
+ }
+ if(!nextPresence)nextPresence=t+14000;
+ if(!sheet&&!layout&&!restMotion&&!move.length&&!roomActivity&&!town.composing&&t>=nextPresence){
+   nextPresence=t+17000+(Math.round(t)%4000);
+   reactInRoom('settle');
+ }
  if(speech.tick(t))dirty=true;
  const animated=!sheet&&windowWeatherMoves(climate,reduceMotion);
  const ambientDue=animated&&t+1>=nextAmbientFrame;
- const responsive=!sheet&&(releaseMotion||settling||gesture||move.length||flight||roomActivity?.started);
+ const responsive=!sheet&&(releaseMotion||settling||gesture||roomPulse||move.length||flight||roomActivity?.started);
  const paintScene=dirty||!sheet&&(Boolean(gesture)||ambientDue);
  if(paintScene){
    paint(t);dirty=false;
@@ -1216,12 +1236,28 @@ function updateHomeVisibility(){
    cancelAnimationFrame(nextFrame);clearTimeout(timer);nextFrame=timer=0;
  }
 }
-window.setHomeActive=value=>{nativeActive=Boolean(value);updateHomeVisibility()};
+window.setHomeActive=value=>{
+ nativeActive=Boolean(value);updateHomeVisibility();
+ if(nativeActive){
+   repairHomeSheet();clearHold();
+   if(graphicsRestored)Desk.reloadRoom?.();
+   else if(active){dirty=true;wake();}
+ }
+};
 window.addEventListener('resize',()=>{dirty=true;wake()});
 canvas.addEventListener('art',()=>{dirty=true;wake()});
 document.addEventListener('visibilitychange',updateHomeVisibility);
-canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();statusNote('Графика приостановлена. Папки доступны.')});
-canvas.addEventListener('webglcontextrestored',()=>location.reload());
+canvas.addEventListener('webglcontextlost',e=>{
+ e.preventDefault();
+ graphicsLost=true;
+ cancelAnimationFrame(nextFrame);clearTimeout(timer);nextFrame=timer=0;
+ $('world-status').textContent='Восстанавливаю графику комнаты…';
+ $('world-status').hidden=false;
+});
+canvas.addEventListener('webglcontextrestored',()=>{
+ graphicsRestored=true;
+ if(active)Desk.reloadRoom?.();
+});
 
 function openRoom(){
  const out=showSheet('room','Комната Евы');

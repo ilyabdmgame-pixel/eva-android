@@ -595,6 +595,22 @@ async function playVoice(text,done){const emotion=classifyAvatarItem.emotion(tex
 
 // The portrait reflects the current chat state without interrupting input.
 const avatarStage=$('avatar-stage');
+const portraitMotion=JSON.parse(window.EvaApp?.presenceProfile?.()||'{}');
+let portraitBeat=null;
+function animateAvatarPresence(kind){
+ const values=portraitMotion[kind];
+ if(!values||avatarStage.hidden||document.hidden||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+ const figure=avatarStage.querySelector('.avatar-figure');
+ if(!figure?.animate)return;
+ const [duration,displacement,angle]=values;
+ const distance=Math.max(1,Math.min(7,figure.offsetHeight*Math.abs(displacement)))*Math.sign(displacement);
+ portraitBeat?.cancel();
+ portraitBeat=figure.animate([
+   {translate:'0 0',rotate:'0deg'},{translate:'0 '+distance+'px',rotate:angle+'deg'},
+   {translate:'0 0',rotate:'0deg'}
+ ],{duration,easing:'ease-in-out'});
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)portraitBeat?.cancel()});
 // Mouth frames are loaded only when speech or preview needs them.
 const avatarMouthFrames=[["speech-01","/root/.codex/generated_images/eva-builtin-20261116/speech/01-a-mid.png"],["speech-02","/root/.codex/generated_images/eva-builtin-20261116/speech/02-a-full.png"],["speech-03","/root/.codex/generated_images/eva-builtin-20261116/speech/03-e-mid.png"],["speech-04","/root/.codex/generated_images/eva-builtin-20261116/speech/04-e-full.png"],["speech-05","/root/.codex/generated_images/eva-builtin-20261116/speech/05-o-mid.png"],["speech-06","/root/.codex/generated_images/eva-builtin-20261116/speech/06-o-full.png"],["speech-07","/root/.codex/generated_images/eva-builtin-20261116/speech/07-u-mid.png"],["speech-08","/root/.codex/generated_images/eva-builtin-20261116/speech/08-u-full.png"],["speech-09","/root/.codex/generated_images/eva-builtin-20261116/speech/09-m-mid.png"],["speech-10","/root/.codex/generated_images/eva-builtin-20261116/speech/10-m-full.png"],["speech-11","/root/.codex/generated_images/eva-builtin-20261116/speech/11-f-mid.png"],["speech-12","/root/.codex/generated_images/eva-builtin-20261116/speech/12-f-full.png"]];
 const avatarMouthNodes=avatarMouthFrames.map(([key,src])=>{const img=document.createElement('img');img.className='avatar-expression avatar-speech-frame avatar-expression-'+key;img.dataset.src='/chat-image?token='+encodeURIComponent(token)+'&path='+encodeURIComponent(src);img.alt='';img.setAttribute('aria-hidden','true');avatarStage.querySelector('.avatar-head').appendChild(img);return img});
@@ -619,7 +635,7 @@ scheduleBlink();
 
 // A tap gets a small smile; thinking expression follows the active task.
 let avatarHappyTimer;
-document.querySelector('.avatar-figure').addEventListener('click',()=>{if(busy||convoSpeaking)return;avatarStage.classList.remove('avatar-is-reading');avatarStage.classList.add('avatar-is-happy');clearTimeout(avatarHappyTimer);avatarHappyTimer=setTimeout(()=>avatarStage.classList.remove('avatar-is-happy'),4500)});
+document.querySelector('.avatar-figure').addEventListener('click',()=>{if(busy||convoSpeaking)return;animateAvatarPresence('acknowledge');avatarStage.classList.remove('avatar-is-reading');avatarStage.classList.add('avatar-is-happy');clearTimeout(avatarHappyTimer);avatarHappyTimer=setTimeout(()=>avatarStage.classList.remove('avatar-is-happy'),4500)});
 
 // Tap an empty area of the conversation to interact with the portrait.
 $('messages').addEventListener('click',event=>{if(event.target===$('messages')&&!avatarStage.hidden&&!window.getSelection()?.toString())document.querySelector('.avatar-figure').click()});
@@ -668,7 +684,7 @@ window.addEventListener('resize',scheduleFaceFade);scheduleFaceFade();
 
 // Activity follows explicit start/completion events, rather than a random timer.
 const avatarItems=new Map();let avatarActivityTimer=null,avatarActivitySince=0;
-function setAvatarActivity(next){if(avatarActivity===next)return;avatarActivity=next;avatarActivitySince=Date.now();updateAvatar()}
+function setAvatarActivity(next){if(avatarActivity===next)return;avatarActivity=next;avatarActivitySince=Date.now();updateAvatar();animateAvatarPresence(next?'consider':'settle')}
 function lastAvatarActivity(){let last=null;for(const state of avatarItems.values())last=state;return last}
 function handleAvatarEvent(m){if(m.type==='error'){avatarItems.clear();clearTimeout(avatarActivityTimer);setAvatarActivity(null);return}if(m.type!=='event')return;const p=m.params||{};if(p.threadId&&thread&&p.threadId!==thread)return;if(m.method==='turn/completed'){avatarItems.clear();clearTimeout(avatarActivityTimer);setAvatarActivity(null);setTimeout(tryShowAvatarEmotion,350);return}if(m.method==='turn/started'){resetAvatarReaction();return}if(m.method==='item/completed'&&p.item?.type==='agentMessage'&&p.item.phase!=='commentary'){avatarPendingEmotion=classifyAvatarItem.emotion(p.item.text)}if(m.method==='item/started'){const state=classifyAvatarItem(p.item);if(!state||!p.item.id)return;clearTimeout(avatarActivityTimer);avatarItems.set(p.item.id,state);setAvatarActivity(state)}else if(m.method==='item/completed'&&p.item?.id&&avatarItems.has(p.item.id)){avatarItems.delete(p.item.id);const next=lastAvatarActivity();clearTimeout(avatarActivityTimer);if(next)setAvatarActivity(next);else avatarActivityTimer=setTimeout(()=>setAvatarActivity(lastAvatarActivity()),Math.max(0,900-(Date.now()-avatarActivitySince)))}}
 es.addEventListener('message',e=>{try{handleAvatarEvent(JSON.parse(e.data))}catch(err){console.warn('Состояние аватара:',err)}});
