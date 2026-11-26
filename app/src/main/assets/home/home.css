@@ -30,7 +30,6 @@ header .now{min-width:0}#calendar{white-space:nowrap}
 
 header{top:max(14px,env(safe-area-inset-top));left:5%;right:5%}
 .top-status{display:grid;justify-items:end;gap:3px}
-#dock{touch-action:none}
 #battery{display:flex;align-items:center;gap:6px;color:#eff5f6;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #142027}
 .battery-icon{position:relative;display:block;width:20px;height:11px;border:1px solid #dce9ea;border-radius:3px}
 .battery-icon::before{content:"";position:absolute;inset:1px;border-radius:1px;background:linear-gradient(to right,#dce9ea var(--charge),transparent var(--charge))}

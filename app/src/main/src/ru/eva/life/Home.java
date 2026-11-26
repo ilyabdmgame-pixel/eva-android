@@ -13,7 +13,6 @@ import android.view.WindowManager;
 import android.webkit.*;
 import android.widget.Toast;
 import ru.eva.envtest.CodexService;
-import ru.eva.envtest.EvaAccessibility;
 import ru.eva.envtest.MainActivity;
 import org.json.*;
 import java.io.*;
@@ -138,14 +137,6 @@ public final class Home extends Activity {
             launch(new Intent(Home.this,MainActivity.class).putExtra(MainActivity.ROOM_CHAT,indicator)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP));
         }
-        @JavascriptInterface public void openRecentApps(){runOnUiThread(()->{
-            if(!homeActive||EvaAccessibility.openRecentApps())return;
-            new android.app.AlertDialog.Builder(Home.this)
-                .setTitle("Недавние приложения")
-                .setMessage("Чтобы открывать «Недавние» из дока, включи службу Евы в специальных возможностях Android.")
-                .setPositiveButton("Настройки",(dialog,which)->launch(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)))
-                .setNegativeButton("Закрыть",null).show();
-        });}
         @JavascriptInterface public void townMic(){runOnUiThread(()->chat.microphone());}
         @JavascriptInterface public void townSpeak(String id,String text,float rate,float pitch,float volume){
             runOnUiThread(()->chat.speak(id,text,rate,pitch,volume));
@@ -241,6 +232,13 @@ public final class Home extends Activity {
     protected void onNewIntent(Intent i){super.onNewIntent(i);if(web!=null)web.evaluateJavascript("window.closeSheet?.()",null);}
     protected void onResume(){super.onResume();homeActive=true;chat.resume();web.onResume();web.evaluateJavascript("window.setHomeActive?.(true)",null);refresh();}
     protected void onPostResume(){super.onPostResume();LifeService.updateSchedule(this);}
+    @Override public void onWindowFocusChanged(boolean focused){
+        super.onWindowFocusChanged(focused);
+        if(focused&&Build.VERSION.SDK_INT>=30){
+            android.view.WindowInsetsController controller=getWindow().getInsetsController();
+            if(controller!=null)controller.show(android.view.WindowInsets.Type.navigationBars());
+        }
+    }
     protected void onPause(){homeActive=false;chat.pause();web.evaluateJavascript("window.setHomeActive?.(false)",null);web.onPause();super.onPause();}
     public void onBackPressed(){web.evaluateJavascript("window.backLayout?.() || window.closeTown?.() || window.closeSheet?.()",null);}
     protected void onDestroy(){chat.destroy();worker.shutdownNow();web.destroy();web=null;super.onDestroy();}

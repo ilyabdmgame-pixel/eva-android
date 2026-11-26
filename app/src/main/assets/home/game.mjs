@@ -1285,8 +1285,7 @@ $('home-menu').onclick=()=>{
    label('В комнате','Предметы и действия','◇',openRoomObjects),
    label('События','','◷',openTimeline),
    label('Карман','','＋',openInventory),
-   label('Звук в комнате','','♫',window.openHomeSound),
-   label('Недавние приложения','Также свайпом вверх от дока','▱',()=>Desk.openRecentApps()));
+   label('Звук в комнате','','♫',window.openHomeSound));
 };
 function openRoomObjects(){
  const out=showSheet('decor','В комнате');
