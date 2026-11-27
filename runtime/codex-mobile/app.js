@@ -678,25 +678,24 @@ function animateAvatarPresence(kind){
    offset,translate:'0 '+distance*travel+'px',rotate:angle*turn+'deg',easing:'ease-in-out'
  })),{duration});
 }
-// The compositor shares one cropped RGBA atlas across all twelve mouth shapes.
-const avatarMouthNodes=Array.from({length:12},(_,i)=>{
- const patch=document.createElement('span');patch.className='avatar-mouth-patch';
- patch.style.backgroundPosition=(i%4*100/3)+'% '+Math.floor(i/4)*50+'%';
- patch.setAttribute('aria-hidden','true');avatarStage.querySelector('.avatar-head').append(patch);
- return patch;
-});
-let mouthGeneration=0,mouthTimer=null,mouthLoad=null,shownMouth=[],avatarSpeech=null;
+// One opaque ink drawing per speech frame keeps the lips clear during fast words.
+const avatarMouth=document.createElement('span');
+avatarMouth.className='avatar-mouth-patch';avatarMouth.setAttribute('aria-hidden','true');
+avatarStage.querySelector('.avatar-head').append(avatarMouth);
+let mouthGeneration=0,mouthTimer=null,mouthLoad=null,avatarSpeech=null;
 function prepareAvatarSpeech(text){
  const rate=Number(localStorage.getItem('voiceRate'))||1;
  avatarSpeech={track:window.EvaPortrait.speechTrack(text),anchor:0,started:0,msPerUnit:78/Math.max(.7,Math.min(1.5,rate))};
 }
-function setMouth(frames){
- for(const [index] of shownMouth)if(!frames.some(([next])=>next===index))avatarMouthNodes[index].style.removeProperty('opacity');
- for(const [index,opacity] of frames)avatarMouthNodes[index].style.opacity=opacity.toFixed(3);
- shownMouth=frames;
+function setMouth(row=-1,level=0){
+ if(row<0||level<1){avatarMouth.style.opacity='0';delete avatarMouth.dataset.cel;return;}
+ const id=row*6+level;
+ if(Number(avatarMouth.dataset.cel)===id)return;
+ avatarMouth.dataset.cel=String(id);
+ avatarMouth.style.backgroundPosition=`${level*20}% ${row*20}%`;avatarMouth.style.opacity='1';
 }
 function stopAvatarMouth(){
- mouthGeneration++;clearTimeout(mouthTimer);mouthTimer=null;setMouth([]);
+ mouthGeneration++;clearTimeout(mouthTimer);mouthTimer=null;setMouth();
  avatarStage.classList.remove('avatar-multimouth-ready');
 }
 const mouthVisible=()=>!avatarStage.hidden&&!document.hidden&&!document.body.classList.contains('eva-pet-chat');
@@ -728,9 +727,7 @@ async function startAvatarMouth(){
        target=(cue?.strength||0)*Math.max(0,Math.min(1,(Math.sqrt(sum/audio.length)-.010)/.080));
      }
      opening+=(target-opening)*(target>opening?.58:.42);
-     const wide=Math.max(0,Math.min(1,(opening-.31)/.66));
-     const mid=Math.min(1,opening/.31);
-     setMouth(!cue||cue.shape<0||opening<.04?[]:[[cue.shape,mid],[cue.shape+1,wide]]);
+     setMouth(cue&&cue.shape>=0?cue.shape/2:-1,Math.round(Math.min(1,opening)*5));
      mouthTimer=setTimeout(step,1000/30);
    };
    step();
@@ -755,33 +752,25 @@ new MutationObserver(updateAvatar).observe($('status'),{childList:true,subtree:t
 
 // Random pauses and occasional double blinks; pause motion when hidden.
 const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
-window.EvaPortrait.mount(avatarStage,reducedMotion);
+const chatPortrait=window.EvaPortrait.mount(avatarStage,reducedMotion);
 bindAvatarFrames();
 
 function bindAvatarFrames(){
  const frames=Array.from(avatarStage.querySelectorAll('img[data-frame]'));
  const sets={
-  'avatar-blinking':['blink'],
-  'avatar-speaking':['talking','blink-talking'],
-  'avatar-thinking':['thinking','blink-thinking'],
-  'avatar-is-glancing':['glance'],
-  'avatar-preview-glance':['glance'],
+  'avatar-speaking':['talking'],
   'avatar-is-reading':['reading','reading-page','blink-reading'],
   'avatar-is-searching':['search','blink-search'],
   'avatar-is-working':['work','work-writing','blink-work'],
   'avatar-is-music':['headphones'],
   'avatar-idle-scratch':['scratch-mid','scratch'],
   'avatar-idle-yawn':['yawn-mid','yawn'],
-  'avatar-idle-calm':['calm'],
-  'avatar-is-happy':['happy'],
-  'avatar-is-surprised':['surprised']
+  'avatar-idle-calm':['calm']
  };
  function sync(){
   if(avatarStage.hidden||document.hidden||document.body.classList.contains('eva-pet-chat'))return;
   const names=new Set();
   for(const cls of avatarStage.classList)for(const name of sets[cls]||[])names.add(name);
-  // Prime the eyelids ahead of the first short blink on a visible full-size portrait.
-  if(!reducedMotion.matches)names.add('blink');
   for(const img of frames)if(names.has(img.dataset.frame)&&!img.hasAttribute('src'))img.src=img.dataset.src;
  }
  const observer=new MutationObserver(sync);
@@ -792,15 +781,14 @@ function bindAvatarFrames(){
  requestAnimationFrame(sync);
 }
 reducedMotion.addEventListener('change',syncPortraitMotion);
-const blinkFrame=document.querySelector('.avatar-blink');
 function avatarCanMove(){return mouthVisible()&&!reducedMotion.matches}
-function runBlink(){if(!avatarCanMove())return;blinkFrame.classList.add('is-blinking');avatarStage.classList.add('avatar-blinking');setTimeout(()=>{blinkFrame.classList.remove('is-blinking');avatarStage.classList.remove('avatar-blinking')},110+Math.random()*80)}
+function runBlink(){if(avatarCanMove())chatPortrait.blink()}
 function scheduleBlink(){setTimeout(()=>{if(!avatarPreviewActive&&avatarCanMove()){runBlink();if(Math.random()<0.17)setTimeout(runBlink,230+Math.random()*110)}scheduleBlink()},2500+Math.random()*6500)}
 scheduleBlink();
 
 // A tap gets a small smile; thinking expression follows the active task.
 let avatarHappyTimer;
-document.querySelector('.avatar-figure').addEventListener('click',()=>{if(busy||convoSpeaking)return;animateAvatarPresence('acknowledge');avatarStage.classList.remove('avatar-is-reading');avatarStage.classList.add('avatar-is-happy');clearTimeout(avatarHappyTimer);avatarHappyTimer=setTimeout(()=>avatarStage.classList.remove('avatar-is-happy'),4500)});
+document.querySelector('.avatar-figure').addEventListener('click',()=>{if(busy||convoSpeaking)return;chatPortrait.wave();avatarStage.classList.remove('avatar-is-reading');avatarStage.classList.add('avatar-is-happy');clearTimeout(avatarHappyTimer);avatarHappyTimer=setTimeout(()=>avatarStage.classList.remove('avatar-is-happy'),4500)});
 
 // Tap an empty area of the conversation to interact with the portrait.
 $('messages').addEventListener('click',event=>{if(event.target===$('messages')&&!avatarStage.hidden&&!window.getSelection()?.toString())document.querySelector('.avatar-figure').click()});
@@ -891,30 +879,17 @@ function handleAvatarEvent(m){if(m.type==='error'){avatarItems.clear();clearTime
 es.addEventListener('message',e=>{try{handleAvatarEvent(JSON.parse(e.data))}catch(err){console.warn('Состояние аватара:',err)}});
 
 // Generated expressions are lazy-loaded, including in the preview.
-const generatedAvatarFrames=[["frame-01","/root/.codex/generated_images/eva-builtin-20261116/emotions/01-warm-full.webp","Тепло"],["frame-02","/root/.codex/generated_images/eva-builtin-20261116/emotions/02-warm-mid.webp","Тепло — переход"],["frame-03","/root/.codex/generated_images/eva-builtin-20261116/emotions/03-happy-mid.webp","Улыбка — переход"],["frame-04","/root/.codex/generated_images/eva-builtin-20261116/emotions/04-happy-full.webp","Улыбка"],["frame-05","/root/.codex/generated_images/eva-builtin-20261116/emotions/05-laugh-mid.webp","Смех — переход"],["frame-06","/root/.codex/generated_images/eva-builtin-20261116/emotions/06-laugh-full.webp","Смех"],["frame-07","/root/.codex/generated_images/eva-builtin-20261116/emotions/07-curious-mid.webp","Любопытство — переход"],["frame-08","/root/.codex/generated_images/eva-builtin-20261116/emotions/08-curious-full.webp","Любопытство"],["frame-09","/root/.codex/generated_images/eva-builtin-20261116/emotions/09-surprised-mid.webp","Удивление — переход"],["frame-10","/root/.codex/generated_images/eva-builtin-20261116/emotions/10-surprised-full.webp","Удивление"],["frame-11","/root/.codex/generated_images/eva-builtin-20261116/emotions/11-sly-mid.webp","Игривость — переход"],["frame-12","/root/.codex/generated_images/eva-builtin-20261116/emotions/12-sly-full.webp","Игривость"],["frame-13","/root/.codex/generated_images/eva-builtin-20261116/emotions/13-thinking-mid.webp","Раздумье — переход"],["frame-14","/root/.codex/generated_images/eva-builtin-20261116/emotions/14-thinking-full.webp","Раздумье"],["frame-15","/root/.codex/generated_images/eva-builtin-20261116/emotions/15-skeptical-mid.webp","Скепсис — переход"],["frame-16","/root/.codex/generated_images/eva-builtin-20261116/emotions/16-skeptical-full.webp","Скепсис"],["frame-17","/root/.codex/generated_images/eva-builtin-20261116/emotions/17-shy-mid.webp","Смущение — переход"],["frame-18","/root/.codex/generated_images/eva-builtin-20261116/emotions/18-shy-full.webp","Смущение"],["frame-19","/root/.codex/generated_images/eva-builtin-20261116/emotions/19-pout-mid.webp","Недовольство — переход"],["frame-20","/root/.codex/generated_images/eva-builtin-20261116/emotions/20-pout-full.webp","Недовольство"],["frame-21","/root/.codex/generated_images/eva-builtin-20261116/emotions/21-confident-mid.webp","Уверенность — переход"],["frame-22","/root/.codex/generated_images/eva-builtin-20261116/emotions/22-confident-full.webp","Уверенность"],["frame-23","/root/.codex/generated_images/eva-builtin-20261116/emotions/23-sad-mid.webp","Сочувствие — переход"],["frame-24","/root/.codex/generated_images/eva-builtin-20261116/emotions/24-sad-full.webp","Сочувствие"],["frame-25","/root/.codex/generated_images/eva-builtin-20261116/emotions/25-excited-mid.webp","Восторг — переход"],["frame-26","/root/.codex/generated_images/eva-builtin-20261116/emotions/26-excited-full.webp","Восторг"],["frame-27","/root/.codex/generated_images/eva-builtin-20261116/emotions/27-blink-mid.webp","Моргание — переход"],["frame-28","/root/.codex/generated_images/eva-builtin-20261116/emotions/28-blink-full.webp","Моргание"],["frame-29","/root/.codex/generated_images/eva-builtin-20261116/emotions/29-wink-mid.webp","Подмигивание — переход"],["frame-30","/root/.codex/generated_images/eva-builtin-20261116/emotions/30-wink-full.webp","Подмигивание"]];
-generatedAvatarFrames.push(...[["frame-31","/root/.codex/generated_images/eva-builtin-20261116/emotions/31-annoyed-mid.webp","Раздражение — переход"],["frame-32","/root/.codex/generated_images/eva-builtin-20261116/emotions/32-annoyed-full.webp","Раздражение"],["frame-33","/root/.codex/generated_images/eva-builtin-20261116/emotions/33-tired-mid.webp","Усталость — переход"],["frame-34","/root/.codex/generated_images/eva-builtin-20261116/emotions/34-tired-full.webp","Усталость"],["frame-35","/root/.codex/generated_images/eva-builtin-20261116/emotions/35-relieved-mid.webp","Облегчение — переход"],["frame-36","/root/.codex/generated_images/eva-builtin-20261116/emotions/36-relieved-full.webp","Облегчение"],["frame-37","/root/.codex/generated_images/eva-builtin-20261116/emotions/37-confused-mid.webp","Растерянность — переход"],["frame-38","/root/.codex/generated_images/eva-builtin-20261116/emotions/38-confused-full.webp","Растерянность"]]);
-for(const [key,src] of generatedAvatarFrames){const img=document.createElement('img');img.className='avatar-expression avatar-generated avatar-expression-'+key;img.dataset.src='/chat-image?token='+encodeURIComponent(token)+'&path='+encodeURIComponent(src);img.alt='';img.setAttribute('aria-hidden','true');avatarStage.querySelector('.avatar-head').appendChild(img)}
-const decodedExpressions=new Set();
-async function loadExpressionPair(keys){
- const imgs=keys.map(key=>avatarStage.querySelector('.avatar-expression-'+key));
- for(const img of imgs){
-  decodedExpressions.delete(img);decodedExpressions.add(img);
-  if(!img.hasAttribute('src'))img.src=img.dataset.src;
- }
- // The outgoing expression can finish its crossfade. Old full-length decodes can be released.
- while(decodedExpressions.size>6){const first=decodedExpressions.values().next().value;first.removeAttribute('src');decodedExpressions.delete(first)}
- await Promise.all(imgs.map(img=>img.decode()));
-}
-const generatedAvatarTransitions={'warm-soft':['frame-02','frame-01'],joy:['frame-03','frame-04'],laugh:['frame-05','frame-06'],curious:['frame-07','frame-08'],surprised:['frame-09','frame-10'],sly:['frame-11','frame-12'],'thinking-soft':['frame-13','frame-14'],shy:['frame-17','frame-18'],pout:['frame-19','frame-20'],skeptical:['frame-15','frame-16'],confident:['frame-21','frame-22'],sad:['frame-23','frame-24'],excited:['frame-25','frame-26'],wink:['frame-29','frame-30']};
-Object.assign(generatedAvatarTransitions,{annoyed:['frame-31','frame-32'],tired:['frame-33','frame-34'],relieved:['frame-35','frame-36'],confused:['frame-37','frame-38']});
-const avatarExpressions=['smile-mid','thinking-soft','warm-soft','laugh','curious','joy','wink','excited','sly','shy','pout','serious','sad',...generatedAvatarFrames.map(f=>f[0])];let avatarEmotionGeneration=0;
 function resetAvatarReaction(){
- avatarPendingEmotion=null;
- clearTimeout(avatarHappyTimer);
- clearAvatarExpression();
+ avatarPendingEmotion=null;clearTimeout(avatarHappyTimer);clearAvatarExpression();
 }
-function clearAvatarExpression(){avatarEmotionGeneration++;avatarStage.classList.remove('avatar-is-happy','avatar-is-surprised',...avatarExpressions.map(x=>'avatar-expression-'+x+'-active'))}
-async function tryShowAvatarEmotion(){if(!avatarPendingEmotion||busy||convoSpeaking||voiceIsAudible||avatarActivity||!mouthVisible())return;const emotion=avatarPendingEmotion;avatarPendingEmotion=null;clearAvatarExpression();const generation=avatarEmotionGeneration;const pair=generatedAvatarTransitions[emotion];if(pair){try{await loadExpressionPair(pair);if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;if(!reducedMotion.matches){avatarStage.classList.add('avatar-expression-'+pair[0]+'-active');await new Promise(r=>setTimeout(r,500));if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden){avatarStage.classList.remove('avatar-expression-'+pair[0]+'-active');return}}avatarStage.classList.add('avatar-expression-'+pair[1]+'-active');avatarStage.classList.remove('avatar-expression-'+pair[0]+'-active');clearTimeout(avatarHappyTimer);avatarHappyTimer=setTimeout(clearAvatarExpression,4500);return}catch(err){console.warn('Переход аватара недоступен:',err);avatarStage.classList.remove(...pair.map(key=>'avatar-expression-'+key+'-active'))}}if(avatarExpressions.includes(emotion)){const img=avatarStage.querySelector('.avatar-expression-'+emotion);if(!img)return;if(!img.src&&img.dataset.src)img.src=img.dataset.src;try{if(img.decode)await img.decode()}catch{return}if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;if(emotion==='laugh'&&!reducedMotion.matches){const mid=avatarStage.querySelector('.avatar-expression-smile-mid');if(mid){if(!mid.src&&mid.dataset.src)mid.src=mid.dataset.src;try{if(mid.decode)await mid.decode();if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;avatarStage.classList.add('avatar-expression-smile-mid-active');await new Promise(r=>setTimeout(r,500));avatarStage.classList.remove('avatar-expression-smile-mid-active')}catch{}}}if(generation!==avatarEmotionGeneration||busy||convoSpeaking||voiceIsAudible||avatarActivity||document.hidden)return;avatarStage.classList.add('avatar-expression-'+emotion+'-active')}else if(emotion==='surprised')avatarStage.classList.add('avatar-is-surprised');else return;clearTimeout(avatarHappyTimer);avatarHappyTimer=setTimeout(clearAvatarExpression,4500)}
+function clearAvatarExpression(){
+ avatarStage.classList.remove('avatar-is-happy','avatar-is-surprised');chatPortrait.clear();
+}
+function tryShowAvatarEmotion(){
+ if(!avatarPendingEmotion||busy||convoSpeaking||voiceIsAudible||avatarActivity||!mouthVisible())return;
+ const pose=avatarPendingEmotion;avatarPendingEmotion=null;clearTimeout(avatarHappyTimer);
+ chatPortrait.emote(pose);avatarHappyTimer=setTimeout(clearAvatarExpression,4500);
+}
 
 // One context-sensitive control for recording and stopping work or speech.
 function refreshVoiceButton(){const listening=!!recognition||!!(conversation&&convoRecognizer);$('mic').innerHTML=uiIcon('mic');$('mic').classList.toggle('listening',listening);window.evaMiniPresence?.(voiceIsAudible?'speaking':listening?'listening':busy||convoSpeaking?'working':'idle');$('mic').title='Голосовой ввод';$('mic').setAttribute('aria-label','Голосовой ввод');$('mic').setAttribute('aria-pressed',String(listening));$('stop').hidden=!(busy||voiceIsAudible||convoSpeaking||listening)}
@@ -971,121 +946,69 @@ document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;for(const id 
 
 $('accessibility-open').onclick=()=>{if(window.NativePhone&&window.NativePhone.accessibilitySettings)window.NativePhone.accessibilitySettings();else message("Настройка доступна в обновлённом приложении Ева.")};
 
-// Preview the same registered views and expression transitions used in a real conversation.
-const avatarPreviewGroups = {
-  angles: {label:'Ракурсы', states:[
-    ['Анфас','',0], ['Влево','avatar-turn-left',-1], ['Вправо','avatar-turn-right',1]
-  ]},
-  expressions: {label:'Мимика', states:[
-    ['Улыбка','warm-soft'], ['Интерес','curious'], ['Радость','joy'], ['Смех','laugh'],
-    ['Подмигивание','wink'], ['Удивление','surprised'], ['Скепсис','skeptical'], ['Смущение','shy'],
-    ['Хитринка','sly'], ['Задумчивость','thinking-soft'], ['Грусть','sad'], ['Облегчение','relieved'],
-    ['Восторг','excited'], ['Уверенность','confident'], ['Усталость','tired'], ['Растерянность','confused']
-  ]},
-  activities: {label:'Занятия', states:[
-    ['Слушает','avatar-listening'], ['Говорит','avatar-speaking'], ['Думает','avatar-thinking'],
-    ['Читает','avatar-is-reading'], ['Ищет','avatar-is-searching'], ['Пишет','avatar-is-working'],
-    ['В наушниках','avatar-is-music'], ['Зевает','avatar-idle-yawn'], ['Отдыхает','avatar-idle-calm'],
-    ['Поправляет волосы','avatar-idle-scratch']
-  ]}
+// The preview uses the same hand-drawn expressions, blinks and gestures as the conversation.
+const avatarPreviewGroups={
+ gestures:{label:'Жесты',states:[['Машет рукой','wave'],['Моргание','blink'],['Переводит взгляд','avatar-preview-glance'],['Зевает','avatar-idle-yawn'],['Поправляет волосы','avatar-idle-scratch']]},
+ expressions:{label:'Мимика',states:[['Улыбка','warm'],['Интерес','curious'],['Радость','joy'],['Смех','laugh'],['Подмигивание','wink'],['Удивление','surprised'],['Скепсис','skeptical'],['Смущение','shy'],['Хитринка','sly'],['Задумчивость','thinking'],['Грусть','sad'],['Облегчение','relieved'],['Восторг','excited'],['Уверенность','confident'],['Усталость','tired'],['Растерянность','confused'],['Недовольство','annoyed'],['Дуется','pout']]},
+ activities:{label:'Занятия',states:[['Слушает','avatar-listening'],['Говорит','avatar-speaking'],['Думает','avatar-thinking'],['Читает','avatar-is-reading'],['Ищет','avatar-is-searching'],['Пишет','avatar-is-working'],['В наушниках','avatar-is-music'],['Отдыхает','avatar-idle-calm']]}
 };
 const avatarPreviewStates=Object.values(avatarPreviewGroups).flatMap(group=>group.states);
 const avatarPreviewClasses=avatarPreviewStates.map(state=>state[1]).filter(cls=>cls.startsWith('avatar-'));
-let avatarPreviewGroup='angles', avatarPreviewSequence=0, avatarPreviewWasHidden=false;
-let avatarPreviewTimer=null, avatarPreviewBlinkTimer=null;
-const previewButtons=$('avatar-preview-buttons'), previewGroups=$('avatar-preview-groups');
-const yawSlider=$('avatar-preview-yaw'), previewName=$('avatar-preview-name');
-const previewPlay=$('avatar-preview-play');
-
+let avatarPreviewGroup='gestures',avatarPreviewSequence=0,avatarPreviewWasHidden=false;
+let avatarPreviewTimer=null,avatarPreviewBlinkTimer=null;
+const previewButtons=$('avatar-preview-buttons'),previewGroups=$('avatar-preview-groups');
+const previewName=$('avatar-preview-name'),previewPlay=$('avatar-preview-play');
 function stopPreviewSequence(){
- clearTimeout(avatarPreviewTimer);avatarPreviewTimer=null;
- previewPlay.setAttribute('aria-pressed','false');
- previewPlay.textContent='По очереди';
-}
-function setAngleLabel(value){
- const degrees=Math.round(Math.abs(value)*24);
- return degrees ? degrees+'° '+(value<0?'влево':'вправо') : 'Анфас';
+ clearTimeout(avatarPreviewTimer);avatarPreviewTimer=null;previewPlay.setAttribute('aria-pressed','false');previewPlay.textContent='По очереди';
 }
 function resetPreviewPose(){
- clearTimeout(avatarPreviewBlinkTimer);
- clearIdlePose();clearAvatarExpression();
- avatarStage.classList.remove(...avatarPreviewClasses,'avatar-preview-glance','avatar-is-glancing','avatar-blinking');
- delete avatarStage.dataset.previewYaw;
+ clearTimeout(avatarPreviewBlinkTimer);clearIdlePose();clearAvatarExpression();setMouth();
+ avatarStage.classList.remove(...avatarPreviewClasses,'avatar-is-glancing','avatar-multimouth-ready');
 }
 function selectPreviewGroup(key){
- stopPreviewSequence();
- avatarPreviewGroup=key;
+ stopPreviewSequence();avatarPreviewGroup=key;
  for(const b of previewGroups.children)b.setAttribute('aria-pressed',String(b.dataset.group===key));
- $('avatar-angle-control').hidden=key!=='angles';
  previewButtons.replaceChildren();
- const group=avatarPreviewGroups[key];
- const states=key==='angles'?[group.states[1],group.states[0],group.states[2]]:group.states;
- for(const state of states){
-  const b=document.createElement('button');
-  b.type='button';b.textContent=state[0];b.dataset.index=String(avatarPreviewStates.indexOf(state));
-  b.onclick=()=>{stopPreviewSequence();showAvatarPreview(Number(b.dataset.index))};
-  previewButtons.append(b);
+ for(const state of avatarPreviewGroups[key].states){
+   const b=document.createElement('button');b.type='button';b.textContent=state[0];b.dataset.index=String(avatarPreviewStates.indexOf(state));
+   b.onclick=()=>{stopPreviewSequence();showAvatarPreview(Number(b.dataset.index))};previewButtons.append(b);
  }
- showAvatarPreview(avatarPreviewStates.indexOf(group.states[0]));
+ showAvatarPreview(avatarPreviewStates.indexOf(avatarPreviewGroups[key].states[0]));
 }
-async function showAvatarPreview(index){
- if(!avatarPreviewActive)return;
- const seq=++avatarPreviewSequence,state=avatarPreviewStates[index];
- if(!state)return;
- const [label,cls,yaw]=state;
- const active=()=>avatarPreviewActive&&seq===avatarPreviewSequence;
- resetPreviewPose();
- for(const b of previewButtons.children)b.setAttribute('aria-pressed',String(Number(b.dataset.index)===index));
+function showAvatarPreview(index){
+ const state=avatarPreviewStates[index];if(!avatarPreviewActive||!state)return;
+ const seq=++avatarPreviewSequence,[label,cls]=state;
+ resetPreviewPose();for(const b of previewButtons.children)b.setAttribute('aria-pressed',String(Number(b.dataset.index)===index));
  previewName.textContent=label;
- if(typeof yaw==='number'){
-  yawSlider.value=String(Math.round(yaw*100));
-  yawSlider.setAttribute('aria-valuetext',setAngleLabel(yaw));
-  // Key poses travel through the intermediate artwork at the normal animation speed.
-  if(cls)avatarStage.classList.add(cls);
-  else avatarStage.dataset.previewYaw='0';
- }else if(generatedAvatarTransitions[cls]){
-  const keys=generatedAvatarTransitions[cls];
-  try{
-   await loadExpressionPair(keys);
-  }catch{if(active())previewName.textContent='Кадр пока недоступен';return}
-  if(!active())return;
-  if(!reducedMotion.matches){
-   avatarStage.classList.add('avatar-expression-'+keys[0]+'-active');
-   await new Promise(resolve=>setTimeout(resolve,320));
-   if(!active())return;
-   avatarStage.classList.remove('avatar-expression-'+keys[0]+'-active');
-  }
-  avatarStage.classList.add('avatar-expression-'+keys[1]+'-active');
- }else if(cls)avatarStage.classList.add(cls);
- if(!['wink','joy','laugh','tired','avatar-idle-yawn','avatar-idle-calm'].includes(cls)){
-  const blink=()=>{
-   if(!active()||!avatarCanMove())return;
-   runBlink();avatarPreviewBlinkTimer=setTimeout(blink,3700+Math.random()*1900);
-  };
-  avatarPreviewBlinkTimer=setTimeout(blink,2000);
+ if(cls==='wave')chatPortrait.wave();
+ else if(cls==='blink')chatPortrait.blink();
+ else if(window.EvaPortrait.faceName(cls))chatPortrait.emote(cls);
+ else avatarStage.classList.add(cls);
+ if(cls==='avatar-speaking'&&!reducedMotion.matches){
+   avatarStage.classList.add('avatar-multimouth-ready');
+   const line=window.EvaPortrait.speechTrack('Привет. Я на связи.');const start=performance.now();
+   function speakFrame(){
+     if(seq!==avatarPreviewSequence||!avatarPreviewActive||document.hidden)return;
+     const pos=(performance.now()-start)/84,cue=window.EvaPortrait.speechCue(line,pos);
+     if(!cue){setMouth();return;}
+     const t=(pos-cue.begin)/(cue.end-cue.begin);setMouth(cue.shape>=0?cue.shape/2:-1,Math.round(cue.strength*Math.sin(Math.PI*t)*5));
+     avatarPreviewBlinkTimer=setTimeout(speakFrame,1000/30);
+   }
+   speakFrame();
  }
 }
-yawSlider.oninput=()=>{
- stopPreviewSequence();++avatarPreviewSequence;resetPreviewPose();
- const yaw=Number(yawSlider.value)/100;
- avatarStage.dataset.previewYaw=String(yaw);
- const label=setAngleLabel(yaw);
- previewName.textContent=label;yawSlider.setAttribute('aria-valuetext',label);
- for(const b of previewButtons.children)b.setAttribute('aria-pressed',String(avatarPreviewStates[Number(b.dataset.index)][2]===yaw));
-};
 function closeAvatarPreview(){
  if(!avatarPreviewActive)return;
  stopPreviewSequence();avatarPreviewActive=false;++avatarPreviewSequence;resetPreviewPose();
  $('avatar-preview').hidden=true;
  document.body.classList.remove('avatar-preview-active');
- for(const frame of decodedExpressions)frame.removeAttribute('src');decodedExpressions.clear();
  avatarStage.hidden=avatarPreviewWasHidden;updateAvatar();$('header-toggle').focus({preventScroll:true});
 }
 $('avatar-preview-open').onclick=()=>{
  if(busy||conversation||voiceIsAudible){message('Дай мне закончить ответ, и откроем портрет.');return}
  avatarPreviewWasHidden=avatarStage.hidden;avatarStage.hidden=false;avatarPreviewActive=true;clearIdlePose();
  sidebar.hidden=true;$('avatar-preview').hidden=false;document.body.classList.add('avatar-preview-active');
- selectPreviewGroup('angles');$('avatar-preview-close').focus({preventScroll:true});
+ selectPreviewGroup('gestures');$('avatar-preview-close').focus({preventScroll:true});
 };
 $('avatar-preview-close').onclick=closeAvatarPreview;
 for(const [key,group] of Object.entries(avatarPreviewGroups)){

@@ -64,23 +64,50 @@ export const roomFurnishings=[
 ];
 
 export function drawFloorDecor(renderer,o){
- const point=(x,y,z)=>[o.u+o.w*x,o.v+o.d*y,z];
- const z=.019;
- const quad=(a,b,c,d,t,layer=0)=>renderer.panel(
-   [point(a,b,z+layer),point(c,b,z+layer),point(c,d,z+layer),point(a,d,z+layer)],t,null,o.id);
- quad(0,0,1,1,[.41,.52,.46]);
- quad(.075,.11,.925,.89,[.72,.76,.60],.001);
- quad(.15,.19,.85,.81,[.51,.64,.54],.002);
- for(let i=1;i<5;i++)quad(i/5-.013,.23,i/5+.013,.77,[.63,.71,.57],.003);
+ const frame=fixtureFrame(o),w=frame.width,d=frame.depth;
+ const warp=[.78,.74,.62],teal=[.60,.69,.61],selvedge=[.36,.48,.43];
+ function band(x,y,right,back,z,tint,finish){
+   const uv=[[x,y],[right,y],[right,back],[x,back]];
+   renderer.panel(uv.map(([a,b])=>frame.point(a,b,z)),tint,finish,o.id,uv);
+ }
+ for(let i=0;i<19;i++){
+   const y=(i+.6)*d/20,tail=.008+(i%3)*.003;
+   band(0,y,.032+tail,y+.011,.012,warp,'room-linen');
+   band(w-.032-tail,y,w,y+.011,.012,warp,'room-linen');
+ }
+ band(.035,0,w-.035,d,.017,teal,'room-runner');
+ for(const side of [0,1]){
+   const edge=x=>side?w-x:x;
+   for(const [near,far,tint,finish] of [[.042,.060,selvedge,'room-runner'],[.081,.104,warp,'room-linen'],[.126,.134,warp,'room-linen']]){
+     const a=edge(near),b=edge(far);
+     band(Math.min(a,b),0,Math.max(a,b),d,.019,tint,finish);
+   }
+ }
 }
 
 const furniturePreviews=new Map();
+let catalogPixels,catalogLoading;
+function warmCatalogTexture(){
+ if(!catalogLoading&&typeof Image!=='undefined'){
+   const image=new Image();
+   catalogLoading=new Promise(resolve=>{
+     image.onload=()=>{
+       const small=document.createElement('canvas');small.width=small.height=256;
+       const context=small.getContext('2d');context.drawImage(image,0,0,256,256);
+       catalogPixels=context.getImageData(0,0,256,256);resolve(catalogPixels);
+     };
+     image.onerror=()=>resolve(null);
+   });
+   image.src='art/room-indie-atlas.webp';
+ }
+ return catalogLoading;
+}
 
 export function furnishingThumbnail(canvas,model){
  canvas.width=112;canvas.height=86;
  const ctx=canvas.getContext('2d'),key=model.model??model.id;
  const cached=furniturePreviews.get(key);
- if(cached){ctx.drawImage(cached,0,0);return;}
+ if(cached){ctx.drawImage(cached.canvas,0,0);cached.ready?.then(()=>ctx.drawImage(cached.canvas,0,0));return;}
  const o={...model,u:0,v:0,z:0};
  const faces=collectMesh(renderer=>{
    if(o.kind==='floorDecor'){drawFloorDecor(renderer,o);return;}
@@ -89,8 +116,12 @@ export function furnishingThumbnail(canvas,model){
      renderer.box(o.id,{u:p.u,v:p.v,z:p.z},p.a,p.b,p.h,p.tint,p.mat);
    }
  });
- meshThumbnail(canvas,faces);
- furniturePreviews.set(key,canvas);
+ meshThumbnail(canvas,faces,catalogPixels);
+ const entry={canvas,ready:null};furniturePreviews.set(key,entry);
+ if(!catalogPixels)entry.ready=warmCatalogTexture()?.then(atlas=>{
+   if(atlas)meshThumbnail(canvas,faces,atlas);
+   entry.ready=null;
+ });
 }
 
 export function roomDesk(fixture){
@@ -210,7 +241,7 @@ export function drawComputerArms(renderer,actor,fixture,gesture,id=0){
 }
 export function drawComputer(renderer,o,powered,streaming,seconds=0,gesture=null,pass='all'){
  const point=computerLayout(o);
- const box=(x,y,z,w,d,h,t,mat)=>{
+ const box=(x,y,z,w,d,h,t,mat=t===stand?'room-steel':'room-graphite')=>{
    const a=point(x,y,z),b=point(x+w,y+d,z);
    renderer.box(o.id,{u:Math.min(a.u,b.u),v:Math.min(a.v,b.v),z:a.z},Math.abs(b.u-a.u),Math.abs(b.v-a.v),h,t,mat);
  };

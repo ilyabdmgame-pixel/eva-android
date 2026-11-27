@@ -19,6 +19,7 @@ export function roomView(extra){
 }
 
 const windowFrame={left:-1.19,right:2.13,bottom:1.22,top:2.68};
+export const roomWindowWidth=windowFrame.right-windowFrame.left;
 export const attachedFurniture=new Map([[1,[5,6,27,streamChair.id]],[3,[10,11]],[21,[22,23]],[25,[26]]]);
 export const furnitureOwners=new Map([...attachedFurniture].flatMap(([parent,children])=>children.map(id=>[id,parent])));
 
@@ -209,8 +210,9 @@ export function drawBedding(renderer,bed,item,folded,recline=0,plumped=false,rig
    const c=near+(far-near)*j/rows,e=near+(far-near)*(j+1)/rows;
    const band=j===0||j===rows-2;
    const color=band?f.rose:(i+j)%6===0?[.582,.352,.398]:f.burgundy;
-   m.face([surface(a,c),surface(b,c),surface(b,e),surface(a,e)],color,'cloth');
-   if(!folded&&(i+j)%2===0){
+   m.face([surface(a,c),surface(b,c),surface(b,e),surface(a,e)],color,'room-quilt',true,
+     [[i/cols,j/rows],[(i+1)/cols,j/rows],[(i+1)/cols,(j+1)/rows],[i/cols,(j+1)/rows]]);
+   if(!folded&&(i===0||i===cols-1)&&j%2===0){
      const width=(b-a)*.048;
      m.face([surface(a+.011,c+.003),surface(a+.011+width,c+.003),surface(b-.009,e-.003),surface(b-.009-width,e-.003)]
        .map(([x,y,z])=>[x,y,z+.0018]),f.rose,null,false);
@@ -229,14 +231,14 @@ export function drawBedding(renderer,bed,item,folded,recline=0,plumped=false,rig
    const t=surface(a,b),next=surface(a,c),low=hem(a,b,side),lowNext=hem(a,c,side);
    const round=t.map((n,i)=>i===0?n+side*.007:i===2?n-.017:n);
    const roundNext=next.map((n,i)=>i===0?n+side*.007:i===2?n-.017:n);
-   m.face([t,next,roundNext,round],f.burgundy,'cloth',false);
-   m.face([round,roundNext,lowNext,low],f.burgundy,'cloth',false);
+   m.face([t,next,roundNext,round],f.burgundy,'room-quilt',false);
+   m.face([round,roundNext,lowNext,low],f.burgundy,'room-quilt',false);
    m.face([low,lowNext,[lowNext[0],lowNext[1],lowNext[2]+.009],[low[0],low[1],low[2]+.009]],f.rose,'cloth',false);
  }
  for(let i=0;i<cols;i++){
    const a=left+(right-left)*i/cols,b=left+(right-left)*(i+1)/cols;
    const low=hem(a,far,0,true),other=hem(b,far,0,true);
-   m.face([surface(a,far),surface(b,far),other,low],f.burgundy,'cloth',false);
+   m.face([surface(a,far),surface(b,far),other,low],f.burgundy,'room-quilt',false);
    m.face([low,other,[other[0],other[1],other[2]+.010],[low[0],low[1],low[2]+.010]],f.rose,'cloth',false);
  }
 }
@@ -244,17 +246,19 @@ export function drawBedding(renderer,bed,item,folded,recline=0,plumped=false,rig
 export function drawRoom(renderer,open,extra=0,walls={u:true,v:true},includeSash=true){
  const e=roomEdge,end=e+extra,{left,right,bottom,top}=windowFrame;
  const plaster=[.965,.91,.79],wood=[.83,.69,.52],trim=[.631,.454,.339];
- const box=(id,u,v,z,w,d,h,tint,mat)=>renderer.box(id,{u:room.u+u,v:room.v+v,z},w,d,h,tint,mat);
+ const box=(id,u,v,z,w,d,h,tint,mat)=>renderer.box(id,{u:room.u+u,v:room.v+v,z},w,d,h,tint,mat==='oak'?(tint===trim?'room-walnut':'room-oak'):mat);
  const panel=(points,key)=>renderer.artPanel(points.map(([u,v,z])=>[room.u+u,room.v+v,z]),key);
  const span=2*e+extra;
- box(0,-e,-e,-.228,span,span,.183,[.446,.326,.275],'oak');
+ box(0,-e,-e,-.228,span,span,.183,[.446,.326,.275],'room-walnut');
  box(0,-e-.006,-e-.006,-.064,span+.012,span+.012,.049,[.74,.526,.354],'oak');
- box(0,-e,-e,-.022,span,span,.022,[1.04,.97,.83],'oak');
+ box(0,-e,-e,-.022,span,span,.022,[1.04,.97,.83],'room-floor');
  const back=(id,a,b,z,h,tint,mat='room-plaster',d=.20)=>box(id,a,-e-.11,z,b-a,d,h,tint,mat);
  if(walls.v){
    back(251,-e,left,0,2.97,plaster);back(251,right,end,0,2.97,plaster);
    back(251,left,right,0,bottom,plaster);back(251,left,right,top,2.97-top,plaster);
    back(251,-e,end,.014,.178,wood,'oak',.261);
+   back(251,-e+.029,left-.14,.214,.626,[.69,.60,.51],'room-brick',.238);
+   back(251,-e+.015,left-.13,.829,.032,wood,'oak',.275);
    back(251,-e,end,.188,.026,trim,'oak',.244);
    back(251,-e,end,2.898,.092,wood,'oak',.257);
    back(7,left-.09,right+.09,bottom-.09,.09,wood,'oak',.40);
@@ -284,7 +288,7 @@ export function drawRoom(renderer,open,extra=0,walls={u:true,v:true},includeSash
    rod.rod([left-.35,-e+.178,2.79],[right+.35,-e+.178,2.79],.021,.021,f.brass);
  }
  if(walls.u){
-   box(251,-e-.14,-e-.105,0,.20,span+.105,2.97,[.842,.902,.808],'room-plaster');
+   box(251,-e-.14,-e-.105,0,.20,span+.105,2.97,[.842,.902,.808],'room-wallpaper');
    box(251,-e-.14,-e,.015,.252,span,.175,wood,'oak');
    box(251,-e-.14,-e,.185,.242,span,.027,trim,'oak');
    box(251,-e-.14,-e,2.9,.251,span,.086,wood,'oak');
@@ -300,7 +304,7 @@ export function drawRoom(renderer,open,extra=0,walls={u:true,v:true},includeSash
  }
  if(!walls.u){
    const x=end-.068;
-   box(251,x,-e-.10,0,.18,span+.18,2.97,[.855,.865,.785],'room-plaster');
+   box(251,x,-e-.10,0,.18,span+.18,2.97,[.855,.865,.785],'room-wallpaper');
    box(251,x-.05,-e,.015,.083,span,.177,wood,'oak');
    box(251,x-.05,-e,2.90,.083,span,.084,wood,'oak');
    // From the far side of the room the entry and a key hook come into view.
@@ -321,8 +325,7 @@ export function drawRoom(renderer,open,extra=0,walls={u:true,v:true},includeSash
    box(251,-e-.10,y,0,span+.18,.18,2.97,[.947,.889,.805],'room-plaster');
    box(251,-e,y-.05,.015,span,.083,.177,wood,'oak');
    box(251,-e,y-.05,2.90,span,.083,.084,wood,'oak');
-   for(let row=0;row<3;row++)for(let i=0;i<11;i++)
-     box(251,-2.23+i*.305,y-.017,.885+row*.145,.298,.014,.138,(i+row)%4?f.porcelain:f.linen,'room-weave');
+   box(251,-2.23,y-.017,.885,3.354,.014,.432,f.porcelain,'room-tiles');
    box(251,-2.23,y-.242,1.62,1.96,.236,.042,wood,'room-oak');
    const shelf=roomMesh(renderer,{id:251,...room,w:1,d:1});
    for(const [x,color] of [[-2.029,f.mint],[-1.78,f.edge],[-1.54,f.burgundy]]){

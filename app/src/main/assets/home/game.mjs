@@ -18,7 +18,7 @@ import {cameraDefaults,roomCamera,visibleRoomWalls,bindRoomCamera} from './room-
 import {roomSurface,hasRoomModel,drawRoomModel} from './room-models.mjs';
 import {fridgeVisit} from './room-appliances.mjs';
 import {createScene} from './render.mjs';
-import {room,roomOffset,roomEdge,roomView,expandedRoom,inRoom,fitsRoom,roomWindowFixture,windowLatch,drawWindowSash,drawRoom,drawRoomWindow,
+import {room,roomOffset,roomEdge,roomView,expandedRoom,inRoom,fitsRoom,roomWindowFixture,roomWindowWidth,windowLatch,drawWindowSash,drawRoom,drawRoomWindow,
   attachedPosition,attachedFurniture,furnitureOwners as parents,roomFurniture,roomApproach,quiltApproach,drawBedding} from './room.mjs';
 import {computerGesture,computerLayout,drawComputer,drawFloorDecor,furnishingThumbnail,originalRoomDecor,studioRoomDecor,roomDesk,roomFurnishings,streamChair} from './room-furnishings.mjs';
 import {windowWeather,windowWeatherMoves} from './window-weather.mjs';
@@ -1067,7 +1067,7 @@ function paint(t=now()){
    else if(plot.key==='sash')drawWindowSash(renderer,windowOpen);
    else for(const o of cached)model(o);
  });
- drawRoomWindow(renderer,walls.v?paintWindow(t,climate,reduceMotion):null,walls.v);
+ drawRoomWindow(renderer,walls.v?paintWindow(t,climate,reduceMotion,view.scale*roomWindowWidth):null,walls.v);
  for(const original of objects){
    const o=preview?.id===original.id?preview:preview&&parents.get(original.id)===preview.id
      ?attachedTo(original,preview):carrying===original.id?{...original,u:eva.u+.23,v:eva.v+.23}:original;

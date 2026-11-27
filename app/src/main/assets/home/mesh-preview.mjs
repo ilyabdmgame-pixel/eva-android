@@ -1,16 +1,26 @@
 import {camera,project} from './camera.mjs';
+import {faceUV} from './material-uv.mjs';
+import {roomMaterials,roomTint} from './room-materials.mjs';
 
 // Use the same model builder for catalog art as for a piece already placed in the room.
 export function collectMesh(draw) {
   const faces=[];
-  const face=(points,tint,material,id)=>faces.push({points,tint,material,id});
+  const face=(points,tint,material,id,coords)=>{
+    const item={points,tint,material,id},finish=roomMaterials[material];
+    if(finish){
+      item.paint=finish;item.paintTint=roomTint(tint,finish);
+      item.uv=coords??faceUV(points);
+    }
+    faces.push(item);
+  };
   const renderer={
     panel:face,
-    triangle(points,tint,id,material){face(points,tint,material,id);},
-    box(id,{u,v,z=0},w,d,h,tint,material){
+    triangle(points,tint,id,material,uv){face(points,tint,material,id,uv);},
+    box(id,{u,v,z=0},w,d,h,tint,material,toLocal){
       const p=[[u,v,z],[u+w,v,z],[u+w,v+d,z],[u,v+d,z],[u,v,z+h],[u+w,v,z+h],[u+w,v+d,z+h],[u,v+d,z+h]];
       for(const [indices,gain] of [[[4,5,6,7],1],[[1,2,6,5],.86],[[2,3,7,6],.76],[[3,0,4,7],.68],[[0,1,5,4],.72]]){
-        face(indices.map(i=>p[i]),tint.map(n=>n*gain),material,id);
+        const vertices=indices.map(i=>p[i]);
+        face(vertices,tint.map(n=>n*gain),material,id,toLocal&&faceUV(vertices.map(toLocal)));
       }
     }
   };
@@ -59,9 +69,29 @@ export function rasterMesh(faces,view,pixels,sample=null,ids=null){
   }
 }
 
-export function meshThumbnail(canvas,faces){
+const mirror=x=>1-Math.abs(((x%2)+2)%2-1);
+
+export function sampleRoomPaint(face,n,a,b,c,atlas,out){
+  const {cell,width,height}=face.paint,coords=face.uv,scale=atlas.width/4;
+  const x=(coords[0][0]*a+coords[n][0]*b+coords[n+1][0]*c)/width;
+  const y=(coords[0][1]*a+coords[n][1]*b+coords[n+1][1]*c)/height;
+  const col=(cell%4)*scale+1+Math.round(mirror(x)*(scale-3));
+  const row=Math.floor(cell/4)*scale+1+Math.round(mirror(y)*(scale-3));
+  const i=(row*atlas.width+col)*4,p=atlas.data,t=face.paintTint;
+  const l=.29*p[i]+.56*p[i+1]+.15*p[i+2];
+  if(cell===0||cell===3){
+    out[0]=(.21*l+.79*p[i])*.958*t[0];
+    out[1]=(.21*l+.79*p[i+1])*t[1];
+    out[2]=(.21*l+.79*p[i+2])*1.035*t[2];
+  }else for(let channel=0;channel<3;channel++)out[channel]=p[i+channel]*t[channel];
+  return out;
+}
+
+export function meshThumbnail(canvas,faces,atlas){
   const ctx=canvas.getContext('2d'),view=framedView(faces,canvas.width,canvas.height);
   const image=ctx.createImageData(canvas.width,canvas.height);
-  rasterMesh(faces,view,image.data);
+  const rgb=[0,0,0];
+  rasterMesh(faces,view,image.data,atlas?(face,n,a,b,c,base)=>face.material==='room-glass'?null:
+    face.paint?sampleRoomPaint(face,n,a,b,c,atlas,rgb):base:null);
   ctx.putImageData(image,0,0);
 }

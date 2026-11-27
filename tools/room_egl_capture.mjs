@@ -12,6 +12,7 @@ const replayScript = fileURLToPath(new URL('./room_egl_replay.py', import.meta.u
 export async function roomEglReplay(output) {
   const source = await readFile(new URL('./room_egl_trace.js', import.meta.url), 'utf8');
   const entries = [];
+  let documentStart;
   return {
     source,
     async frame(page, name) {
@@ -21,6 +22,11 @@ export async function roomEglReplay(output) {
       if (broadcast) {
         await writeFile(path.join(output, name + '-gpu.png'), Buffer.from(broadcast.split(',')[1], 'base64'));
         return;
+      }
+      const currentStart = await page.evaluate('performance.timeOrigin');
+      if (documentStart !== currentStart) {
+        entries.length = 0;
+        documentStart = currentStart;
       }
       const previous = await page.evaluate('evaGlesCapture.start()');
       await page.until('worldCheck().paintCount>' + previous, 'No fresh room frame');

@@ -35,7 +35,10 @@ def manifest(profile, destination):
     root.set("package", package)
     root.set(android_attr("versionCode"), str(code))
     root.set(android_attr("versionName"), version)
-    root.find("application").set(android_attr("debuggable"), "true" if profile.get("debuggable") else "false")
+    application = root.find("application")
+    application.set(android_attr("debuggable"), "true" if profile.get("debuggable") else "false")
+    # Gradle sets this through useLegacyPackaging. The standalone aapt path has no manifest merger.
+    application.set(android_attr("extractNativeLibs"), "true")
     root.insert(0, ET.Element("uses-sdk", {android_attr(k): field(k.replace("SdkVersion", "Sdk"))
         for k in ["minSdkVersion", "targetSdkVersion"]}))
     destination.write_bytes(ET.tostring(root, encoding="utf-8", xml_declaration=True))

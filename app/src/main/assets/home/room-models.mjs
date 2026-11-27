@@ -43,7 +43,7 @@ function coffeeTable(m){
   m.box(w*.11+.008,d*.30+.008,top+.009,.209,.148,.011,f.linen);
   m.box(w*.11+.018,d*.30+.033,top+.029,.093,.016,.003,f.cream);
   m.vessel(w*.72,d*.46,[[top+.001,.063],[top+.009,.063]],oak,14);
-  m.vessel(w*.72,d*.46,[[top+.010,.029],[top+.015,.034],[top+.065,.039],[top+.068,.036],[top+.064,.030]],f.mint,14);
+  m.vessel(w*.72,d*.46,[[top+.010,.029],[top+.015,.034],[top+.065,.039],[top+.068,.036],[top+.064,.030]],f.mint,14,'room-glaze');
   m.vessel(w*.72,d*.46,[[top+.061,.030],[top+.062,.031]],f.walnut,14);
 }
 
@@ -181,14 +181,14 @@ function lamp(m,o,s) {
   m.rod([x,y,.034],[x,y,h*.74],tall?.018:.015,tall?.013:.012,brass);
   if(!tall)m.rod([x,y,h*.71],[x+w*.08,y+d*.095,h*.79],.014,.011,brass);
   const cx=x+w*.06,cy=y+d*.075,r=Math.min(w,d)*(tall?.49:.40);
-  m.vessel(cx,cy,[[h*.65,r],[h*.69,r*.99],[h*.96,r*.59],[h,r*.56]],s.lit?f.cream:f.linen);
+  m.vessel(cx,cy,[[h*.65,r],[h*.69,r*.99],[h*.96,r*.59],[h,r*.56]],s.lit?f.cream:f.linen,14,'room-linen');
   m.vessel(cx,cy,[[h*.646,r],[h*.657,r*.996]],brass);
   if(s.lit)m.vessel(cx,cy,[[h*.638,r*.71],[h*.645,r*.73]],[1,.82,.51]);
 }
 
 function cup(m) {
   const {width:w,depth:d}=m,x=w*.43,y=d*.50,r=Math.min(w,d)*.36;
-  m.vessel(x,y,[[.001,r*.68],[.016,r*.79],[.105,r],[.124,r*.98],[.128,r*.81]],f.mint);
+  m.vessel(x,y,[[.001,r*.68],[.016,r*.79],[.105,r],[.124,r*.98],[.128,r*.81]],f.mint,14,'room-glaze');
   m.vessel(x,y,[[.126,r*.78],[.129,r*.78]],[.293,.203,.159]);
   const edge=x+r*.91;
   let previous=[edge,y,.102];
@@ -202,7 +202,7 @@ function plant(m,o) {
   const {width:w,depth:d}=m,x=w*.5,y=d*.5,small=idOf(o)===87,flower=[34,74].includes(idOf(o));
   const r=Math.min(w,d)*(small?.38:.36),pot=small?.122:flower?.20:.232;
   m.vessel(x,y,[[.005,r*.64],[.018,r*.72],[pot*.85,r],[pot*.89,r*1.08],[pot,r*1.08]],
-    flower?f.mint:[.695,.404,.286]);
+    flower?f.mint:[.695,.404,.286],14,flower?'room-glaze':'room-brick');
   m.vessel(x,y,[[pot-.001,r*.90],[pot+.002,r*.90]],f.walnut);
   const total=small?.20:flower?.36:.62;
   for(let i=0;i<(small?11:13);i++){
@@ -215,8 +215,8 @@ function plant(m,o) {
     const span=small?.022:flower?.032:.051;
     for(const sign of [-1,1]){
       const lip=p(radial*.88,span*sign,tipZ-.015);
-      m.face([leafBase,mid,lip],sign<0?f.moss:f.mint,null,false);
-      m.face([mid,tip,lip],sign<0?f.moss:[.366,.571,.417],null,false);
+      m.face([leafBase,mid,lip],sign<0?f.moss:f.mint,'room-leaf',false);
+      m.face([mid,tip,lip],sign<0?f.moss:[.366,.571,.417],'room-leaf',false);
     }
     if(flower&&i%3===0){
       for(let j=0;j<5;j++){

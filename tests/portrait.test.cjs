@@ -7,55 +7,31 @@ const icons = require('../runtime/codex-mobile/ui-icons.js');
 
 const base = path.join(__dirname, '../runtime/codex-mobile');
 
-function viewAt(yaw, pitch) {
-  const position = 2 * Math.abs(yaw);
-  const inner = yaw < 0 ? 2 : 6;
-  const from = position < 1 ? 0 : inner;
-  const to = position < 1 ? inner : inner + 2;
-  const t = position < 1 ? position : position-1;
-  return portrait.landmarks.map(p => [
-    p[from] * (1-t) + p[to] * t + 325 * .0025 * p[10] * Math.sin(Math.PI * position) * Math.sign(yaw),
-    p[from+1] * (1-t) + p[to+1] * t + 578 * .003 * p[10] * pitch
-  ]);
-}
-
-test('every painted projection and in-between keeps the entire face mesh facing forward', () => {
-  assert.equal(portrait.interleavedVertices().length, portrait.landmarks.length*11);
-  assert.ok(portrait.triangles.length >= 120*3);
-  for (let step = -30; step <= 30; step++) {
-    for (const pitch of [-1, 0, 1]) {
-      const points = viewAt(step / 30, pitch);
-      let sum = 0;
-      for (let t = 0; t < portrait.triangles.length; t += 3) {
-        const [a,b,c] = Array.from(portrait.triangles.subarray(t,t+3), i => points[i]);
-        const area = (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0]);
-        assert.ok(area > 1, `Triangle ${t/3} folded at ${step}/30, pitch ${pitch}`);
-        sum += area;
-      }
-      assert.ok(Math.abs(sum / 2 - 325*578) < .01, 'the transparent canvas still has complete coverage');
-    }
+test('every front-facing expression has twelve painted cels on the same registered canvas',()=>{
+  assert.equal(portrait.poses.length,18);
+  for(const name of [...portrait.poses,'blink','glance','wave']){
+    const buf=fs.readFileSync(path.join(base,'avatar',`cel-${name}.webp`));
+    assert.equal(buf.toString('ascii',12,16),'VP8X');
+    assert.ok(buf[20]&0x10);
+    assert.equal(1+buf.readUIntLE(24,3),name==='wave'?246*6:400*4);
+    assert.equal(1+buf.readUIntLE(27,3),name==='wave'?812*4:284*3);
   }
+  for(const [input,expected] of [['warm-soft','warm'],['thinking-soft','thinking'],['serious','confident'],['unknown','']])assert.equal(portrait.faceName(input),expected);
+  const html=fs.readFileSync(path.join(base,'index.html'),'utf8');
+  assert.deepEqual([...new Set([...html.matchAll(/<img\b[^>]*?\ssrc="(\/avatar\/[^"]+)"/g)].map(m=>m[1]))],['/avatar/idle.png']);
+  assert.doesNotMatch(html,/preview-yaw|ракурсы/i);
 });
 
-test('side paintings contain two registered RGBA drawings each and eager startup only reads the base art', () => {
-  for (const side of ['left','right']) {
-    const buf = fs.readFileSync(path.join(base,'avatar',`turn-${side}.webp`));
-    assert.equal(buf.toString('ascii',12,16), 'VP8X');
-    assert.ok(buf[20] & 0x10, 'transparent canvas');
-    assert.equal(1 + buf.readUIntLE(24,3), 1300);
-    assert.equal(1 + buf.readUIntLE(27,3), 1155);
-  }
-  const bridges = fs.readFileSync(path.join(base,'avatar','turn-between.webp'));
-  assert.equal(1 + bridges.readUIntLE(24,3),1120);
-  assert.equal(1 + bridges.readUIntLE(27,3),1992);
-  const html = fs.readFileSync(path.join(base,'index.html'),'utf8');
-  const src = [...html.matchAll(/<img\b[^>]*?\ssrc="(\/avatar\/[^"]+)"/g)].map(m=>m[1]);
-  assert.deepEqual([...new Set(src)],['/avatar/idle.png']);
-  assert.ok(!portrait.usesFrontArt(['avatar-listening','avatar-blinking']));
-  for (const state of ['avatar-speaking','avatar-is-reading','avatar-expression-frame-01-active']) assert.ok(portrait.usesFrontArt([state]));
+test('the blink closes before it opens and every wave cel is used in sequence',()=>{
+  const down=Array.from({length:98},(_,i)=>portrait.blinkAt(i));
+  const up=Array.from({length:163},(_,i)=>portrait.blinkAt(i+138));
+  assert.deepEqual([...new Set(down)],[0,1,2,3,4,5,6,7,8,9,10,11]);
+  assert.deepEqual([...new Set(up)],[11,10,9,8,7,6,5,4,3,2,1,0]);
+  const wave=Array.from({length:45},(_,i)=>portrait.waveFrame(i));
+  assert.equal(new Set(wave).size,24);assert.equal(wave[0],0);assert.equal(wave.at(-1),23);
 });
 
-test('articulation uses six drawn visemes with mid/full variants and rests during pauses', () => {
+test('six drawn speech shapes have six steps of articulation and rest during pauses', () => {
   const {speechTrack,speechCue} = portrait;
   const line = speechTrack('АэОюМф.');
   assert.deepEqual(line.cues.map(c=>c.shape),[0,2,4,6,8,10,-1]);
@@ -68,7 +44,10 @@ test('articulation uses six drawn visemes with mid/full variants and rests durin
   const offsets=speechTrack('🎮 Май').cues.map(c=>c.offset);
   assert.deepEqual(offsets,[0,2,3,4,5]); // Native word-boundary offsets use UTF-16.
   const atlas=fs.readFileSync(path.join(base,'avatar','visemes.webp'));
-  assert.ok(atlas.length < 150_000);
+  assert.equal(atlas.toString('ascii',12,16),'VP8 ');
+  assert.equal(atlas.readUInt16LE(26)&0x3fff,6*263);
+  assert.equal(atlas.readUInt16LE(28)&0x3fff,6*117);
+  assert.ok(atlas.length<260_000);
 });
 
 test('the packaged chat and home use known accessible line icons', () => {

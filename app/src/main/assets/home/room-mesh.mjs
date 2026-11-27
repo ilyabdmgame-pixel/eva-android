@@ -1,3 +1,4 @@
+import {faceUV} from './material-uv.mjs';
 // Dimensions are metres. Local +y always faces the front of a piece of furniture.
 export function fixtureFrame(fixture) {
   const {u, v, z = 0, w, d, turned, back} = fixture;
@@ -20,13 +21,25 @@ const cross = ([x, y, z], [a, b, c]) => [y*c-z*b, z*a-x*c, x*b-y*a];
 const unit = v => { const n = Math.hypot(...v) || 1; return v.map(k => k / n); };
 
 export function roomMesh(renderer, fixture) {
-  const {width, depth, point} = fixtureFrame(fixture);
+  const {width, depth, point, local} = fixtureFrame(fixture);
   const id = fixture.id;
 
-  const finishKey=mat=>mat==='cloth'?'room-weave':mat==='oak'||mat==='wood'?'room-oak':mat;
+  function finishKey(mat,color){
+    if(mat==='oak'||mat==='wood')return color===finish.walnut?'room-walnut':'room-oak';
+    if(mat==='cloth')return color===finish.linen||color===finish.cream?'room-linen':'room-weave';
+    if(mat)return mat;
+    if(color===finish.black||color===finish.ink)return 'room-graphite';
+    if(color===finish.steel)return 'room-steel';
+    if(color===finish.brass)return 'room-brass';
+    if(color===finish.porcelain)return 'room-enamel';
+    if(color===finish.walnut)return 'room-walnut';
+    if(color===finish.oak)return 'room-oak';
+    return mat;
+  }
 
-  function face(vertices, color, material, lit = true) {
-    material=finishKey(material);
+  function face(vertices, color, material, lit = true, coordinates) {
+    material=finishKey(material,color);
+    const uv=coordinates??(material?.startsWith('room-')?faceUV(vertices):null);
     const points = vertices.map(p => point(...p));
     let tint = color;
     if (lit && material !== 'glow') {
@@ -36,14 +49,14 @@ export function roomMesh(renderer, fixture) {
       const diffuse = sign * (.19 * normal[0] + .08 * normal[1] + .48 * normal[2]);
       tint = shade(color, .77 + diffuse);
     }
-    if (points.length === 4) renderer.panel(points, tint, material, id);
-    else for (let i = 1; i + 1 < points.length; i++) renderer.triangle([points[0], points[i], points[i + 1]], tint, id, material);
+    if (points.length === 4) renderer.panel(points, tint, material, id, uv);
+    else for (let i = 1; i + 1 < points.length; i++) renderer.triangle([points[0], points[i], points[i + 1]], tint, id, material,uv&&[uv[0],uv[i],uv[i+1]]);
   }
 
   function box(x, y, z, w, d, h, color, material) {
     const a = point(x, y, z), b = point(x + w, y + d, z);
     renderer.box(id, {u:Math.min(a[0],b[0]), v:Math.min(a[1],b[1]), z:a[2]},
-      Math.abs(a[0]-b[0]), Math.abs(a[1]-b[1]), h, color, finishKey(material));
+      Math.abs(a[0]-b[0]), Math.abs(a[1]-b[1]), h, color, finishKey(material,color),local);
   }
 
   // Rounded upholstery, enamel and joinery share a continuous bevel at the corners.
@@ -92,7 +105,7 @@ export function roomMesh(renderer, fixture) {
   }
 
   // Profiles run from bottom to top. The last ring is capped, so it can also be an inset surface.
-  function vessel(x,y,profile,color,sides=14) {
+  function vessel(x,y,profile,color,sides=14,material) {
     const rings=profile.map(([z,rx,ry=rx])=>Array.from({length:sides},(_,i)=>{
       const angle=i*tau/sides;
       return [x+Math.cos(angle)*rx,y+Math.sin(angle)*ry,z];
@@ -100,10 +113,10 @@ export function roomMesh(renderer, fixture) {
     for(let r=1;r<rings.length;r++){
       for(let i=0;i<sides;i++){
         const j=(i+1)%sides;
-        face([rings[r-1][i],rings[r-1][j],rings[r][j],rings[r][i]],color);
+        face([rings[r-1][i],rings[r-1][j],rings[r][j],rings[r][i]],color,material);
       }
     }
-    face(rings[rings.length-1],color);
+    face(rings[rings.length-1],color,material);
   }
 
   function rod(start,end,r0,r1,color,sides=8) {

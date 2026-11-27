@@ -15,7 +15,8 @@ python3 tools/prepare_public_rootfs.py --output local-runtime/rootfs.pack --cach
 На ARM64 Linux процесс с правом `chroot` может выполнить проверку готового архива. Она открывает отдельный временный корень, вызывает инструменты с чистой средой и выполняет `initialize` локального Codex app-server через стандартные потоки. Затем проверка разворачивает тот же прикладной слой, который попадает в APK, и первый раз запускает `/usr/bin/node /root/codex-mobile/server.js` в чистом домашнем каталоге. Она ожидает `EVA_READY`, получает HTML, скрипт и портрет по HTTP и проверяет готовность Codex без учетной записи. Для ADB читаются версия и справка.
 
 ```sh
-python3 tools/prepare_public_rootfs.py --output local-runtime/rootfs.pack --cache /tmp/eva-runtime-downloads --smoke
+sudo unshare --mount --pid --fork --kill-child --propagation private python3 tools/prepare_public_rootfs.py --output local-runtime/rootfs.pack --cache /tmp/eva-runtime-downloads --smoke
+sudo unshare --mount --pid --fork --kill-child --propagation private python3 tools/prepare_public_rootfs.py --smoke-apk /path/to/Eva-arm64.apk
 ```
 
 ## Соответствующие исходники и лицензии

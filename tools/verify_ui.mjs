@@ -110,6 +110,58 @@ async function page(devtools,source){
   return {rpc,evaluate,until,press,shot,errors,close:async()=>{ws.close();await fetch(devtools+'/json/close/'+tab.id,{signal:AbortSignal.timeout(3000)}).catch(()=>{});}};
 }
 
+async function verifyRoomTouches(page){
+  await page.rpc('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
+  const dispatch=(type,touchPoints)=>page.rpc('Input.dispatchTouchEvent',{type,touchPoints});
+  const tap=async point=>{await dispatch('touchStart',[{...point,id:1}]);await dispatch('touchEnd',[]);};
+  const center={x:173,y:519};
+  const fingers=(deg,radius)=>{
+    const angle=deg*Math.PI/180,x=Math.cos(angle)*radius,y=Math.sin(angle)*radius;
+    return [{id:1,x:center.x-x,y:center.y-y},{id:2,x:center.x+x,y:center.y+y}];
+  };
+  const current=()=>page.evaluate('({yaw:worldCheck().cameraYaw,scale:worldCheck().cameraScale})');
+  const delta=(to,from)=>Math.atan2(Math.sin(to-from),Math.cos(to-from));
+  const initial=await current();
+  const start=fingers(166,44);
+  await dispatch('touchStart',[start[0]]);await dispatch('touchStart',start);
+  let last=initial.yaw;
+  for(const [angle,radius] of [[174,47],[179,50],[183,53],[191,55],[204,57]]){
+    await dispatch('touchMove',fingers(angle,radius));
+    const measured=await current();
+    assert(Math.abs(delta(measured.yaw,last))<.34,'Camera jumped when the pair crossed ±π');
+    last=measured.yaw;
+  }
+  await dispatch('touchEnd',[]);
+  const saved=await page.until('JSON.parse(localStorage.getItem("room"))?.camera','The gesture did not persist');
+  assert(Math.abs(delta(saved.yaw,initial.yaw)-38*Math.PI/180)<.045,'Two fingers did not rotate the room');
+  assert(Math.abs(saved.zoom-57/44)<.04,'The same gesture did not zoom the room');
+  assert(await page.evaluate('document.querySelector("#sheet").hidden'),'Lifting the pinch activated furniture');
+  await page.rpc('Page.reload',{ignoreCache:true});
+  await page.until('window.worldCheck && worldCheck().paintCount>0','Room did not reload after the gesture');
+  const restored=await current();
+  assert(Math.abs(delta(restored.yaw,saved.yaw))<.001 && Math.abs(restored.scale/initial.scale-saved.zoom)<.001);
+  const drawer=await page.evaluate('(()=>{const r=document.querySelector("#all").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()');
+  await tap(drawer);
+  await page.until('!document.querySelector("#sheet").hidden && !!document.querySelector("#app-search")','Dock failed to open on a single touch after rotating');
+  await page.press("document.querySelector('#close')",'Close app drawer');
+  const floor=await page.evaluate(`(async()=>{
+    const {camera,project}=await import('./camera.mjs'),{room}=await import('./room.mjs');
+    const state=worldCheck(),bounds=document.querySelector('#scene').getBoundingClientRect();
+    const view=camera({width:bounds.width,height:bounds.height,pixelsPerMeter:bounds.width*state.cameraScale,u:state.center.u,v:state.center.v,yaw:state.cameraYaw});
+    view.y+=bounds.height*state.cameraOffset;
+    const {x,y}=project(view,{u:room.u+1.05,v:room.v+1.42,z:0});
+    return {x:x+bounds.x,y:y+bounds.y,start:state.eva};
+  })()`);
+  await tap({x:floor.x,y:floor.y});
+  await page.until(`worldCheck().move>0 || Math.hypot(worldCheck().eva.u-(${floor.start.u}),worldCheck().eva.v-(${floor.start.v}))>.08`,'A single touch on free floor stopped moving Eva');
+  // Restore the initial framing for the rest of the interaction and image checks.
+  const row=label=>page.press(`[...document.querySelectorAll('#content button')].find(e=>e.querySelector('strong')?.textContent===${JSON.stringify(label)})`,label);
+  await page.press("document.querySelector('#home-menu')",'Home menu');
+  for(const label of ['Комната','Обстановка','Ракурс и масштаб','Исходный вид'])await row(label);
+  await page.rpc('Emulation.setTouchEmulationEnabled',{enabled:false});
+  console.log('Physical two-finger orbit and zoom cross ±π, persist across reload; lift, dock and one-finger floor routing passed.');
+}
+
 let browser,homeSite,chatSite;
 try{
   await mkdir(output,{recursive:true});
@@ -132,6 +184,7 @@ try{
   }
   const routines=await readFile(path.join(home,'routines.json'),'utf8'),activities=await readFile(path.join(home,'room-activities.json'),'utf8');
   const source=`localStorage.setItem('followSchedule','no');const noop=()=>{};
+  addEventListener('load',()=>window.setHomeBattery(78,false),{once:true});
   window.Desk={apps:()=>'[{"key":"example.reader/.Main","name":"Книги"}]',open:key=>window.testOpened=key,
   openRoomChat:()=>window.testOpened='chat',routines:()=>${JSON.stringify(routines)},roomActivities:()=>${JSON.stringify(activities)},
   presenceProfile:()=>'{}',weatherState:()=>'',weatherLabels:()=>'[]',cityWeather:()=>'{}',timeline:()=>'{}',
@@ -145,7 +198,9 @@ try{
     await room.rpc('Page.navigate',{url:homeSite.url});
     const readiness=await room.until('window.worldCheck && worldCheck().paintCount > 0 && worldCheck()', 'Home did not draw a WebGL frame');
     assert(readiness.depth>=16&&readiness.sizeConstant);
+    await room.until("document.querySelector('#battery').getClientRects().length && document.querySelector('#battery-level').textContent==='78%'",'Home did not show the Android battery callback');
     await wait(450);await replay?.frame(room,'room');await room.shot('room');
+    await verifyRoomTouches(room);
     const row=title=>room.press(`[...document.querySelectorAll('#content button')].find(b=>b.querySelector('strong')?.textContent===${JSON.stringify(title)})`,title);
     await room.press("document.querySelector('#device-monitor')",'Device monitor');
     await room.until("!document.querySelector('#sheet').hidden && document.querySelector('#title').textContent==='Диспетчер' && document.querySelector('#content').textContent.includes('78%')",'Device monitor did not display a reading');
@@ -198,8 +253,10 @@ try{
     await portrait.press("document.querySelector('#chat-tools > summary')",'Tools');
     await portrait.press("document.querySelector('#avatar-preview-open')",'Avatar preview');
     await portrait.until("!!document.querySelector('#avatar-preview-buttons button:last-child')",'Portrait controls did not open');
-    await portrait.press("document.querySelector('#avatar-preview-buttons button:last-child')",'Turn portrait');
-    await portrait.until("document.querySelector('#avatar-stage')?.dataset.portraitRenderer && !!document.querySelector('.avatar-figure.portrait-turned')",'Portrait did not turn');
+    await portrait.press("document.querySelector('#avatar-preview-groups [data-group=expressions]')",'Expressions');
+    await portrait.until("document.querySelector('.avatar-cel-face')?.dataset.cel==='warm' && document.querySelector('.avatar-cel-face').dataset.frame==='11'",'Painted smile did not reach its final frame');
+    assert.equal(await portrait.evaluate("document.querySelector('#avatar-stage').dataset.portraitRenderer"),'cels');
+    assert.equal(await portrait.evaluate("document.querySelector('#avatar-preview input[type=range]')!==null"),false);
     await portrait.shot('portrait');
     assert.deepEqual(portrait.errors,[]);
     console.log('Chat rendering, layout and portrait fade passed.');

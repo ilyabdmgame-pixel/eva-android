@@ -49,27 +49,6 @@ def export(master, target, check):
     return psnr
 
 
-def bake_mouth(check):
-    sources = sorted(SPEECH.glob("*.png"))
-    if len(sources) != 12 or [p.name.split("-")[1] for p in sources] != list("aaeeoouummff"):
-        raise ValueError("Expected mid/full variants of the A, E, O, U, M and F mouth drawings")
-    atlas = None
-    for index, source in enumerate(sources):
-        with Image.open(source) as master:
-            width, height = master.size
-            box = (round(width * .36), round(height * .31), round(width * .64), round(height * .38))
-            tile = master.crop(box).convert("RGBA")
-        if atlas is None:
-            cell_w, cell_h = tile.size
-            atlas = Image.new("RGBA", (4 * cell_w, 3 * cell_h))
-        if tile.size != (cell_w, cell_h):
-            raise ValueError(f"{source.name}: incompatible registration")
-        atlas.paste(tile, ((index % 4) * cell_w, (index // 4) * cell_h))
-    target = AVATAR / "visemes.webp"
-    export(atlas, target, check)
-    print(f"12 mouth patches: {atlas.width} × {atlas.height}, {target.stat().st_size:,} bytes.")
-
-
 def main(check):
     count = original = packed = 0
     lowest = math.inf
@@ -83,7 +62,6 @@ def main(check):
             packed += target.stat().st_size
     print(f"{count} portraits. PNG {original:,} bytes. WebP {packed:,} bytes. "
           f"Minimum visible-channel PSNR {lowest:.2f} dB. Alpha matches all masters.")
-    bake_mouth(check)
 
 
 if __name__ == "__main__":

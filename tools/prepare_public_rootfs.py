@@ -379,6 +379,14 @@ def smoke_application(archive, root, env, app_archive=None):
                     if response.status != 200 or response.headers.get_content_type() != mime or marker not in response.read():
                         raise RuntimeError(f'Invalid first-launch response for {route}')
                 print(f'Chat HTTP 200 {route} ({mime})', flush=True)
+            atlases = sorted((root/'root/codex-mobile/avatar').glob('cel-*.webp'))
+            for atlas in atlases:
+                with opener.open(base+'/avatar/'+atlas.name, timeout=5) as response:
+                    if (response.headers.get_content_type() != 'image/webp'
+                            or hashlib.file_digest(response, 'sha256').hexdigest() != sha(atlas)):
+                        raise RuntimeError(f'HTTP portrait atlas differs from APK: {atlas.name}')
+            if atlases:
+                print(f'Chat HTTP 200: {len(atlases)} 2D animation atlases verified byte for byte', flush=True)
             status = urllib.request.Request(base+'/status', headers={'X-Codex-Token': token})
             deadline = time.monotonic() + 40
             while time.monotonic() < deadline:
@@ -393,13 +401,13 @@ def smoke_application(archive, root, env, app_archive=None):
             stop_process_group(child)
 
 
-def smoke(archive_path, root, app_archive=None, mount_proc=False):
+def smoke(archive_path, root, app_archive=None):
     if platform.machine() not in ('aarch64','arm64'):
         raise RuntimeError('--smoke needs ARM64 Linux; build itself is cross-platform')
+    if os.geteuid() != 0:
+        raise RuntimeError('Guest boot needs root in an isolated mount namespace')
     with tarfile.open(archive_path, 'r:gz') as src:
         src.extractall(root, filter='data')
-    if not mount_proc:
-        return smoke_guest(archive_path, root, app_archive)
     proc = root / 'proc'
     proc.mkdir(exist_ok=True)
     subprocess.run(['mount', '-t', 'proc', '-o', 'nosuid,nodev,noexec', 'proc', str(proc)], check=True)
@@ -479,7 +487,7 @@ def smoke_apk(apk_path):
             if sha(target) != expected:
                 raise RuntimeError('Pack differs from Android runtime manifest: ' + path)
             packs.append(target)
-        smoke(packs[0], work / 'root', app_archive=packs[1], mount_proc=True)
+        smoke(packs[0], work / 'root', app_archive=packs[1])
 
 
 def main():

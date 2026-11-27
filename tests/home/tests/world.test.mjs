@@ -381,9 +381,9 @@ test('a packed fixture is absent from the map',()=>{
 });
 
 
-test('season follows Moscow dates and changes at the correct local boundary',()=>{
-  const before=new Date('2026-02-28T20:59:00Z');
-  const after=new Date('2026-02-28T21:00:00Z');
+test('season follows the device calendar at the local month boundary',()=>{
+  const before=new Date(2026,1,28,23,59);
+  const after=new Date(2026,2,1,0,0);
   assert.equal(climateAt(before).season,'winter');
   assert.equal(climateAt(after).season,'spring');
   assert.equal(seasonFor(8),'summer');

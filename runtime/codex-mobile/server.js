@@ -97,7 +97,15 @@ function serveFile(res,file,headers){
   stream.pipe(res);
  });
 }
-const avatarAssets=new Set(['idle', 'curious-v1', 'smile-mid', 'thinking-soft', 'warm-soft', 'laugh-v1', 'talking', 'blink', 'blink-talking', 'blink-thinking', 'blink-reading', 'blink-search', 'blink-work', 'happy', 'thinking', 'reading', 'glance', 'search', 'work', 'work-writing', 'reading-page', 'yawn', 'yawn-mid', 'scratch', 'scratch-mid', 'headphones', 'surprised', 'calm', 'joy', 'wink', 'excited', 'sly', 'shy', 'pout', 'serious', 'sad', 'turn-left', 'turn-right', 'turn-between', 'visemes']);
+const avatarAssets=new Set([
+  'idle', 'curious-v1', 'smile-mid', 'thinking-soft', 'warm-soft', 'laugh-v1', 'talking', 'blink',
+  'blink-talking', 'blink-thinking', 'blink-reading', 'blink-search', 'blink-work', 'happy', 'thinking',
+  'reading', 'glance', 'search', 'work', 'work-writing', 'reading-page', 'yawn', 'yawn-mid', 'scratch',
+  'scratch-mid', 'headphones', 'surprised', 'calm', 'joy', 'wink', 'excited', 'sly', 'shy', 'pout',
+  'serious', 'sad', 'visemes', 'cel-blink', 'cel-glance', 'cel-warm', 'cel-joy', 'cel-laugh', 'cel-curious',
+  'cel-surprised', 'cel-sly', 'cel-thinking', 'cel-skeptical', 'cel-shy', 'cel-pout', 'cel-confident',
+  'cel-sad', 'cel-excited', 'cel-wink', 'cel-annoyed', 'cel-tired', 'cel-relieved', 'cel-confused', 'cel-wave'
+]);
 const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://127.0.0.1'); const host=req.headers.host;if(host!==`127.0.0.1:${server.address()?.port}`)return json(res,403,{error:'Неверный адрес'});if(req.method==='GET'&&u.pathname==='/'){return serveFile(res,path.join(__dirname,'index.html'),{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:",'X-Frame-Options':'DENY'})}if(req.method==='GET'&&['/app.js','/style.css','/sw.js','/native-voice.js','/question-options.js','/avatar-activity.js','/portrait.js','/ui-icons.js','/account.js'].includes(u.pathname)){return serveFile(res,path.join(__dirname,u.pathname),{'Content-Type':u.pathname.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8','Cache-Control':'no-store'})}
 if(req.method==='GET'&&u.pathname.startsWith('/avatar/')){
  const match=/^\/avatar\/([a-z][a-z0-9-]*)\.(png|webp)$/.exec(u.pathname);

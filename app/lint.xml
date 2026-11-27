@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- GitHub sideload distribution. Existing profiles use the shared Documents directory
+         under Android 10's legacy storage model. Raising targetSdk requires a storage migration. -->
+    <issue id="ExpiredTargetSdkVersion" severity="ignore" />
+</lint>

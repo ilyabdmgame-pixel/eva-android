@@ -5,9 +5,8 @@ const random=(i,salt)=>Math.abs((Math.sin(i*127.1+salt*311.7)*43758.5453)%1);
 
 export function windowWeather(onReady){
  const scenery=document.createElement('canvas'),image=document.createElement('canvas');
- for(const canvas of [scenery,image]){canvas.width=WIDTH;canvas.height=HEIGHT;}
  const base=scenery.getContext('2d'),ctx=image.getContext('2d');
- let lastKey='',lastFrame=-1;
+ let lastKey='',lastFrame=-1,density=0;
  const hills=new Image();
  hills.onload=()=>{lastKey='';onReady();};
  hills.src='art/room-window-hills.jpg';
@@ -34,14 +33,25 @@ export function windowWeather(onReady){
      base.fillStyle=mist;base.fillRect(0,42,WIDTH,HEIGHT-42);
    }
  }
- function draw(t,climate,reduced){
+ function draw(t,climate,reduced,screenWidth=WIDTH){
+   // Hysteresis keeps the two backing stores stable while the fingers hover near the threshold.
+   const nextDensity=screenWidth>(density===2?WIDTH*.88:WIDTH*1.05)?2:1;
+   if(density!==nextDensity){
+     density=nextDensity;
+     for(const [canvas,context] of [[scenery,base],[image,ctx]]){
+       canvas.width=WIDTH*density;
+       canvas.height=HEIGHT*density;
+       context.setTransform(density,0,0,density,0,0);
+     }
+     lastKey='';lastFrame=-1;
+   }
    const key=[climate.weather,climate.season,Math.round(climate.daylight*20)].join('/');
    const animated=windowWeatherMoves(climate,reduced);
    const frame=animated?Math.floor(t/72):0;
    if(key===lastKey&&frame===lastFrame)return null;
    if(key!==lastKey){landscape(climate);lastKey=key;}
    lastFrame=frame;
-   ctx.drawImage(scenery,0,0);
+   ctx.drawImage(scenery,0,0,WIDTH,HEIGHT);
    const {weather}=climate,snow=weather==='snow',wind=weather==='wind',storm=weather==='storm';
    if(wet.has(weather)){
      const clock=frame*.072,count=snow?52:wind?18:storm?76:52;

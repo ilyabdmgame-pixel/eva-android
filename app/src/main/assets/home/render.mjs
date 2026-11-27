@@ -1,4 +1,5 @@
 import {faceUV} from './material-uv.mjs';
+import {roomMaterials,roomTint} from './room-materials.mjs';
 import {shadowOffset,clipToReceiver} from './lighting.mjs';
 import {camera,actorBillboardSpan} from './camera.mjs';
 import {propArt} from './prop-art.mjs';
@@ -74,6 +75,7 @@ export function createScene(canvas) {
         float diffuse=smoothstep(-.55,.80,dot(normal,vec3(-.32,.48,.816)));
         skinLight=mix(.75,1.07,diffuse);
         if(skinWeights.y==1.)skinLight=mix(.91,1.03,diffuse);
+        if(skinWeights.y>2.)skinLight=mix(skinLight,mix(.91,1.03,diffuse),skinWeights.y-2.);
       }
       if(placingPart){
         if(partMotion.x==1.){
@@ -91,7 +93,8 @@ export function createScene(canvas) {
       vec2 projected=vec2(at.x*orbit.y-at.y*orbit.x,forward*.57735027-at.z*.81649658);
       vec2 p=view.xy+view.z*projected;
       gl_Position=vec4(2.*p.x/size.x-1.,1.-2.*p.y/size.y,-(forward*1.41421356+at.z)*.009,1.);
-      atlasCell=placingPart?partInfo.y:cell;tint=color*skinLight;world=at;coord=uv;id=rigged?rigInfo.x:(placingPart?partInfo.x:key);
+      // For a skinned mesh 'cell' is a bone index. City atlas variants apply only to room geometry.
+      atlasCell=rigged?-1.:(placingPart?partInfo.y:cell);tint=color*skinLight;world=at;coord=uv;id=rigged?rigInfo.x:(placingPart?partInfo.x:key);
     }`));
   gl.attachShader(program,shader(gl.FRAGMENT_SHADER,`#version 300 es
     precision highp float;
@@ -105,6 +108,7 @@ export function createScene(canvas) {
     uniform vec2 portrait;
     uniform float materialMeters;
     uniform int homeFinish;
+    const int roomPaint = 1, roomGlass = 2;
     uniform bool pick;
     uniform bool backdrop;
     uniform float daylight;
@@ -157,6 +161,7 @@ export function createScene(canvas) {
         else tile*=2.05;
       }
       vec2 gradX=dFdx(tile),gradY=dFdy(tile);
+      vec2 paintDX=dFdx(coord),paintDY=dFdy(coord);
       vec2 uvWidth=fwidth(coord);
       vec3 n=abs(cross(dFdx(world),dFdy(world)));
       float opacity=1.;
@@ -192,7 +197,22 @@ export function createScene(canvas) {
       if(pick&&!cutout){outColor=vec4(mod(id,256.)/255.,floor(id/256.)/255.,0.,1.);return;}
       vec4 px;
       vec2 currentUV=coord,nextUV=coord;
-      if(materialMeters>0.){
+      if(homeFinish==roomPaint){
+        // Evaluate derivatives on unwrapped local metres: orbit/pinch cannot change the selected texel.
+        vec2 paint=coord;
+        vec2 dx=paintDX,dy=paintDY;
+        vec2 mirrorUV=1.-abs(mod(paint,2.)-1.);
+        vec2 signUV=1.-2.*step(vec2(1.),mod(paint,2.));
+        vec2 origin=vec2(mod(atlasCell,4.),floor(atlasCell*.25))*.25;
+        float footprint=max(length(dx),length(dy))*512.;
+        float guard=clamp(footprint*.65,1.5,32.)/512.;
+        vec2 inside=clamp(mirrorUV,vec2(guard),vec2(1.-guard));
+        px=textureGrad(source,origin+inside*.25,dx*signUV*.25,dy*signUV*.25);
+        if(atlasCell==0.||atlasCell==3.){
+          float value=dot(px.rgb,vec3(.29,.56,.15));
+          px.rgb=mix(vec3(value),px.rgb,.79)*vec3(.958,1.0,1.035);
+        }
+      }else if(materialMeters>0.){
         vec2 mirrorUV=1.-abs(mod(tile,2.)-1.);
         vec2 localUV=(materialMeters==2.8||(materialMeters==3.4&&cell.y>.25))?fract(tile):mirrorUV;
         vec2 atlasUV=cell+.012+.476*localUV;
@@ -201,13 +221,6 @@ export function createScene(canvas) {
           gradX*=orientation;gradY*=orientation;
         }
         px=textureGrad(source,atlasUV,.476*gradX,.476*gradY);
-        if(homeFinish>0){
-          float pigment=dot(px.rgb,vec3(.26,.56,.18));
-          // Keep the brushwork, but dye the weave and wood to each object's own finish.
-          if(homeFinish==1)px.rgb=vec3(.86+.24*pigment);
-          else if(homeFinish==2)px.rgb=vec3(.78+.31*pigment,.76+.31*pigment,.73+.30*pigment);
-          else px.rgb=vec3(.89+.15*pigment);
-        }
         float wash=.98+.035*sin(dot(world.xy,vec2(.55,.31))+world.z*.35);
         // Keep the painted values across the scene, soften the noisy far mip levels.
         float distant=smoothstep(.011,.060,max(length(gradX),length(gradY)));
@@ -238,10 +251,6 @@ export function createScene(canvas) {
           px=vec4(rgb/max(.001,a),a);
         }
       }
-      if(homeFinish==4){
-        float thread=smoothstep(.10,.72,dot(px.rgb,vec3(.31,.54,.15)));
-        px.rgb=mix(vec3(.235,.349,.342),vec3(.855,.753,.578),thread);
-      }
       if(deskHands.z>0.){
         vec2 cellUV=(coord-deskHands.xy)*vec2(8.,5.);
         float sleeve=1.-smoothstep(.72,1.,length((cellUV-vec2(.539,.621))/vec2(.106,.066)));
@@ -266,13 +275,17 @@ export function createScene(canvas) {
         float ink=1.-smoothstep(.24,.88,neighbour);
         px.rgb=mix(px.rgb,px.rgb*vec3(.50,.47,.54)+vec3(.033,.026,.037),ink*.77);
       }
-      if(atlasCell==8.){
+      if(homeFinish!=roomPaint&&atlasCell==8.){
         float l=dot(px.rgb,vec3(.299,.587,.114));
         px.rgb=mix(px.rgb,vec3(l*.86,l*.91,l*.97),.93);
-      }else if(atlasCell==7.&&px.g>px.r*1.12&&px.b>px.r*1.07){
+      }else if(homeFinish!=roomPaint&&atlasCell==7.&&px.g>px.r*1.12&&px.b>px.r*1.07){
         px.rgb=vec3(px.g*1.32,px.r*.92,px.r*.76);
       }
       if(pick){outColor=vec4(mod(id,256.)/255.,floor(id/256.)/255.,0.,1.);return;}
+      if(homeFinish==roomGlass){
+        float glint=1.-smoothstep(.004,.023,abs(coord.x+.22*coord.y-.77));
+        outColor=vec4(mix(tint,vec3(.88,.95,.91),glint*.5),.13+.10*glint);return;
+      }
       if(glow){outColor=vec4(px.rgb*tint,opacity);return;}
       float local=0.;
       for(int i=0;i<4;i++){
@@ -337,11 +350,12 @@ export function createScene(canvas) {
         gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
         // Packed cells have padding for the first two minified levels.
         const packed=key.startsWith('walk-')||Object.values(propArt).some(frame=>frame[0]===key);
-        const lastLevel=Math.min(packed?2:4,Math.floor(Math.log2(Math.max(image.width,image.height))));
+        const mipLimit=key==='room-indie'?6:key==='eva-rig-skin'?5:packed?2:4;
+        const lastLevel=Math.min(mipLimit,Math.floor(Math.log2(Math.max(image.width,image.height))));
         gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAX_LEVEL,lastLevel);
         gl.generateMipmap(gl.TEXTURE_2D);
         gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
-        if(anisotropic&&src.endsWith('.jpg'))gl.texParameterf(gl.TEXTURE_2D,anisotropic.TEXTURE_MAX_ANISOTROPY_EXT,Math.min(4,gl.getParameter(anisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+        if(anisotropic&&(src.endsWith('.jpg')||key==='room-indie'))gl.texParameterf(gl.TEXTURE_2D,anisotropic.TEXTURE_MAX_ANISOTROPY_EXT,Math.min(4,gl.getParameter(anisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
         result.aspect=image.width/image.height;
         result.ready=true;
         canvas.dispatchEvent(new Event('art'));
@@ -350,7 +364,7 @@ export function createScene(canvas) {
     }
   }
   const materialSheets={material:'material',district:'district',terrain:'anime-ground',building:'anime-building',coast:'anime-coast',roofs:'anime-roofs'};
-  texture('white');texture('glow');texture('foam');
+  texture('white');texture('glow');texture('foam');texture('room-indie','art/room-indie-atlas.webp');
   function artReady(key){
     const sheet=propArt[key]?.[0]??key;
     if(!textures.has(sheet))texture(sheet,'art/'+sheet+'.png');
@@ -418,7 +432,8 @@ export function createScene(canvas) {
     plaster:[.012,.012,.487,.487],oak:[.512,.012,.987,.487],facade:[.012,.512,.487,.987],roof:[.512,.512,.987,.987],slate:[.012,.012,.487,.487]
   };
   const materialTexture=mat=>{
-    if(!mat||mat==='glow'||mat.startsWith('room-'))return mat||'white';
+    if(roomMaterials[mat])return 'room-indie';
+    if(!mat||mat==='glow'||mat==='room-glass')return mat||'white';
     if(mat.endsWith('-roof'))return 'roofs';
     if(['water','ceramic','glass','asphalt'].includes(mat))return 'coast';
     if(['studio','glaze','seat'].includes(mat))return 'district';
@@ -426,7 +441,17 @@ export function createScene(canvas) {
     if(['plaster','oak','facade','roof','brick'].includes(mat))return 'building';
     return 'material';
   };
-  function triangle(points,tint,id=0,mat){
+  function paintedFace(points,id,tint,mat,coords){
+    const finish=roomMaterials[mat];
+    const key=(isStructure&&id?(isStructure==='roof'?'cover:':'shell:'):'')+'room-indie';
+    if(!batches.has(key))batches.set(key,[]);
+    const out=batches.get(key),uv=coords??faceUV(points),color=roomTint(tint,finish);
+    // One vertex stream and one texture for all sixteen finishes.
+    for(const i of points.length===4?[0,1,2,0,2,3]:[0,1,2])
+      out.push(...points[i],...color,uv[i][0]/finish.width,uv[i][1]/finish.height,id,finish.cell);
+  }
+  function triangle(points,tint,id=0,mat,coords){
+    if(roomMaterials[mat])return paintedFace(points,id,tint,mat,coords);
     const key=materialTexture(mat),rect=material[mat];
     if(!batches.has(key))batches.set(key,[]);
     const out=batches.get(key),uv=rect?faceUV(points):null;
@@ -435,8 +460,8 @@ export function createScene(canvas) {
   }
 
   const evaSkin=createEvaSkin(gl);
+  texture('eva-rig-skin','art/eva-rig-skin.webp');
   function actorMesh(mesh,pose,id){
-    artReady('eva-rig-skin');
     evaSkin.submit(mesh,pose,id);
   }
   const partBuffers=new Map(),partInstances=[];
@@ -475,20 +500,24 @@ export function createScene(canvas) {
     const cell=mat?Math.floor(x*2)+2*Math.floor(y*2):0;
     for(const i of [0,1,2,0,2,3])out.push(...points[i],...tint,...tex[i],id,cell);
   }
-  function box(id,{u,v,z=0},a,b,h,tint,mat){
+  function box(id,{u,v,z=0},a,b,h,tint,mat,toLocal){
     const p=[[u,v,z],[u+a,v,z],[u+a,v+b,z],[u,v+b,z],[u,v,z+h],[u+a,v,z+h],[u+a,v+b,z+h],[u,v+b,z+h]];
     const textureKey=materialTexture(mat);
     const faces=[[4,5,6,7],[1,2,6,5],[2,3,7,6],[3,0,4,7],[0,1,5,4]];
     for(const [i,side] of faces.entries()){
       const s=[1,.86,.76,.68,.72][i];
-      quad(side.map(j=>p[j]),id,tint.map(x=>x*s),textureKey,material[mat],material[mat]);
+      const points=side.map(j=>p[j]),shade=tint.map(x=>x*s);
+      if(roomMaterials[mat])paintedFace(points,id,shade,mat,toLocal?faceUV(points.map(toLocal)):null);
+      else quad(points,id,shade,textureKey,material[mat],material[mat]);
     }
   }
-  function panel(points,tint,mat,id){
+  function panel(points,tint,mat,id,coords){
+    if(roomMaterials[mat])return paintedFace(points,id,tint,mat,coords);
     quad(points,id,tint,materialTexture(mat),material[mat],material[mat]);
   }
   function foam(points,tint,row){quad(points,0,tint,'foam',[row,0,row,1]);}
   function artPanel(points,key,id=0){
+    if(key==='attic-rug')return paintedFace(points,id,[.95,.95,.95],'room-rug',[[0,0],[1,0],[1,1],[0,1]]);
     artReady(key);
     const frame=propArt[key];
     quad(points,id,[1,1,1],frame?.[0]??key,frame?.slice(1,5));
@@ -627,9 +656,10 @@ export function createScene(canvas) {
     return view;
   }
   function bindTexture(key){
-    const finish=key==='room-weave'?1:key==='room-oak'?2:key==='room-plaster'?3:key==='finish-rug'?4:0;
+    const finish=key==='room-glass'?2:key==='room-indie'?1:0;
     gl.uniform1i(uniforms.homeFinish,finish);
-    if(finish>0&&finish<4)key=finish===1?'material':'building';
+    if(key==='room-glass')key='white';
+    if(key==='room-indie'&&!textures.has(key))texture(key,'art/room-indie-atlas.webp');
     if(!textures.has(key)&&materialSheets[key])texture(key,'art/'+materialSheets[key]+'.jpg');
     const tex=textures.get(key);
     gl.uniform1i(uniforms.glow,key==='glow'||key==='room-window'||key==='stream-game'?1:0);
@@ -665,7 +695,7 @@ export function createScene(canvas) {
     gl.uniform1f(uniforms.castStrength,.18+.16*lightDay);
     gl.uniform1i(uniforms.coverage,hasCoverage?1:0);
     function material(key,step,typing){
-      const scale=key==='room-weave'?.64:key==='room-oak'?1.7:key==='room-plaster'?2.3:key==='roofs'?2.8:key==='coast'?2.4:key==='terrain'?4.3:key==='building'?3.4:
+      const scale=key==='room-indie'?1:key==='roofs'?2.8:key==='coast'?2.4:key==='terrain'?4.3:key==='building'?3.4:
         key==='material'||key==='district'?2.7:0;
       gl.uniform1f(uniforms.materialMeters,scale);
       if(step){
@@ -678,12 +708,14 @@ export function createScene(canvas) {
       else gl.uniform3f(uniforms.deskHands,0,0,0);
       bindTexture(key);
     }
+    const glassLayers=[],glassMeshes=[];
     function geometry(){
       for(const layers of sceneryBuffers)for(const layer of layers){
         const cover=layer.texture.startsWith('cover:');
         const shell=cover||layer.texture.startsWith('shell:');
         if(layer.texture==='groundShade'||layer.texture==='cornerShade')continue;
         const key=shell?layer.texture.slice(6):layer.texture;
+        if(!pick&&key==='room-glass'){glassLayers.push(layer);continue;}
         gl.uniform1i(uniforms.structure,cover?3:shell?1:0);
         material(key);gl.bindVertexArray(layer.vao);
         gl.drawArrays(gl.TRIANGLES,0,layer.length);
@@ -695,6 +727,7 @@ export function createScene(canvas) {
         const leaves=batch.startsWith('leaves:');
 
         const key=shell?batch.slice(6):leaves?batch.slice(7):batch;
+        if(!pick&&key==='room-glass'){glassMeshes.push(vertices);continue;}
         gl.uniform1i(uniforms.structure,shell?1:leaves?2:0);
         material(key,batch==='walk-eva'?evaStep:null,deskHands?.key===batch?deskHands:null);
         uploadDynamic(vertices);
@@ -703,7 +736,7 @@ export function createScene(canvas) {
     }
     if(!pick&&hasCoverage)gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
     geometry();
-    if(evaSkin.visible){
+    if(evaSkin.visible&&(pick||textures.get('eva-rig-skin').ready)){
       gl.uniform1i(uniforms.structure,0);
       material('eva-rig-skin');
       evaSkin.draw(uniforms);
@@ -749,6 +782,12 @@ export function createScene(canvas) {
     for(const [batch,vertices] of batches)if(batch.startsWith('cast:'))drawShadow(batch,vertices);
     if(shadowStencil)gl.disable(gl.STENCIL_TEST);
     gl.uniform1i(uniforms.shadow,0);
+    if(glassLayers.length||glassMeshes.length){
+      gl.uniform1i(uniforms.structure,0);material('room-glass');
+      for(const layer of glassLayers){gl.bindVertexArray(layer.vao);gl.drawArrays(gl.TRIANGLES,0,layer.length);}
+      gl.bindVertexArray(dynamicVao);gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+      for(const vertices of glassMeshes){uploadDynamic(vertices);gl.drawArrays(gl.TRIANGLES,0,vertices.length/vertexSize);}
+    }
     gl.depthMask(true);gl.disable(gl.BLEND);
   }
   const hitBuffer=gl.createFramebuffer(),hitImage=gl.createTexture(),hitDepth=gl.createRenderbuffer();

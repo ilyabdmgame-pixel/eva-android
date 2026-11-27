@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {camera} from '../app/src/main/assets/home/camera.mjs';
 import {faceUV} from '../app/src/main/assets/home/material-uv.mjs';
-import {collectMesh,rasterMesh} from '../app/src/main/assets/home/mesh-preview.mjs';
+import {collectMesh,rasterMesh,sampleRoomPaint} from '../app/src/main/assets/home/mesh-preview.mjs';
 import {drawRoom,drawRoomWindow,roomFurniture,room,roomCenter,drawBedding} from '../app/src/main/assets/home/room.mjs';
 import {visibleRoomWalls} from '../app/src/main/assets/home/room-camera.mjs';
 import {worldObjects} from '../app/src/main/assets/home/district.mjs';
@@ -38,13 +38,15 @@ for(const [id,u,v] of [...originalRoomDecor,...studioRoomDecor]){
 const materials={
   oak:['anime-building.jpg',1,0,3.4],plaster:['anime-building.jpg',0,0,3.4],
   wood:['material.jpg',0,0,2.7],cloth:['material.jpg',0,1,2.7],
-  glaze:['district.jpg',1,0,2.7],studio:['district.jpg',0,0,2.7],
-  'room-weave':['material.jpg',0,1,.64], 'room-oak':['anime-building.jpg',1,0,1.7], 'room-plaster':['anime-building.jpg',0,0,2.3]
+  glaze:['district.jpg',1,0,2.7],studio:['district.jpg',0,0,2.7]
 };
 const filenames=new Set();
 const shadows=[];
 const faces=collectMesh((renderer,faces)=>{
   function art(points,key,id=0){
+    if(key==='attic-rug'){
+      renderer.panel(points,[.95,.95,.95],'room-rug',id,[[0,0],[1,0],[1,1],[0,1]]);return;
+    }
     const frame=propArt[key],file=key.endsWith('.jpg')?key:(frame?.[0]??key)+'.png';
     filenames.add(file);
     const [l,t,r,b]=frame?.slice(1,5)??[0,0,1,1];
@@ -75,6 +77,7 @@ const faces=collectMesh((renderer,faces)=>{
   }
 });
 for(const face of faces){
+  if(face.paint){filenames.add('room-indie-atlas.webp');continue;}
   const material=materials[face.material];
   if(material){
     face.surface=material;face.uv=faceUV(face.points);
@@ -106,10 +109,12 @@ for(let y=0;y<height;y++)for(let x=0;x<width;x++){
 const view=camera({width,height,pixelsPerMeter:Math.min(width*.087,height*.14),...roomCenter,yaw});
 view.y+=height*.109;
 const mirror=v=>1-Math.abs(((v%2)+2)%2-1);
-const rgb=[0,0,0];
+const rgb=[0,0,0],paintAtlas={width:resolution,data:tex.get('room-indie-atlas.webp')};
 rasterMesh(faces,view,pixels,(face,index,u,v,w,base,pixelIndex)=>{
   let color=base;
-  if(face.uv){
+  if(face.material==='room-glass')return null;
+  if(face.paint)color=sampleRoomPaint(face,index,u,v,w,paintAtlas,rgb);
+  else if(face.uv){
     const q=face.uv;
     let x=q[0][0]*u+q[index][0]*v+q[index+1][0]*w,y=q[0][1]*u+q[index][1]*v+q[index+1][1]*w;
     if(face.shadow){
@@ -130,17 +135,7 @@ rasterMesh(faces,view,pixels,(face,index,u,v,w,base,pixelIndex)=>{
     const at=4*(Math.max(0,Math.min(resolution-1,Math.floor(y*resolution)))*resolution+
                 Math.max(0,Math.min(resolution-1,Math.floor(x*resolution))));
     if(data[at+3]<112)return null;
-    if(face.file==='finish-rug.png'){
-      const l=(data[at]*.31+data[at+1]*.54+data[at+2]*.15)/255,t=Math.max(0,Math.min(1,(l-.10)/.62)),k=t*t*(3-2*t);
-      return [(.235+.620*k)*255,(.349+.404*k)*255,(.342+.236*k)*255];
-    }
-    const finish=face.material;
-    const pigment=(data[at]*.26+data[at+1]*.56+data[at+2]*.18)/255;
-    for(let i=0;i<3;i++){
-      const gain=finish==='room-weave'?.86+.24*pigment:finish==='room-oak'?.78-i*.02+.31*pigment:
-        finish==='room-plaster'?.89+.15*pigment:data[at+i]/255;
-      rgb[i]=base[i]*gain;
-    }
+    for(let i=0;i<3;i++)rgb[i]=base[i]*data[at+i]/255;
     color=rgb;
   }
   if(!face.emissive){

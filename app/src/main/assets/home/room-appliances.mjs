@@ -48,7 +48,7 @@ function feet(m) {
 function stove(m,o,s) {
   const {width:w,depth:d}=m;
   feet(m);
-  m.cushion(.016,.021,.063,w-.032,d-.042,.737,.032,enamel);
+  m.cushion(.016,.021,.063,w-.032,d-.042,.737,.032,enamel,'room-enamel');
   m.cushion(0,-.003,.79,w,d,.046,.028,f.steel);
   m.cushion(.014,.015,.824,w-.028,.048,.084,.015,f.cream);
   m.cushion(.043,d-.021,.163,w-.086,.035,.371,.019,f.ink);
@@ -66,7 +66,7 @@ function stove(m,o,s) {
     m.vessel(x,y,[[.842,radius*.68],[.845,radius*.68]],f.steel,14);
     m.vessel(x,y,[[.845,radius*.58],[.848,radius*.58]],dark,14);
     if(x>w*.5&&y>d*.5&&!s.kettleInHand){
-      m.vessel(x,y,[[.850,.064],[.872,.094],[.945,.104],[.996,.083],[1.011,.061]],f.mint);
+      m.vessel(x,y,[[.850,.064],[.872,.094],[.945,.104],[.996,.083],[1.011,.061]],f.mint,14,'room-glaze');
       m.vessel(x,y,[[1.011,.059],[1.022,.047],[1.03,.016]],f.brass);
       m.rod([x-.077,y,.929],[x-.137,y,.984],.022,.016,f.mint);
       let last=[x-.070,y,1.0];
@@ -81,9 +81,9 @@ function stove(m,o,s) {
 function basin(m,o,s) {
   const {width:w,depth:d}=m,h=.90;
   m.box(.046,.035,.011,w-.092,d-.064,.120,dark,'oak');
-  m.cushion(.010,.015,.105,w-.02,d-.03,h-.142,.020,f.mint);
+  m.cushion(.010,.015,.105,w-.02,d-.03,h-.142,.020,f.mint,'room-painted-wood');
   for(const x of [.023,w*.51]){
-    m.cushion(x,d-.030,.157,w*.46,.033,.608,.011,enamel);
+    m.cushion(x,d-.030,.157,w*.46,.033,.608,.011,enamel,'room-painted-wood');
     m.rod([x+w*.35,d+.007,.592],[x+w*.35,d+.007,.700],.009,.009,f.brass);
   }
   const left=w*.075,right=w*.62,back=d*.16,front=d*.86;
@@ -120,7 +120,7 @@ function fridge(m,o,s) {
   const {width:w,depth:d}=m;
   feet(m);
   const tint=[.688,.806,.727],top=1.66;
-  m.cushion(.008,0,.061,w-.016,d-.024,top-.061,.043,tint);
+  m.cushion(.008,0,.061,w-.016,d-.024,top-.061,.043,tint,'room-enamel');
   m.box(.038,d-.029,.108,w-.076,.012,top-.182,inner);
   for(const z of [.176,.512,.955,1.252]){
     m.box(.071,d-.025,z,w-.142,.025,.019,f.cream);
@@ -132,7 +132,7 @@ function fridge(m,o,s) {
   const p=fridgeDoorPoint(d,s.stage);
   function door(bottom,upper,open){
     if(!open){
-      m.cushion(.012,d-.018,bottom,w-.024,.057,upper-bottom,.021,tint);
+      m.cushion(.012,d-.018,bottom,w-.024,.057,upper-bottom,.021,tint,'room-enamel');
       m.rod([w*.86,d+.057,bottom+.065],[w*.86,d+.057,bottom+.177],.013,.013,f.steel);
       return;
     }
@@ -178,8 +178,8 @@ function shower(m) {
     m.box(.032,d-.049,z,w-.064,.026,.023,f.steel);
   }
   // The two back panes have a blue edge. Leave the clear entry transparent so the shower hardware reads in depth.
-  m.face([[.038,.031,.178],[w-.038,.031,.178],[w-.038,.031,h-.044],[.038,.031,h-.044]],[.566,.697,.725],null,false);
-  m.face([[.033,.038,.178],[.033,.038,h-.044],[.033,d-.038,h-.044],[.033,d-.038,.178]],[.507,.637,.672],null,false);
+  m.face([[.038,.031,.178],[w-.038,.031,.178],[w-.038,.031,h-.044],[.038,.031,h-.044]],[.566,.697,.725],'room-glass',false);
+  m.face([[.033,.038,.178],[.033,.038,h-.044],[.033,d-.038,h-.044],[.033,d-.038,.178]],[.507,.637,.672],'room-glass',false);
   for(let i=0;i<4;i++){
     const x=w*(.15+i*.20);
     m.box(x,.036,.21,.004,.004,h-.302,[.644,.747,.747]);

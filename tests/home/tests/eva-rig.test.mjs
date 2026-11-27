@@ -72,6 +72,24 @@ test('articulated limbs and head retain their size in every baked pose',()=>{
  }
 });
 
+test('the painted temple and the long hair share a closed crown in every direction',()=>{
+ const {vertices,stride}=evaModel(),head=bones.indexOf('head'),face=[],hair=[];
+ for(let i=0;i<vertices.length;i+=stride){
+   if(vertices[i+8]!==head)continue;
+   const style=vertices[i+17],point=vertices.subarray(i,i+3);
+   if(style===1)face.push(point);
+   if(style>=2)hair.push(point);
+ }
+ for(const height of [.272,.295,.316,.331,.346]){
+   const ring=face.filter(p=>Math.abs(p[2]-height)<.000001);
+   assert(ring.length>=20);
+   for(const sign of [-1,1]){
+     const edge=ring.reduce((a,b)=>sign*a[0]>sign*b[0]?a:b);
+     assert(hair.some(p=>distance(edge,p)<.00001),'open temple at height '+height);
+   }
+ }
+});
+
 test('during stance the loaded sole stays stationary as the pelvis travels through the step',()=>{
  for(const facing of ['down-right','up-left','down-left','up-right']){
    const forward={'down-right':[1,0],'up-left':[-1,0],'down-left':[0,1],'up-right':[0,-1]}[facing];
@@ -199,8 +217,10 @@ test('the shipped indexed mesh, materials and portable props fit the mobile rend
    for(const ix of [8,9])assert(Number.isInteger(v[ix])&&v[ix]>=0&&v[ix]<bones.length);
    assert(v[16]>=0&&v[16]<=1);assert(v[6]>=0&&v[6]<=1&&v[7]>=0&&v[7]<=1);
  }
- const atlas=readFileSync(new URL(home+'art/eva-rig-skin.png',import.meta.url));
- assert.equal(atlas.readUInt32BE(16),1024);assert.equal(atlas.readUInt32BE(20),512);
+ const atlas=readFileSync(new URL(home+'art/eva-rig-skin.webp',import.meta.url));
+ assert.equal(atlas.toString('ascii',8,16),'WEBPVP8 ');
+ assert.equal(atlas.readUInt16LE(26)&0x3fff,2048);assert.equal(atlas.readUInt16LE(28)&0x3fff,1024);
+ assert(atlas.length<640*1024,'mobile atlas exceeded its transfer budget');
  for(const name of Object.keys(activities)){
    const p=evaRig({...neutral,clip:name,time:2700});let count=0;
    const drawn=drawEvaProps({triangle(points,color,id){

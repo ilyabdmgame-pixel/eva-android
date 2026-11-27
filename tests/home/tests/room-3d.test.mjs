@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {camera,project,worldAtHeight} from '../../../app/src/main/assets/home/camera.mjs';
 import {roomCamera,visibleRoomWalls,bindRoomCamera} from '../../../app/src/main/assets/home/room-camera.mjs';
-import {fixtureFrame} from '../../../app/src/main/assets/home/room-mesh.mjs';
-import {rasterMesh} from '../../../app/src/main/assets/home/mesh-preview.mjs';
+import {fixtureFrame,roomMesh} from '../../../app/src/main/assets/home/room-mesh.mjs';
+import {collectMesh,rasterMesh,sampleRoomPaint} from '../../../app/src/main/assets/home/mesh-preview.mjs';
+import {roomMaterials} from '../../../app/src/main/assets/home/room-materials.mjs';
 import {worldObjects,worldPoint,district} from '../../../app/src/main/assets/home/district.mjs';
 import {roomFurniture,roomApproach,roomWindowFixture,fitsRoom,attachedPosition} from '../../../app/src/main/assets/home/room.mjs';
 import {roomWalk} from '../../../app/src/main/assets/home/room-walk.mjs';
@@ -14,6 +15,28 @@ import {placementIssue} from '../../../app/src/main/assets/home/layout.mjs';
 import {nextTurn} from '../../../app/src/main/assets/home/prop-finish.mjs';
 
 const close=(a,b)=>Math.abs(a-b)<1e-8;
+
+test('painted furnishings keep their local grain after moving or turning and sample only their atlas cell',()=>{
+  const finishes=Object.entries(roomMaterials);
+  assert.deepEqual([...new Set(finishes.map(([,m])=>m.cell))].sort((a,b)=>a-b),Array.from({length:16},(_,n)=>n));
+  const atlas={width:32,data:new Uint8Array(32*32*4)};
+  for(let y=0;y<32;y++)for(let x=0;x<32;x++){
+    const start=4*(y*32+x),index=(x>>3)+4*(y>>3);
+    for(let c=0;c<3;c++)atlas.data[start+c]=25+index*12;
+  }
+  const corners=[[.28,.12,.4],[.63,.12,.4],[.64,.77,.4],[.29,.77,.4]];
+  for(const [key,material] of finishes){
+    for(const [turned,back] of [[false,false],[true,false],[false,true],[true,true]]){
+      const o={id:100,u:-24.32,v:7.37,z:.2,w:turned?.8:1,d:turned?1:.8,turned,back};
+      const [face]=collectMesh(renderer=>roomMesh(renderer,o).face(corners,[.68,.69,.74],key,false));
+      assert.deepEqual(face.uv,corners.map(p=>p.slice(0,2)),key);
+      const grain=sampleRoomPaint(face,1,.23,.43,.34,atlas,[0,0,0]);
+      assert(Math.abs(grain[1]/face.paintTint[1]-(25+12*material.cell))<1e-5,key);
+      const local=fixtureFrame(o);
+      assert(face.points.every((p,i)=>local.local(p).every((v,j)=>close(v,corners[i][j]))),key);
+    }
+  }
+});
 
 test('all camera yaws share the same inverse touch ray, world height and depth order',()=>{
   for(let degrees=-360;degrees<=720;degrees+=7.5){
