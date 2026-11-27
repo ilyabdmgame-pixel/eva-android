@@ -15,6 +15,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 import ru.eva.envtest.CodexService;
+import ru.eva.envtest.EvaAccessibility;
 import ru.eva.envtest.EvaPresence;
 import ru.eva.envtest.MainActivity;
 import org.json.*;
@@ -203,6 +204,12 @@ public final class Home extends Activity {
             LifeService.updateSchedule(Home.this);
         });}
         @JavascriptInterface public String apps(){synchronized(entries){return catalog;}}
+        @JavascriptInterface public void openRecentApps(){runOnUiThread(()->{
+            if(!homeActive||!hasWindowFocus())return;
+            if(!EvaAccessibility.openRecentApps()){
+                Toast.makeText(Home.this,"Смахни от нижнего края и задержи палец",Toast.LENGTH_SHORT).show();
+            }
+        });}
         @JavascriptInterface public void open(String key){if(find(key)!=null)launch(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(ComponentName.unflattenFromString(key)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));}
         @JavascriptInterface public boolean bootEnabled(){return getSharedPreferences("theme",0).getBoolean("boot",true);}
         @JavascriptInterface public void setBootEnabled(boolean on){getSharedPreferences("theme",0).edit().putBoolean("boot",on).apply();}

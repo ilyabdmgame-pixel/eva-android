@@ -78,6 +78,35 @@ function dock(){
  const dest=$('favorites');dest.replaceChildren();
  for(const k of pins()){const a=apps.find(x=>x.key===k);if(!a)continue;const b=btn(null,'fav',()=>Desk.open(k));b.setAttribute('aria-label',a.name);b.append(icon(a));dest.append(b)}
 }
+const dockSurface=$('dock');
+let dockTouch=null,suppressDockClick=false;
+dockSurface.addEventListener('pointerdown',event=>{
+ if(!event.isPrimary||event.pointerType!=='touch')return;
+ suppressDockClick=false;
+ dockTouch={id:event.pointerId,x:event.clientX,y:event.clientY};
+});
+window.addEventListener('pointerup',event=>{
+ if(dockTouch?.id!==event.pointerId)return;
+ const rise=dockTouch.y-event.clientY;
+ const drift=Math.abs(dockTouch.x-event.clientX);
+ dockTouch=null;
+ if(rise<56||drift>rise/2||sheet)return;
+ suppressDockClick=true;
+ Desk.openRecentApps?.();
+});
+window.addEventListener('pointercancel',event=>{
+ if(dockTouch?.id===event.pointerId)dockTouch=null;
+});
+window.addEventListener('blur',()=>{
+ dockTouch=null;
+ suppressDockClick=false;
+});
+dockSurface.addEventListener('click',event=>{
+ if(!suppressDockClick||!event.detail)return;
+ suppressDockClick=false;
+ event.preventDefault();
+ event.stopImmediatePropagation();
+},true);
 function launchApp(app){
  closeSheet();
  Desk.open(app.key);
