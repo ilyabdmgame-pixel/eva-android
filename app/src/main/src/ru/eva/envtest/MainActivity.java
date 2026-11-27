@@ -50,6 +50,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
   private final Rect petVisibleFrame=new Rect();
   private int petEditorBottom;
   private CheckBox petFeature;
+  private Button defaultHomeButton;
   private String petUi;
   private ValueCallback<Uri[]> fileCallback;
   private PermissionRequest pendingMic;
@@ -292,6 +293,12 @@ public final class MainActivity extends Activity implements CodexService.Listene
     }
     web.evaluateJavascript(petUi,null);
   }
+  private void updateDefaultHomeButton(){
+    if(defaultHomeButton==null)return;
+    defaultHomeButton.setEnabled(Home.enabled(this));
+    defaultHomeButton.setText(Home.isDefaultHome(this)
+        ?"Главный экран Android: Дом Евы":"Назначить Дом Евы главным экраном");
+  }
   private void showPetSettings(){
     int padding=Math.round(20*getResources().getDisplayMetrics().density);
     LinearLayout options=new LinearLayout(this);
@@ -301,14 +308,11 @@ public final class MainActivity extends Activity implements CodexService.Listene
     CheckBox pet=new CheckBox(this);pet.setText("Питомец поверх приложений");
     pet.setChecked(PetOverlay.enabled(this)&&Settings.canDrawOverlays(this));options.addView(pet);
     petFeature=pet;
-    Button defaultHome=new Button(this);defaultHome.setText("Выбрать главный экран Android");
-    defaultHome.setEnabled(desktop.isChecked());options.addView(defaultHome);
-    defaultHome.setOnClickListener(v->{
-      try{startActivity(new Intent(Settings.ACTION_HOME_SETTINGS));}
-      catch(android.content.ActivityNotFoundException error){Toast.makeText(this,"Настройки главного экрана недоступны",Toast.LENGTH_SHORT).show();}
-    });
+    Button defaultHome=new Button(this);defaultHomeButton=defaultHome;
+    updateDefaultHomeButton();options.addView(defaultHome);
+    defaultHome.setOnClickListener(v->Home.chooseDefaultHome(this));
     desktop.setOnClickListener(v->{
-      boolean enabled=desktop.isChecked();Home.setEnabled(this,enabled);defaultHome.setEnabled(enabled);
+      boolean enabled=desktop.isChecked();Home.setEnabled(this,enabled);updateDefaultHomeButton();
       if(web!=null)web.evaluateJavascript("document.getElementById('home-open').hidden="+!enabled,null);
     });
     pet.setOnClickListener(v->{
@@ -325,7 +329,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
     android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(this).setTitle("Рабочий стол и питомец")
         .setView(options).setNeutralButton("Опоры питомца",(d,w)->showPetAnchors())
         .setPositiveButton("Готово",null).create();
-    dialog.setOnDismissListener(d->petFeature=null);
+    dialog.setOnDismissListener(d->{petFeature=null;defaultHomeButton=null;});
     dialog.show();
   }
   private void showPetAnchors(){
@@ -445,6 +449,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
       if(Settings.canDrawOverlays(this))PetOverlay.setEnabled(this,true);
     }
     if(petFeature!=null)petFeature.setChecked(PetOverlay.enabled(this)&&Settings.canDrawOverlays(this));
+    updateDefaultHomeButton();
     syncPet();
     if(isAssist(getIntent()))EvaVoiceService.setChatActive(true);
   }

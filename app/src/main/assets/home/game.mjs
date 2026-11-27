@@ -888,9 +888,10 @@ function layoutPointerMove(event){
  const pan=(value,axis)=>Math.max(origin[axis]-1.5,Math.min(origin[axis]+1.5,value));
  center={u:pan(g.center.u+a.u-b.u,'u'),v:pan(g.center.v+a.v-b.v,'v')};repaintLayout();
 }
-let hold=null;
+let hold=null,heldTapTimer=0;
 function clearHold(){if(hold){clearTimeout(hold.timer);hold=null}}
 function releaseHomePointer(){
+ clearTimeout(heldTapTimer);heldTapTimer=0;
  const pointer=hold?.id??layout?.gesture?.id;
  clearHold();
  if(layout)layout.gesture=null;
@@ -898,6 +899,7 @@ function releaseHomePointer(){
 }
 canvas.addEventListener('pointerdown',event=>{
  if(!event.isPrimary||event.button!==0||!view||sheet)return;
+ clearTimeout(heldTapTimer);heldTapTimer=0;
  if(layout){layoutPointerDown(event);return}
  clearHold();if(saved.sound)prepareSound();
  const x=event.clientX,y=event.clientY,id=event.pointerId;
@@ -923,11 +925,14 @@ canvas.addEventListener('pointerup',event=>{
  const {hit,long,cancelled}=hold;
  clearHold();if(!cancelled){
    // Open a held action after the touch-generated click, so the scrim cannot consume that same tap.
-   if(long)setTimeout(()=>tapAt(hit,true),85);else tapAt(hit);
+   if(long)heldTapTimer=setTimeout(()=>{heldTapTimer=0;tapAt(hit,true)},85);else tapAt(hit);
  }
 });
 canvas.addEventListener('pointercancel',releaseHomePointer);
-canvas.addEventListener('lostpointercapture',releaseHomePointer);
+canvas.addEventListener('lostpointercapture',event=>{
+ if(hold?.id===event.pointerId||layout?.gesture?.id===event.pointerId)releaseHomePointer();
+});
+window.cancelHomeInput=releaseHomePointer;
 window.addEventListener('blur',releaseHomePointer);
 canvas.addEventListener('pointerleave',clearHold);
 canvas.addEventListener('contextmenu',event=>{

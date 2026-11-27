@@ -78,35 +78,6 @@ function dock(){
  const dest=$('favorites');dest.replaceChildren();
  for(const k of pins()){const a=apps.find(x=>x.key===k);if(!a)continue;const b=btn(null,'fav',()=>Desk.open(k));b.setAttribute('aria-label',a.name);b.append(icon(a));dest.append(b)}
 }
-const dockSurface=$('dock');
-let dockTouch=null,suppressDockClick=false;
-dockSurface.addEventListener('pointerdown',event=>{
- if(!event.isPrimary||event.pointerType!=='touch')return;
- suppressDockClick=false;
- dockTouch={id:event.pointerId,x:event.clientX,y:event.clientY};
-});
-window.addEventListener('pointerup',event=>{
- if(dockTouch?.id!==event.pointerId)return;
- const rise=dockTouch.y-event.clientY;
- const drift=Math.abs(dockTouch.x-event.clientX);
- dockTouch=null;
- if(rise<56||drift>rise/2||sheet)return;
- suppressDockClick=true;
- Desk.openRecentApps?.();
-});
-window.addEventListener('pointercancel',event=>{
- if(dockTouch?.id===event.pointerId)dockTouch=null;
-});
-window.addEventListener('blur',()=>{
- dockTouch=null;
- suppressDockClick=false;
-});
-dockSurface.addEventListener('click',event=>{
- if(!suppressDockClick||!event.detail)return;
- suppressDockClick=false;
- event.preventDefault();
- event.stopImmediatePropagation();
-},true);
 function launchApp(app){
  closeSheet();
  Desk.open(app.key);
@@ -223,7 +194,9 @@ function drawer(query=''){
  if(pinMode)out.insertBefore(limit,grid);
  search.oninput=render;render();
  foot.append(btn(pinMode?'Готово':'Настроить док','',()=>{pinMode=!pinMode;drawer(search.value)}));
- if(!pinMode)foot.append(btn('Настройки рабочего стола','',phoneTheme));
+ if(!pinMode)foot.append(
+  btn('Недавние','',()=>{closeSheet();Desk.openRecentApps?.()}),
+  btn('Настройки рабочего стола','',phoneTheme));
 }
 $('all').onclick=()=>{drawerSection='all';drawer()};
 window.refreshApps();
@@ -231,7 +204,9 @@ window.refreshApps();
 function phoneTheme(){
  const out=showSheet('theme','Настройки «Дома»');
  const desktop=menuSection(out,'Рабочий стол');
- desktop.append(label('Назначить домашним экраном','Открыть настройки Android','⌂',()=>Desk.chooseHome()));
+ const isDefault=Desk.isDefaultHome?.();
+ desktop.append(label(isDefault?'Главный экран Android':'Назначить главным экраном',
+  isDefault?'Выбран «Дом Евы»':'Подтвердить выбор в Android','⌂',()=>Desk.chooseHome()));
  const screen=menuSection(out,'Оформление');
  const preview=node('img',null,'lock-preview');preview.src='/art/eva-lock.jpg';preview.alt='Вечерняя набережная';
  screen.append(preview,label('Обои экрана блокировки','Применить иллюстрацию','☾',()=>Desk.lockWallpaper()));

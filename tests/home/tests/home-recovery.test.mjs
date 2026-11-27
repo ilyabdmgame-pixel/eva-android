@@ -72,3 +72,51 @@ test('the same device monitor opens from the desktop or menu and accepts Android
  tabs[1].click();assert.equal(requests.at(-1).tab,'apps');
  tabs[2].click();assert.equal(requests.at(-1).tab,'services');
 });
+
+test('leaving Home cancels a delayed long-press without discarding a completed tap',()=>{
+ const handlers=new Map(),timers=new Map(),taps=[];
+ let capture;
+ let nextTimer=0;
+ const canvas={
+   addEventListener:(name,fn)=>handlers.set(name,fn),
+   setPointerCapture(id){capture=id;},
+   hasPointerCapture(id){return capture===id;},
+   releasePointerCapture(){capture=undefined;},
+ };
+ const context={
+   canvas,window:{addEventListener:(name,fn)=>handlers.set(name,fn)},
+   view:{},layout:null,sheet:'',saved:{},selectTarget:false,toyAim:false,dropAim:false,
+   floorAt:()=>({x:20,y:20,p:{u:1,v:1}}),renderer:{pick:()=>42},night:false,lamps:[],lighting:{},
+   tapAt:(hit,long)=>taps.push([hit.id,long]),
+   setTimeout(fn,ms){const id=++nextTimer;timers.set(id,{fn,ms});return id;},
+   clearTimeout:id=>timers.delete(id),
+ };
+ vm.createContext(context);
+ const source=readFileSync(new URL('../../../app/src/main/assets/home/game.mjs',import.meta.url),'utf8');
+ vm.runInContext(source.slice(source.indexOf('let hold=null,'),source.indexOf("canvas.addEventListener('contextmenu'")),context);
+ const pointer={isPrimary:true,button:0,clientX:20,clientY:20,pointerId:7};
+ function fireTimers(ms){
+   for(const [id,timer] of [...timers]){
+     if(timer.ms!==ms)continue;
+     timers.delete(id);timer.fn();
+   }
+ }
+ function longPress(){
+   handlers.get('pointerdown')(pointer);
+   fireTimers(400);
+   handlers.get('pointerup')(pointer);
+   capture=undefined;
+   handlers.get('lostpointercapture')(pointer);
+ }
+ longPress();
+ fireTimers(85);
+ assert.deepEqual(taps,[[42,true]]);
+ longPress();
+ context.window.cancelHomeInput();
+ fireTimers(85);
+ assert.deepEqual(taps,[[42,true]]);
+ handlers.get('pointerdown')(pointer);
+ handlers.get('pointercancel')(pointer);
+ assert.equal(capture,undefined);
+ assert.equal(timers.size,0);
+});

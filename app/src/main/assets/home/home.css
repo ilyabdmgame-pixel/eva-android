@@ -170,7 +170,7 @@ body:has(#sheet:not([hidden])) #layout-tools{visibility:hidden}
  background:linear-gradient(90deg,currentColor 3px,transparent 3px 5px,currentColor 5px 8px,transparent 8px 10px,currentColor 10px) center 6px/11px 4px no-repeat
 }
 #sheet[data-page=device-monitor]{height:74%}
-#dock{touch-action:none}
+#dock{touch-action:manipulation}
 .device-tabs{display:flex;gap:5px;margin-block:0 8px}
 .device-tabs button,.device-refresh{min-height:44px;background:#dce7e8;color:#263f46;border-radius:11px;padding:0 9px}
 .device-tabs button{flex:1;font-size:13px}

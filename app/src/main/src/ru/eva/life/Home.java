@@ -1,6 +1,7 @@
 package ru.eva.life;
 
 import android.app.Activity;
+import android.app.role.RoleManager;
 import android.content.*;
 import android.content.pm.*;
 import android.graphics.*;
@@ -26,16 +27,34 @@ public final class Home extends Activity {
     private static final String HOST="eva-life.invalid";
     private static Home visible;
     public static boolean visible(){return visible!=null;}
-    public static void openDefaultHome(Context context){
-        Intent home=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
-        ResolveInfo selected=context.getPackageManager().resolveActivity(home,PackageManager.MATCH_DEFAULT_ONLY);
-        ComponentName own=new ComponentName(context,Home.class);
-        boolean active=selected!=null&&selected.activityInfo!=null&&own.equals(
+    private static Intent homeIntent(){
+        return new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+    }
+    public static boolean isDefaultHome(Context context){
+        ResolveInfo selected=context.getPackageManager().resolveActivity(homeIntent(),PackageManager.MATCH_DEFAULT_ONLY);
+        return selected!=null&&selected.activityInfo!=null&&new ComponentName(context,Home.class).equals(
             new ComponentName(selected.activityInfo.packageName,selected.activityInfo.name));
-        Intent target=active?home.setComponent(own):new Intent(Settings.ACTION_HOME_SETTINGS);
-        try{context.startActivity(target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));}
-        catch(android.content.ActivityNotFoundException error){
-            Toast.makeText(context,"Главный экран Android недоступен",Toast.LENGTH_SHORT).show();
+    }
+    public static void chooseDefaultHome(Activity activity){
+        if(!isDefaultHome(activity)&&Build.VERSION.SDK_INT>=29){
+            RoleManager roles=activity.getSystemService(RoleManager.class);
+            if(roles!=null&&roles.isRoleAvailable(RoleManager.ROLE_HOME)&&!roles.isRoleHeld(RoleManager.ROLE_HOME)){
+                try{
+                    activity.startActivityForResult(roles.createRequestRoleIntent(RoleManager.ROLE_HOME),701);
+                    return;
+                }catch(ActivityNotFoundException|SecurityException ignored){}
+            }
+        }
+        try{activity.startActivity(new Intent(Settings.ACTION_HOME_SETTINGS));}
+        catch(ActivityNotFoundException|SecurityException error){
+            Toast.makeText(activity,"Настройки главного экрана недоступны",Toast.LENGTH_SHORT).show();
+        }
+    }
+    public static void openDefaultHome(Activity activity){
+        if(!isDefaultHome(activity)){chooseDefaultHome(activity);return;}
+        try{activity.startActivity(homeIntent().setClass(activity,Home.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));}
+        catch(ActivityNotFoundException error){
+            Toast.makeText(activity,"Главный экран Android недоступен",Toast.LENGTH_SHORT).show();
         }
     }
     public static boolean enabled(Context context){
@@ -43,6 +62,7 @@ public final class Home extends Activity {
         return state==PackageManager.COMPONENT_ENABLED_STATE_DEFAULT||state==PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
     }
     public static void setEnabled(Context context,boolean enabled){
+        if(enabled(context)==enabled)return;
         context.getPackageManager().setComponentEnabledSetting(new ComponentName(context,Home.class),
             enabled?PackageManager.COMPONENT_ENABLED_STATE_ENABLED:PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
             PackageManager.DONT_KILL_APP);
@@ -225,7 +245,8 @@ public final class Home extends Activity {
                 runOnUiThread(()->Toast.makeText(Home.this,message,Toast.LENGTH_SHORT).show());
             });
         }
-        @JavascriptInterface public void chooseHome(){launch(new Intent(Settings.ACTION_HOME_SETTINGS));}
+        @JavascriptInterface public boolean isDefaultHome(){return Home.isDefaultHome(Home.this);}
+        @JavascriptInterface public void chooseHome(){runOnUiThread(()->chooseDefaultHome(Home.this));}
         @JavascriptInterface public void eva(){launch(new Intent(Home.this,ru.eva.envtest.MainActivity.class));}
     }
     private void showRecentAppsHint(){
@@ -310,14 +331,11 @@ public final class Home extends Activity {
     protected void onPostResume(){super.onPostResume();LifeService.updateSchedule(this);}
     @Override public void onWindowFocusChanged(boolean focused){
         super.onWindowFocusChanged(focused);
-        if(focused&&web!=null){
-            homeActive=true;
-            web.onResume();
+        if(web==null)return;
+        if(focused&&homeActive){
             web.evaluateJavascript("window.setHomeActive?.(true,true)",null);
-        }
-        if(focused&&Build.VERSION.SDK_INT>=30){
-            android.view.WindowInsetsController controller=getWindow().getInsetsController();
-            if(controller!=null)controller.show(android.view.WindowInsets.Type.navigationBars());
+        }else if(!focused){
+            web.evaluateJavascript("window.cancelHomeInput?.()",null);
         }
     }
     protected void onPause(){
