@@ -37,12 +37,14 @@ test('balloons avoid the launcher controls and other visible balloons',()=>{
   assert.equal(bubblePosition({x:184,y:91},size,screen,[toolbar]),null);
 });
 
-test('stream chat stays near the monitor and moves below it if shortcuts occupy the space above',()=>{
+test('stream chat leaves room for replies above the monitor when possible',()=>{
   const monitor={x:298,y:395},size={w:152,h:135},screen={w:369,h:812};
   const beside=streamChatPosition(monitor,size,screen,[{x:306,y:260,w:52,h:146}]);
-  assert.deepEqual(beside,{x:138,y:252,w:152,h:135});
+  assert.deepEqual(beside,{x:138,y:403,w:152,h:135});
   const below=streamChatPosition(monitor,size,screen,[{x:0,y:0,w:369,h:395}]);
   assert.equal(below.y,403);
+  const above=streamChatPosition(monitor,size,screen,[{x:0,y:400,w:369,h:412}]);
+  assert.equal(above.y,252);
   assert.equal(streamChatPosition(monitor,size,screen,[{x:0,y:0,...screen}]),null);
   const moved=streamChatPosition({x:20,y:750},size,screen,[]);
   assert(moved.x>=8&&moved.y+moved.h<=screen.h-8);

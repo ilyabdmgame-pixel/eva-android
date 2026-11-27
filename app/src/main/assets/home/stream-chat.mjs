@@ -28,9 +28,9 @@ export function streamChatPosition(anchor,size,screen,obstacles,figure,previous)
   const above=y-h-gap,below=y+gap;
   const candidates=[
     ...(previous?[[previous.x,previous.y]]:[]),
+    [left,below],[right,below],[x-w/2,below],
     [left,above],[right,above],[x-w/2,above],
-    [left,y-h/2],[right,y-h/2],
-    [left,below],[right,below],[x-w/2,below]
+    [left,y-h/2],[right,y-h/2]
   ];
   if(h<=bottomEdge-gap){
     for(const [column,row] of candidates){
@@ -119,6 +119,7 @@ export function createStreamChat(panel,canvas,protectedElements){
     if(!position){panel.hidden=true;return null}
     const nextLimit=Math.max(0,position.h-chromeHeight)+'px';
     if(logLimit!==nextLimit){
+      followLatest ||= log.scrollHeight-log.scrollTop-log.clientHeight<=8;
       panel.style.setProperty('--stream-log-height',nextLimit);
       logLimit=nextLimit;
     }
