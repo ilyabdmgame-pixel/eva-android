@@ -55,7 +55,7 @@ export function createSpeech(layer,status,protectedElements){
     if(noteUntil&&time>=noteUntil){status.hidden=true;noteUntil=0;}
     return changed;
   }
-  function layout(heads,canvas){
+  function layout(heads,canvas,streamBounds){
     if(!lines.size||layer.hidden)return;
     const t=performance.now();
     if(t-measuredAt>140){
@@ -68,6 +68,7 @@ export function createSpeech(layer,status,protectedElements){
       }
     }
     const rects=[...protectedRects];
+    if(streamBounds)rects.push(streamBounds);
     for(const line of lines.values())line.size??={w:line.el.offsetWidth,h:line.el.offsetHeight};
     for(const [speaker,line] of [...lines].sort((a,b)=>b[1].order-a[1].order)){
       const head=heads.get(speaker);

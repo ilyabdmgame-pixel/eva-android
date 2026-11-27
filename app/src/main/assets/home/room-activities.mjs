@@ -23,7 +23,7 @@ export function activityPlan(activity,random=Math.random()){
 }
 
 export function activitySample(activity,elapsed,reduced,plan=null){
- const duration=activity.beats.reduce((sum,beat)=>sum+beat[1],0);
+ const duration=plan?plan.duration-plan.extra:activityDuration(activity,false);
  const ms=plan&&elapsed>=plan.start?
    (elapsed<plan.end?plan.start+(elapsed-plan.start)%plan.cycle:elapsed-plan.extra):elapsed;
  const time=reduced?duration*.53:Math.max(0,Math.min(duration,ms));

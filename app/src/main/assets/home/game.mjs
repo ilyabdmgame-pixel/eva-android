@@ -42,10 +42,7 @@ const paintWindow=windowWeather(()=>{dirty=true;wake();});
 const roomControls=()=>document.querySelectorAll('.now,.top-status,#folders button,#actions button,#dock,#town-mark:not([hidden]),#town-answer:not([hidden])');
 const speechLayer=$('speech');
 const speech=createSpeech(speechLayer,$('world-status'),roomControls);
-const streamChat=createStreamChat($('stream-chat'),canvas,()=>[
-  ...roomControls(),
-  ...[...speechLayer.children].filter(balloon=>balloon.style.visibility==='visible')
-]);
+const streamChat=createStreamChat($('stream-chat'),canvas,roomControls);
 const renderer=createScene(canvas);
 const time=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 const date=new Intl.DateTimeFormat('ru-RU',{weekday:'long',day:'numeric',month:'long'});
@@ -432,23 +429,22 @@ function applyStreamDialogue(data){
  const state=roomActivity;
  if(state?.streamRequest===data.id&&data.id)state.dialogue?.addGenerated(data.pairs);
 }
-function advanceRoomActivity(){
+function advanceRoomActivity(t,settling){
  const state=roomActivity;
- if(!state?.started||seated&&restMotion&&!seatSample(restMotion,now(),reduceMotion).complete)return;
- const time=Date.now();
+ if(!state?.started||seated&&settling)return;
  if(state.startedAt===null){
-   state.startedAt=time;
+   state.startedAt=t;
    if(state.key==='computer'){
      state.dialogue=createStreamDialogue(saved.roomActivityCounts.computer||0);
      if(!state.automatic&&localStorage.getItem('lunaStream')==='yes'){
-       state.streamRequest=time.toString(36)+'-'+Math.random().toString(36).slice(2);
+       state.streamRequest=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
        Desk.town?.(JSON.stringify({op:'stream',id:state.streamRequest,topic:state.dialogue.topic}));
      }
      say('Так, я в эфире. Чат, как слышно?','pleased');
      sound(state.definition.sound);
    }
  }
- const elapsed=Math.max(0,time-state.startedAt);
+ const elapsed=Math.max(0,t-state.startedAt);
  if(elapsed>=state.plan.duration){finishRoomActivity(state);return;}
  if(state.plan.duration-elapsed>10000&&!town.composing&&!town.playing){
    const cue=state.dialogue?state.dialogue.next(elapsed):
@@ -459,7 +455,7 @@ function advanceRoomActivity(){
      else say(cue.text);
    }
  }
- state.sample=activitySample(state.definition,elapsed,reduceMotion,state.plan);
+ if(!reduceMotion)state.sample=activitySample(state.definition,elapsed,false,state.plan);
  if(state.key==='air'&&state.sample.progress>.32&&!saved.window){saved.window=true;storage();}
  if(!reduceMotion)dirty=true;
 }
@@ -1209,9 +1205,11 @@ function paint(t=now()){
    speechAnchors.set(id,{x:p.x*view.cssWidth/view.width,y:p.y*view.cssHeight/view.height});
  }
  speechLayer.hidden=Boolean(sheet);
- speech.layout(speechAnchors,canvas);
  const anchor=speechAnchors.get(EVA_ID);
- if(stream&&!sheet&&!layout&&!town.composing){
+ if(anchor)anchor.feetY=project(view,at).y*view.cssHeight/view.height;
+ town.anchor(anchor,sheet);
+ let streamBounds;
+ if(playing?.key==='computer'&&playing.dialogue&&!sheet&&!layout&&!town.composing){
    const xScale=view.cssWidth/view.width,yScale=view.cssHeight/view.height;
    const monitor=project(view,computerLayout(playing.fixture)(.795,.180,.365));
    let figure;
@@ -1222,10 +1220,9 @@ function paint(t=now()){
      figure={x:Math.min(anchor.x,floorX)-padding,y:anchor.y-padding/2,
        w:Math.abs(anchor.x-floorX)+2*padding,h:height+padding};
    }
-   streamChat.layout({x:monitor.x*xScale,y:monitor.y*yScale},t,figure);
+   streamBounds=streamChat.layout({x:monitor.x*xScale,y:monitor.y*yScale},t,figure);
  }else streamChat.hide();
- if(anchor)anchor.feetY=project(view,at).y*view.cssHeight/view.height;
- town.anchor(anchor,sheet);
+ speech.layout(speechAnchors,canvas,streamBounds);
 }
 function advanceWalker(dt){
  if(restMotion||releaseMotion||walkHold||!move.length)return;
@@ -1268,8 +1265,8 @@ function loop(t){
  if(!sheet&&t>=nextWorldSync){syncWorld();nextWorldSync=t+2200}
  if(t>latestClock){pullClock();latestClock=t+5000;}
  if(!sheet&&!layout){
+   advanceRoomActivity(t,settling);
    advanceWalker(dt);
-   advanceRoomActivity();
 
    if(flight){
      dirty=true;

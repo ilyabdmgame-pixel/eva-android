@@ -51,17 +51,32 @@ test('stream chat stays near the monitor and moves below it if shortcuts occupy 
   assert(nearSeatedEva.x+size.w<=eva.x);
 });
 
+test('a growing stream log stays visible in a tight layout and uses a scrollable height',()=>{
+  const screen={w:369,h:812};
+  const monitor={x:305,y:395};
+  const controls=[{x:0,y:0,w:369,h:360},{x:0,y:460,w:369,h:352}];
+  const eva={x:226,y:391,w:54,h:69};
+  const empty=streamChatPosition(monitor,{w:152,h:56},screen,controls,eva);
+  assert(empty);
+  assert.equal(streamChatPosition(monitor,{w:152,h:135},screen,controls,eva,empty),null);
+  const compact=streamChatPosition(monitor,{w:152,h:135,minHeight:60},screen,controls,eva,empty);
+  assert.deepEqual(compact,{x:empty.x,y:360,w:152,h:100});
+  const edge=streamChatPosition({x:431,y:390},{w:152,h:56},screen,controls,eva);
+  assert(edge);
+  assert(edge.x+edge.w<=screen.w-8);
+});
+
 test('stream chat retains four latest messages while temporarily hidden and clears between streams',()=>{
   const empty={hidden:false};
   const log={
-    children:[],scrollTop:0,clientHeight:48,
+    children:[],scrollTop:0,clientHeight:48,offsetHeight:48,
     get firstElementChild(){return this.children[0]},
     get scrollHeight(){return this.children.length*24},
     append(item){this.children.push(item);item.remove=()=>this.children.shift()},
     replaceChildren(){this.children=[]}
   };
   const panel={
-    hidden:true,style:{},offsetWidth:170,offsetHeight:90,
+    hidden:true,style:{setProperty(name,value){this[name]=value;}},offsetWidth:170,offsetHeight:90,
     ownerDocument:{
       createElement:()=>({style:{},append(...parts){this.parts=parts}}),
       createTextNode:text=>({textContent:text})
