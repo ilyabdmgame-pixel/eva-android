@@ -10,7 +10,8 @@ import {roomWalk} from '../../../app/src/main/assets/home/room-walk.mjs';
 import {computerGesture,drawComputer,streamChair} from '../../../app/src/main/assets/home/room-furnishings.mjs';
 
 import {roomDialogue} from '../../../app/src/main/assets/home/room-dialogue.mjs';
-import {createStreamDialogue} from '../../../app/src/main/assets/home/stream-dialogue.mjs';
+import {streamScenes} from '../../../app/src/main/assets/home/stream-scenes.mjs';
+import {createStreamDialogue,streamExpression} from '../../../app/src/main/assets/home/stream-dialogue.mjs';
 import {drawStreamFrame} from '../../../app/src/main/assets/home/stream-game.mjs';
 
 const assets=new URL('../../../app/src/main/assets/home/',import.meta.url);
@@ -112,37 +113,84 @@ test('stream repeats typing and mouse phases, then releases the hands exactly on
  assert.equal(phase(plan.duration),3);
 });
 
-test('stream alternates viewer and Eva with delays between 10 and 30 seconds, without a backlog burst',()=>{
- const random=[0,.99999,0];
+test('stream viewers use the full 3–10 second range and Eva responds selectively',()=>{
+ const random=[0,.999999,0,0];
  const dialogue=createStreamDialogue(0,()=>random.shift()??0);
- assert.equal(dialogue.next(9999),null);
- const chat=dialogue.next(10000);
- assert.equal(dialogue.next(39999),null);
- const reply=dialogue.next(40000);
- assert(chat.chat&&chat.text.includes('?'));
- assert(!reply.chat&&reply.text.length>12);
- assert.equal(reply.id,chat.id+1);
+ assert.equal(dialogue.next(2999),null);
+ const first=dialogue.next(3000);
+ assert(first.chat&&first.emotion);
+ assert.equal(dialogue.next(12999),null);
+ const second=dialogue.next(13000);
+ assert(second.chat);
+ assert.notEqual(first.author,second.author);
+ const third=dialogue.next(16000);
+ assert(third.chat);
+ assert.equal(dialogue.next(17199),null);
+ const reply=dialogue.next(17200);
+ assert.equal(reply.respondsTo,third.id);
+ assert.equal(reply.emotion,'amused');
+ assert.match(reply.text,/связь с землёй/);
+ assert(dialogue.next(19000).chat);
  assert(dialogue.next(200000).chat);
  assert.equal(dialogue.next(200001),null);
 });
 
-test('stream rotates topics and can use a generated scene without interrupting the current one',()=>{
- const initial=createStreamDialogue(0,()=>0),kitchen=createStreamDialogue(1,()=>0);
- assert.match(initial.next(10000).text,/игра/);
- assert.match(kitchen.next(10000).text,/пельмени/);
- const generated=[['Первый вопрос','Первый ответ'],['Второй вопрос','Второй ответ'],['Третий вопрос','Третий ответ']];
- initial.addGenerated(generated);
- for(let i=2;i<=6;i++){
-   const cue=initial.next(i*10000);
-   assert.equal(cue.chat,i%2===1);
-   assert(!generated.flat().includes(cue.text));
+test('the stream rotates a large pool of authored themes and reactions without repeating lines',()=>{
+ assert(new Set(streamScenes.map(([topic])=>topic)).size>=8);
+ assert(streamScenes.flatMap(([,lines])=>lines).length>=180);
+ const dialogue=createStreamDialogue(0,()=>0),nextVisit=createStreamDialogue(1,()=>0);
+ assert.notEqual(dialogue.greeting,nextVisit.greeting);
+ const chat=[],replies=[],byId=new Map();
+ for(let t=0;t<=298000;t+=100){
+   const cue=dialogue.next(t);
+   if(!cue)continue;
+   if(cue.chat){chat.push(cue.text);byId.set(cue.id,cue.text);}
+   else{
+     assert(byId.has(cue.respondsTo));
+     assert(!replies.length||t-replies.at(-1)>=14000);
+     replies.push(t);
+   }
  }
- const next=initial.next(70000);
- assert(next.chat);
- assert.equal(next.text,generated[0][0]);
- assert.equal(initial.next(80000).text,generated[0][1]);
- for(let i=9;i<=12;i++)initial.next(i*10000);
- assert.match(initial.next(130000).text,/хоррор/);
+ assert.equal(new Set(chat).size,chat.length);
+ assert(replies.length>8&&replies.length<chat.length/2);
+ assert(streamExpression('amused',810));
+ assert.notDeepEqual(streamExpression('amused',810),streamExpression('surprised',810));
+ assert.equal(streamExpression('curious',1600),null);
+});
+
+test('model improvises after viewers have spoken and waits for a scene boundary',()=>{
+ const dialogue=createStreamDialogue(0,()=>0);
+ const generated=Array.from({length:5},(_,i)=>['Новый зритель '+i,'Новый ответ '+i,'pleased']);
+ const shown=[],replies=[];
+ let request;
+ for(let t=0;t<=90000;t+=100){
+   const cue=dialogue.next(t);
+   if(cue?.chat)shown.push(cue.text);
+   else if(cue)replies.push(cue.text);
+   const next=dialogue.takeGeneration(t,185000-t);
+   if(next){
+     assert.equal(t,12000);
+     request=next;
+     dialogue.addGenerated(generated);
+   }
+ }
+ assert.equal(request.topic,'games');
+ assert(request.context.some(line=>line.role==='eva'));
+ assert(request.context.filter(line=>line.role==='viewer').every(line=>shown.slice(0,4).includes(line.text)));
+ assert.deepEqual(shown.slice(6,11),generated.map(line=>line[0]));
+ assert(replies.some(line=>line.startsWith('Новый ответ')));
+ assert(dialogue.takeGeneration(92000,93000));
+ assert.equal(dialogue.takeGeneration(180000,90000),null);
+});
+
+test('viewer chat keeps moving while Eva is busy and skips stale replies on return',()=>{
+ const dialogue=createStreamDialogue(0,()=>0);
+ for(const t of [3000,6000,9000])assert(dialogue.next(t).chat);
+ assert.equal(dialogue.next(10200,false),null);
+ assert(dialogue.next(12000,false).chat);
+ assert.equal(dialogue.next(12100),null);
+ assert(dialogue.next(60000).chat);
+ assert.equal(dialogue.next(60001),null);
 });
 
 test('ordinary room activities retain topic-specific lines',()=>{

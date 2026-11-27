@@ -6,9 +6,19 @@ const viewers=[
   ['анон_с_крыши','#9accef'],
   ['клиппер','#e2d28e'],
   ['жук_в_бане','#b9da9c'],
-  ['пиксель_слева','#e9b9ec']
+  ['пиксель_слева','#e9b9ec'],
+  ['фантомный_чай','#f0c992'],
+  ['пельмешек','#d8ae97'],
+  ['крышный_инспектор','#a7c4ed'],
+  ['пропуск_в_депо','#b6d09d'],
+  ['пледовый_фронт','#c7ade8'],
+  ['ctrl_кот','#dfbcca'],
+  ['дед_на_бубне','#bdcbbb'],
+  ['сосед_сверху','#9bd6ce'],
+  ['рыжий_рендер','#edb692'],
+  ['анон_в_тапках','#c8bce1']
 ];
-const recentLimit=4;
+const recentLimit=24;
 const gap=8;
 const maxLogHeight=128;
 const minLogHeight=32;
@@ -76,7 +86,7 @@ export function createStreamChat(panel,canvas,protectedElements){
 
   function add(cue){
     followLatest=panel.hidden||log.scrollHeight-log.scrollTop-log.clientHeight<=8;
-    const [name,color]=viewers[Math.floor(cue.id/2)%viewers.length];
+    const [name,color]=viewers[cue.author%viewers.length];
     const message=document.createElement('li'),author=document.createElement('b');
     author.textContent=name;
     author.style.color=color;

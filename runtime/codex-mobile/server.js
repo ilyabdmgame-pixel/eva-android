@@ -120,12 +120,12 @@ if(req.method==='POST'&&u.pathname==='/town'){
  return json(res,200,result);
 }
 if(req.method==='POST'&&u.pathname==='/stream-dialogue'){
- const {id,topic}=JSON.parse((await read(req,1024)).toString());
+ const {id,topic,context}=JSON.parse((await read(req,4096)).toString());
  if(typeof id!=='string'||!/^[a-z0-9-]{1,50}$/.test(id)||typeof topic!=='string')return json(res,400,{});
  if(!ready||!auth.authenticated)return json(res,200,{id,pairs:[]});
  const controller=new AbortController();
  res.once('close',()=>{if(!res.writableEnded)controller.abort()});
- const pairs=await generateStream(topic,controller.signal);
+ const pairs=await generateStream(topic,controller.signal,context);
  return json(res,200,{id,pairs});
 }
 if(req.method==='GET'&&u.pathname==='/pet-work')return json(res,200,{cards:petWork.list()});

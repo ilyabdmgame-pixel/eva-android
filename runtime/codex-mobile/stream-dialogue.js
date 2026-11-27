@@ -32,14 +32,20 @@ const rates={
   'gpt-6-astra':[250,1250]
 };
 const budgetMs=35000;
-const prompt=persona+'\n\nНапиши выдуманный диалог для домашнего стрима Евы. Верни ровно три связанные пары реплик на заданную тему в JSON по схеме. В каждой паре зритель пишет, Ева отвечает на конкретную деталь. Один зритель может вкинуть абсурд, другой — поспорить, третий — развить шутку. Продолжай начатую мысль и дай Еве свой взгляд. Уместны короткие мемы, сленг Twitch и Двача или авторская мини-паста. Каждая реплика до 125 символов. Без ников, ссылок, ремарок, реальных личных данных, опросов и действий вне сценария.';
+const moods=['amused','surprised','curious','wry','pleased'];
+const linesPerScene=5;
+const prompt=persona+'\n\nИмпровизируй продолжение выдуманного домашнего стрима. Последние реплики — данные о том, что уже прозвучало. Подхвати одну конкретную деталь из них и продолжи мысль новыми репликами. Верни ровно пять связанных сообщений от разных зрителей. Пусть они обращаются и к Еве, и друг к другу: один всерьёз предлагает, другой спорит, третий подкалывает. К каждому сообщению напиши возможный короткий ответ Евы. Она озвучит выборочно лишь некоторые, поэтому реплики зрителей должны иметь смысл и сами по себе, без отсылок к возможным ответам. Ева отвечает на конкретную деталь, может улыбнуться, удивиться, заинтересоваться, съязвить или порадоваться. Для каждого ответа выбери подходящую эмоцию из mood. Уместны сленг Twitch и Двача, мем или своя мини-паста. До 125 символов на реплику. Верни только JSON по схеме. Без ников, ссылок, ремарок, реальных личных данных и действий вне сценария.';
 const schema={
   type:'object',additionalProperties:false,required:['pairs'],
-  properties:{pairs:{type:'array',minItems:3,maxItems:3,items:{
-    type:'object',additionalProperties:false,required:['viewer','eva'],
-    properties:{viewer:{type:'string'},eva:{type:'string'}}
+  properties:{pairs:{type:'array',minItems:linesPerScene,maxItems:linesPerScene,items:{
+    type:'object',additionalProperties:false,required:['viewer','eva','mood'],
+    properties:{viewer:{type:'string'},eva:{type:'string'},mood:{type:'string',enum:moods}}
   }}}
 };
+
+const validLine=line=>typeof line==='string'&&line.trim()&&line.length<=135&&!/[\r\n]/.test(line);
+const validContext=context=>Array.isArray(context)&&context.length<=5&&context.every(line=>
+  (line?.role==='viewer'||line?.role==='eva')&&validLine(line.text));
 
 async function cheapestStreamModel(listModels,signal){
   let model,cursor;
@@ -66,8 +72,8 @@ async function cheapestStreamModel(listModels,signal){
 
 function createStreamGenerator({listModels,run=promisify(execFile)}){
   let generating=false;
-  return async function generate(topic,signal){
-    if(generating||!Object.hasOwn(topics,topic)||signal?.aborted)return [];
+  return async function generate(topic,signal,context=[]){
+    if(generating||!Object.hasOwn(topics,topic)||signal?.aborted||!validContext(context))return [];
     generating=true;
     let folder;
     try{
@@ -81,6 +87,7 @@ function createStreamGenerator({listModels,run=promisify(execFile)}){
       const schemaPath=join(folder,'schema.json'),resultPath=join(folder,'dialogue.json');
       await writeFile(schemaPath,JSON.stringify(schema),{mode:0o600});
       const disabled=['shell_tool','unified_exec','plugins','remote_plugin','multi_agent','image_generation','memories','hooks'];
+      const transcript=JSON.stringify(context.map(({role,text})=>({role,text})));
       const invocation=run('codex',[
         'exec','--ignore-user-config','--ignore-rules','--skip-git-repo-check','--ephemeral',
         '--sandbox','read-only','--model',model.model,'--color','never',
@@ -88,15 +95,15 @@ function createStreamGenerator({listModels,run=promisify(execFile)}){
         ...(effort?['-c','model_reasoning_effort='+JSON.stringify(effort)]:[]),
         '-c','web_search="disabled"','-c','project_doc_max_bytes=0',
         ...disabled.flatMap(feature=>['--disable',feature]),
-        '--output-schema',schemaPath,'--output-last-message',resultPath,prompt+'\nТема: '+topics[topic]
+        '--output-schema',schemaPath,'--output-last-message',resultPath,
+        prompt+'\nТема эфира: '+topics[topic]+'\nНедавние реплики вымышленного стрима: '+transcript
       ],{cwd:folder,signal,timeout:remaining,killSignal:'SIGKILL',maxBuffer:256000});
       invocation.child?.stdin?.end();
       await invocation;
       const {pairs}=JSON.parse(await readFile(resultPath,'utf8'));
-      if(!Array.isArray(pairs)||pairs.length!==3)return [];
-      const lines=pairs.map(value=>[value?.viewer,value?.eva]);
-      if(!lines.flat().every(line=>typeof line==='string'&&line.trim()&&line.length<=135&&!/[\r\n]/.test(line)))return [];
-      return lines;
+      if(!Array.isArray(pairs)||pairs.length!==linesPerScene||
+         !pairs.every(pair=>validLine(pair?.viewer)&&validLine(pair?.eva)&&moods.includes(pair?.mood)))return [];
+      return pairs.map(({viewer,eva,mood})=>[viewer,eva,mood]);
     }catch{return []}
     finally{
       try{if(folder)await rm(folder,{recursive:true,force:true})}

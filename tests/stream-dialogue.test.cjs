@@ -7,7 +7,8 @@ const {createStreamGenerator}=require('../runtime/codex-mobile/stream-dialogue')
 test('stream chooses the lowest published rate across available model pages',async()=>{
   let directory,stdinClosed=false;
   const pages=[];
-  const lines=Array.from({length:3},(_,i)=>({viewer:'Вопрос '+i,eva:'Ответ '+i}));
+  const context=[{role:'viewer',text:'Почему в кастрюле вилка?',ignored:'this field is outside the transcript'}];
+  const lines=Array.from({length:5},(_,i)=>({viewer:'Вопрос '+i,eva:'Ответ '+i,mood:'wry'}));
   const run=async(program,args,options)=>{
     assert.equal(program,'codex');
     assert.equal(args[args.indexOf('--model')+1],'gpt-6-luna');
@@ -16,6 +17,8 @@ test('stream chooses the lowest published rate across available model pages',asy
     assert(args.includes('--ephemeral')&&args.includes('--ignore-user-config')&&args.includes('shell_tool'));
     assert.match(args.at(-1),/Неожиданный кухонный спор/);
     assert.match(args.at(-1),/Ты Ева, персональная ИИ-помощница/);
+    assert.match(args.at(-1),/Почему в кастрюле вилка\?/);
+    assert.doesNotMatch(args.at(-1),/outside the transcript/);
     directory=options.cwd;
     assert(options.timeout<=35000);
     await writeFile(args[args.indexOf('--output-last-message')+1],JSON.stringify({pairs:lines}));
@@ -30,7 +33,8 @@ test('stream chooses the lowest published rate across available model pages',asy
     run:(...args)=>Object.assign(run(...args),{child:{stdin:{end(){stdinClosed=true}}}})
   });
   assert.deepEqual(await generate('private message'),[]);
-  assert.deepEqual(await generate('kitchen'),lines.map(({viewer,eva})=>[viewer,eva]));
+  assert.deepEqual(await generate('kitchen',undefined,[{role:'user',text:'Не часть эфира'}]),[]);
+  assert.deepEqual(await generate('kitchen',undefined,context),lines.map(({viewer,eva,mood})=>[viewer,eva,mood]));
   assert.deepEqual(pages,[{limit:100},{limit:100,cursor:'page-2'}]);
   assert(stdinClosed);
   await assert.rejects(stat(directory),{code:'ENOENT'});

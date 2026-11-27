@@ -68,7 +68,7 @@ test('a growing stream log stays visible in a tight layout and uses a scrollable
   assert(edge.x+edge.w<=screen.w-8);
 });
 
-test('stream chat retains four latest messages while temporarily hidden and clears between streams',()=>{
+test('stream chat retains a bounded recent history while temporarily hidden and clears between streams',()=>{
   const empty={hidden:false};
   const log={
     children:[],scrollTop:0,clientHeight:48,offsetHeight:48,
@@ -88,9 +88,9 @@ test('stream chat retains four latest messages while temporarily hidden and clea
   const canvas={getBoundingClientRect:()=>({left:0,top:0,width:369,height:812})};
   const chat=createStreamChat(panel,canvas,()=>[]);
   const anchor={x:290,y:396};
-  for(let i=0;i<5;i++)chat.add({id:i*2,text:'сообщение '+i});
+  for(let i=0;i<25;i++)chat.add({id:i,author:i,text:'сообщение '+i});
   assert.deepEqual(log.children.map(item=>item.parts[1].textContent.trim()),
-    ['сообщение 1','сообщение 2','сообщение 3','сообщение 4']);
+    Array.from({length:24},(_,i)=>'сообщение '+(i+1)));
   assert.equal(empty.hidden,true);
   chat.layout(anchor,0);
   assert.equal(panel.hidden,false);
@@ -98,7 +98,7 @@ test('stream chat retains four latest messages while temporarily hidden and clea
   assert.equal(panel.hidden,true);
   chat.layout(anchor,1);
   assert.equal(panel.hidden,false);
-  assert.equal(log.children.length,4);
+  assert.equal(log.children.length,24);
   chat.clear();
   assert.equal(panel.hidden,true);
   assert.equal(log.children.length,0);

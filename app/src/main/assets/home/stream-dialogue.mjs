@@ -1,76 +1,93 @@
-import {gameStream} from './room-dialogue.mjs';
+import {streamScenes} from './stream-scenes.mjs';
 
-const scenes=[
- ['games',gameStream],
- ['kitchen',[
-  ['Чат, можно считать пельмени супом, если не сливать воду?','Можно. Но тогда чай с печеньем тоже уха. Осторожнее с полномочиями.'],
-  ['А если воды мало, а пельменей тридцать?','Это уже общежитие. Одному точно не хватит места.'],
-  ['Поздно, почти вся вода выпарилась.','Сливай патчноуты. Ты приготовил пельмени на пару при помощи паники.']
- ]],
- ['cinema',[
-  ['Какой хоррор ты бы сняла в этой комнате?','В полночь холодильник сам открывается. Утром ты находишь там овощи, которые до сих пор не приготовила.'],
-  ['И как его победить?','Смотреть по датам. Если помидор назовёт тебя по имени, всё, эта глава его.'],
-  ['А сцену после титров оставим?','Да. Оказывается, овощи были на самом деле на завтрак, а мы заказали пиццу.']
- ]],
- ['pets',[
-  ['Кот лёг на клавиатуру и сохранил документ как ЫЫЫЫЫ.','Судя по названию, это его самый честный текст. Сохрани отдельно.'],
-  ['Мне мама сказала, он теперь работает на удалёнке.','Он единственный на вашей удалёнке понял, что созвон можно проспать.'],
-  ['Премию ему в пакетиках выдавать?','Да, оклад в пакетиках. А аренду клавиатуры он и так платит шерстью.']
- ]],
- ['music',[
-  ['Песня заела. Как её выгнать?','Поставь следующую из того же альбома. Двое начнут драться, и ты хотя бы узнаешь припев.'],
-  ['Там на следующей песне семь минут вступления.','Значит, тебе дали время отойти за чаем. Нормальный сервис.'],
-  ['Вернулся с чаем. Вступление всё ещё идёт.','Дай ему печеньку. Может, наконец рот освободится и запоёт.']
- ]],
- ['gadgets',[
-  ['Чат, у меня в доме умная лампа. Думает быстрее меня.','Она умеет ровно два действия и оба откладывает на обновление. Есть чему поучиться.'],
-  ['На кухне чайник тоже умный. Он пищит, пока к нему не подойдёшь.','Нормальный чайник. Ему удалось то, чего будильнику добиться не вышло.'],
-  ['Кажется, они переговорили и оба требуют Wi-Fi.','Отключи интернет. Пусть решают, кто сегодня главный по пару.']
- ]],
- ['gamePitch',[
-  ['Предлагаю игру про голубя, который строит метро.','Хочу уровни. Для начала голубь крадёт у стройки булочку и уходит на обед.'],
-  ['А босс это дед с пакетом семечек?','Это финальный инвестор. Босс — бабушка, которая не верит, что тут вообще копают.'],
-  ['Дополнение назовём «Последний вагон крошек».','Беру. Но DLC только после того, как голубь выйдет из обеда.']
- ]],
- ['streamLife',[
-  ['Чат, какой самый дорогой предмет на стриме?','Пустая кружка. Чая уже нет, а я всё ещё за неё держусь как за ипотеку.'],
-  ['Выстави её на аукцион. Ставлю три печеньки.','Четыре. Ты покупаешь ещё и пятно, которое она оставила на столе.'],
-  ['А если я протру стол сам?','Тогда я продам тебе вторую. Вот так и работает сезонный пропуск.']
- ]]
+const greetings=[
+  'Так, я в эфире. Чат, как слышно?',
+  'Всем сап. Чай поставила, настройки проверила. Сейчас и узнаем, что забыла.',
+  'Чат, заходи. Я место у монитора освободила. Ну, почти.',
+  'О, уже собрались. Ставлю кружку подальше от клавы и начинаем.',
+  'Сап, чат. У кого сегодня есть дурацкая идея? Я тут как раз освободилась.'
 ];
+const speakers=[0,1,2,0,3,1];
+const minimumReplyGap=14000;
+const expressions={
+  amused:[1400,p=>[.009*Math.sin(p*5*Math.PI),.022*Math.sin(p*5*Math.PI)]],
+  surprised:[1100,p=>[.010*Math.cos(p*Math.PI),-.034]],
+  curious:[1600,()=>[.026,.008]],
+  wry:[1300,p=>[-.021,.010*Math.cos(p*Math.PI)]],
+  pleased:[1400,p=>[.008,.027*Math.sin(p*3*Math.PI)]]
+};
+
+export function streamExpression(emotion,elapsed){
+  const expression=expressions[emotion];
+  if(!expression||elapsed<=0||elapsed>=expression[0])return null;
+  const phase=elapsed/expression[0],weight=Math.sin(Math.PI*phase)**2;
+  const [x,y]=expression[1](phase);
+  return {x:x*weight,y:y*weight};
+}
 
 export function createStreamDialogue(visit,random=Math.random){
-  let sceneIndex=visit,pairs,index=0,id=0,due=delay(),pending=null;
-  function delay(){return 10000+Math.floor(random()*20001)}
-  function load(){
-    const [topic,lines]=scenes[sceneIndex++%scenes.length];
-    if(topic!=='games')return {topic,lines};
-    const start=visit*7%lines.length;
-    return {topic,lines:Array.from({length:3},(_,i)=>lines[(start+i)%lines.length])};
+  let sceneIndex=visit*9,sceneSerial=-1,scene,index,id=0,viewerCount=0;
+  let due=delay(),reply=null,lastReply=-5000,lastReaction=-Infinity,unanswered=0;
+  let pending=null,requestTopic,requests=0,lastRequest=-Infinity;
+  const recent=[];
+
+  function delay(){return 3000+Math.floor(random()*7001)}
+  function openScene(){
+    sceneSerial++;
+    if(pending){
+      scene=pending;pending=null;
+    }else{
+      const [topic,lines]=streamScenes[sceneIndex++%streamScenes.length];
+      scene={topic,lines};
+    }
+    index=0;
   }
-  // The first stream opens with the game. Ask the model for the following topic.
-  const initial=load(),generationTopic=scenes[sceneIndex%scenes.length][0];
-  pairs=initial.lines;
+  function remember(role,text){
+    recent.push({role,text});
+    if(recent.length>5)recent.shift();
+  }
+  openScene();
+
   return {
-    topic:generationTopic,
-    addGenerated(lines){
-      if(Array.isArray(lines)&&lines.length===3&&lines.every(pair=>
-        Array.isArray(pair)&&pair.length===2&&pair.every(text=>typeof text==='string'&&text.trim()&&text.length<=135))){
-        pending=lines;
-      }
+    greeting:greetings[visit%greetings.length],
+    takeGeneration(elapsed,remaining){
+      if(requests>=2||viewerCount<4||elapsed<12000||elapsed-lastRequest<80000||remaining<45000||pending)return null;
+      lastRequest=elapsed;requests++;requestTopic=scene.topic;
+      return {topic:requestTopic,context:recent.slice()};
     },
-    next(elapsed){
-      if(elapsed<due)return null;
-      if(index>=pairs.length*2){
-        const next=load();
-        pairs=pending??next.lines;
-        pending=null;
-        index=0;
+    addGenerated(lines){
+      if(!requestTopic||!Array.isArray(lines)||lines.length!==5||!lines.every(line=>
+        Array.isArray(line)&&line.length===3&&line.slice(0,2).every(text=>
+          typeof text==='string'&&text.trim()&&text.length<=135&&!/[\r\n]/.test(text))&&
+          Object.hasOwn(expressions,line[2])))return;
+      pending={topic:requestTopic,lines,priorityReply:true};
+      requestTopic=null;
+    },
+    next(elapsed,canReact=true){
+      if(reply&&elapsed>=reply.at){
+        const queued=reply;reply=null;
+        if(elapsed<due&&canReact){
+          lastReply=lastReaction=elapsed;unanswered=0;scene.priorityReply=false;
+          remember('eva',queued.text);
+          return {id:id++,chat:false,text:queued.text,emotion:queued.emotion,respondsTo:queued.respondsTo};
+        }
       }
-      const part=index%2;
-      const cue={id:id++,chat:part===0,text:pairs[Math.floor(index/2)][part]};
-      index++;
+      if(elapsed<due)return null;
+      reply=null;
+      if(index>=scene.lines.length)openScene();
+      const [text,candidate,emotion]=scene.lines[index];
+      const author=visit*7+sceneSerial*5+speakers[index%speakers.length];
+      const cue={id:id++,chat:true,text,author};
+      index++;viewerCount++;unanswered++;
+      remember('viewer',text);
       due=elapsed+delay();
+      if(canReact&&candidate&&elapsed-lastReply>=minimumReplyGap&&
+          (scene.priorityReply||unanswered>=3||random()<.48)){
+        reply={at:elapsed+1200+Math.floor(random()*801),text:candidate,emotion,respondsTo:cue.id};
+      }else if(canReact&&emotion&&elapsed-lastReaction>=4200){
+        cue.emotion=emotion;
+        lastReaction=elapsed;
+      }
       return cue;
     }
   };
