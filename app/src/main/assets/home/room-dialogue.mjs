@@ -1,4 +1,4 @@
-const stream=[
+export const gameStream=[
  ['Сап, чат. Что за игра?','Прыгаю по крышам. Падать пока получается стабильнее.'],
  ['F за предыдущую крышу.','Она была хорошей крышей. Это я была плохим пассажиром.'],
  ['Прыжок имба. Клавиша небось сама нажалась Kappa','Ага, клавиатура тащит. Я тут чисто кружку держу.'],
@@ -77,13 +77,6 @@ export function roomDialogue(key,category,elapsed,visit){
  const since=elapsed-14000;
  if(since<0)return null;
  const slot=Math.floor(since/23000),phase=since%23000;
- if(key==='computer'){
-   // One broadcast has room for up to 13 pairs. Advance past them on the next visit.
-   const pair=stream[(slot+visit*13)%stream.length];
-   if(phase<3500)return {id:slot*2,chat:true,text:pair[0]};
-   if(phase>=6500&&phase<10000)return {id:slot*2+1,chat:false,text:pair[1]};
-   return null;
- }
  if(phase>=3400||(key==='nap'||key==='sleep')&&slot>1)return null;
  const lines=[...(byActivity[key]??[]),...(common[category]??[])];
  if(!lines.length)return null;

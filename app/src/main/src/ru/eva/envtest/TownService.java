@@ -8,9 +8,12 @@ import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class TownService extends Service {
  private final ExecutorService io=Executors.newSingleThreadExecutor();
+ private final ExecutorService streamIo=Executors.newSingleThreadExecutor();
+ private final AtomicBoolean generatingStream=new AtomicBoolean();
  private volatile CodexService owner;
  private boolean bound,home;
  private final TownVoice voice=new TownVoice(this);
@@ -26,23 +29,27 @@ public final class TownService extends Service {
  }
  public IBinder onBind(Intent i){home=true;return incoming.getBinder();}
  public boolean onUnbind(Intent i){voice.stop();home=false;return false;}
- public void onDestroy(){voice.destroy();home=false;if(bound)unbindService(connection);io.shutdownNow();super.onDestroy();}
+ public void onDestroy(){voice.destroy();home=false;if(bound)unbindService(connection);io.shutdownNow();streamIo.shutdownNow();super.onDestroy();}
  private final Messenger incoming=new Messenger(new Handler(Looper.getMainLooper(),m->{
   final Messenger reply=m.replyTo;final String request=m.getData().getString("json","");
+  final JSONObject input;
+  final String op;
   if(reply==null||request.length()>160000)return true;
   try{
-   JSONObject o=new JSONObject(request);String op=o.optString("op");
-   if("synthesize".equals(op)){if(home)voice.speak(o,reply);return true;}
-   if("stopVoice".equals(op)){voice.stop(o.optString("id"));return true;}
+   input=new JSONObject(request);op=input.optString("op");
+   if("synthesize".equals(op)){if(home)voice.speak(input,reply);return true;}
+   if("stopVoice".equals(op)){voice.stop(input.optString("id"));return true;}
   }catch(JSONException ignored){return true;}
-  io.execute(()->{
-   JSONObject response=new JSONObject();String op="";
+  boolean stream="stream".equals(op);
+  if(!stream&&!op.matches("state|send|read"))return true;
+  if(stream&&!generatingStream.compareAndSet(false,true))return true;
+  (stream?streamIo:io).execute(()->{
+   JSONObject response=new JSONObject();
    try{
-    JSONObject o=new JSONObject(request);op=o.getString("op");
-    if(!op.matches("state|send|read"))throw new IOException();
-    if(!op.equals("state"))awaitRuntime();
-    response=post(o);
+    if(!stream&&!op.equals("state"))awaitRuntime();
+    response=post(input,stream?"/stream-dialogue":"/town");
    }catch(Exception e){try{response.put("error","Чат ещё не на связи. Попробуй через пару секунд.");}catch(JSONException ignored){}}
+   finally{if(stream)generatingStream.set(false);}
    try{response.put("op",op);Message back=Message.obtain();Bundle b=new Bundle();b.putString("json",response.toString());back.setData(b);reply.send(back);}catch(Exception ignored){}
   });return true;
  }));
@@ -62,8 +69,9 @@ public final class TownService extends Service {
   c.setInstanceFollowRedirects(false);c.setConnectTimeout(1800);c.setReadTimeout(20000);c.setRequestMethod("POST");c.setDoOutput(true);
   c.setRequestProperty("X-Codex-Token",u.getRef());c.setRequestProperty("Content-Type","application/json");return c;
  }
- private JSONObject post(JSONObject request)throws Exception{
-  HttpURLConnection c=local("/town");
+ private JSONObject post(JSONObject request,String path)throws Exception{
+  HttpURLConnection c=local(path);
+  if("/stream-dialogue".equals(path))c.setReadTimeout(40000);
   try{
    try(OutputStream out=c.getOutputStream()){out.write(request.toString().getBytes(StandardCharsets.UTF_8));}
    try(InputStream in=c.getResponseCode()<400?c.getInputStream():c.getErrorStream();ByteArrayOutputStream bytes=new ByteArrayOutputStream()){

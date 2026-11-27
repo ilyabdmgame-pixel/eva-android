@@ -4,6 +4,7 @@ const {codexInstructions, createPersonaRpc}=require('./persona');
 const runtimeHome=process.env.EVA_RUNTIME_HOME||'/root';
 const workshopDir=path.join(__dirname,'../eva-workshop');
 const tasks=require('./tasks'), providers=require('./providers'), notes=require('./notes');
+const generateStream=require('./stream-dialogue').createStreamGenerator();
 const chatBackup=require('./chat-backup').createBackupManager();
 const draftsFile=process.env.CODEX_DRAFTS_FILE||path.join(__dirname,'drafts.json');
 const token=crypto.randomBytes(24).toString('hex'), clients=new Set(), pending=new Map(), pendingClientRequests=new Map(); let seq=0, ready=false;
@@ -117,6 +118,15 @@ if(req.method==='POST'&&u.pathname==='/town'){
  const result=await townChat.run(request);
  if(request.op==='state')result.week=ready&&auth.authenticated?accountLimits.week():null;
  return json(res,200,result);
+}
+if(req.method==='POST'&&u.pathname==='/stream-dialogue'){
+ const {id,topic}=JSON.parse((await read(req,1024)).toString());
+ if(typeof id!=='string'||!/^[a-z0-9-]{1,50}$/.test(id)||typeof topic!=='string')return json(res,400,{});
+ if(!ready||!auth.authenticated)return json(res,200,{id,pairs:[]});
+ const controller=new AbortController();
+ res.once('close',()=>{if(!res.writableEnded)controller.abort()});
+ const pairs=await generateStream(topic,controller.signal);
+ return json(res,200,{id,pairs});
 }
 if(req.method==='GET'&&u.pathname==='/pet-work')return json(res,200,{cards:petWork.list()});
 if(req.method==='POST'&&u.pathname==='/pet-work/read'){const o=JSON.parse((await read(req,2048)).toString());petWork.read(o.thread,o.turn,o.request);return json(res,200,{ok:true})}

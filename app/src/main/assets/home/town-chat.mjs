@@ -1,4 +1,4 @@
-export function townChat({note,quip,world,apply,usage}){
+export function townChat({note,quip,world,apply,usage,stream}){
  const form=document.getElementById('town-compose'),input=form.querySelector('input'),
  mic=form.querySelector('[data-mic]'),send=form.querySelector('[type=submit]'),
  mark=document.getElementById('town-mark'),bubble=document.getElementById('town-answer'),
@@ -98,6 +98,7 @@ export function townChat({note,quip,world,apply,usage}){
   layout();
  }
  function update(data){
+  if(data.op==='stream'){stream?.(data);return;}
   if('week' in data)usage?.(data.week);
   if(data.op==='state'&&!data.error){
    const {voiceName,rate=1,pitch=.7,accent,yo}=data;

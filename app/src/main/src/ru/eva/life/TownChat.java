@@ -61,9 +61,9 @@ final class TownChat {
  void request(String raw){
   try{
    JSONObject o=new JSONObject(raw);String op=o.getString("op");
-   if(!active||!op.matches("state|read|send|synthesize|stopVoice"))return;
+   if(!active||!op.matches("state|read|send|synthesize|stopVoice|stream"))return;
    if(channel==null){
-    if(op.equals("stopVoice"))return;
+    if(op.equals("stopVoice")||op.equals("stream"))return;
     boolean state=op.equals("state");
     if(state&&!o.optBoolean("activate")&&!CodexService.running())return;
     bind();

@@ -33,7 +33,9 @@ import {names as activityNames,lines as activityLines,prepareSound,sound} from '
 import {townChat} from './town-chat.mjs';
 import {roomWalk} from './room-walk.mjs';
 import {roomDialogue} from './room-dialogue.mjs';
-const town=townChat({world:worldSnapshot,apply:useNearby,note:statusNote,quip:()=>say(remark('touch'),'wry'),usage:publishWeeklyQuota});
+import {createStreamDialogue} from './stream-dialogue.mjs';
+const town=townChat({world:worldSnapshot,apply:useNearby,note:statusNote,quip:()=>say(remark('touch'),'wry'),
+ usage:publishWeeklyQuota,stream:applyStreamDialogue});
 const canvas=$('scene');
 const EVA_ID=15;
 const paintWindow=windowWeather(()=>{dirty=true;wake();});
@@ -373,7 +375,7 @@ function startRoomActivity(key,automatic=false,fromChat=false){
    return;
  }
  const target=seat?[seat.stand.u,seat.stand.v]:fixture?around(fixture):[spot.u,spot.v];
- const state={key,definition,fixture,started:false,startedAt:null,plan:activityPlan(definition),fromChat};
+ const state={key,definition,fixture,started:false,startedAt:null,plan:activityPlan(definition),fromChat,automatic};
  roomActivity=state;
  walkTo(...target,()=>{
    if(roomActivity!==state)return;
@@ -426,6 +428,10 @@ function finishRoomActivity(state){
  if(state.fromChat)Desk.worldResult?.('Выполнено: '+definition.title);
  storage();dirty=true;
 }
+function applyStreamDialogue(data){
+ const state=roomActivity;
+ if(state?.streamRequest===data.id&&data.id)state.dialogue?.addGenerated(data.pairs);
+}
 function advanceRoomActivity(){
  const state=roomActivity;
  if(!state?.started||seated&&restMotion&&!seatSample(restMotion,now(),reduceMotion).complete)return;
@@ -433,6 +439,11 @@ function advanceRoomActivity(){
  if(state.startedAt===null){
    state.startedAt=time;
    if(state.key==='computer'){
+     state.dialogue=createStreamDialogue(saved.roomActivityCounts.computer||0);
+     if(!state.automatic&&localStorage.getItem('lunaStream')==='yes'){
+       state.streamRequest=time.toString(36)+'-'+Math.random().toString(36).slice(2);
+       Desk.town?.(JSON.stringify({op:'stream',id:state.streamRequest,topic:state.dialogue.topic}));
+     }
      say('Так, я в эфире. Чат, как слышно?','pleased');
      sound(state.definition.sound);
    }
@@ -440,7 +451,8 @@ function advanceRoomActivity(){
  const elapsed=Math.max(0,time-state.startedAt);
  if(elapsed>=state.plan.duration){finishRoomActivity(state);return;}
  if(state.plan.duration-elapsed>10000&&!town.composing&&!town.playing){
-   const cue=roomDialogue(state.key,state.definition.category,elapsed,saved.roomActivityCounts[state.key]||0);
+   const cue=state.dialogue?state.dialogue.next(elapsed):
+     roomDialogue(state.key,state.definition.category,elapsed,saved.roomActivityCounts[state.key]||0);
    if(cue&&state.lastCue!==cue.id){
      state.lastCue=cue.id;
      if(cue.chat){streamChat.add(cue);dirty=true;}
@@ -1364,6 +1376,12 @@ function openRoom(){
  }));
  out.append(label('Обстановка','Размер комнаты и мебель','⌂',openFurnishing));
  out.append(label('Занятия','Уборка, готовка, творчество и отдых','◇',()=>openRoomActivities()));
+ const luna=localStorage.getItem('lunaStream')==='yes';
+ const streamOption=label('GPT-6 Luna в чате стрима',
+   luna?'Включена для стримов, которые ты запускаешь':'Выключена · при включении используется лимит Codex','◇',()=>{
+     localStorage.setItem('lunaStream',luna?'no':'yes');openRoom();
+   });
+ streamOption.setAttribute('aria-pressed',String(luna));out.append(streamOption);
  out.append(label('Распорядок дня','','◷',()=>{
    const panel=showSheet('schedules','Распорядок Евы');
    const current=currentEntry(Date.now());
