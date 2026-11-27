@@ -196,10 +196,14 @@ export function drawComputerArms(renderer,actor,fixture,gesture,id=0){
    const a=vec(shoulder),b=vec(elbow),c=vec(hand);
    const upper=unit(sub(b,a)),forearm=unit(sub(c,b));
    const joint=unit(add(upper,forearm));
+   const beforeElbow=sub(b,scale(upper,.045));
+   const afterElbow=add(b,scale(forearm,.045));
    const cuffAt=sub(c,scale(forearm,.019));
    const elbowNormal=unit(cross(upper,forearm));
-   tube([a,b,cuffAt,c],[upper,joint,forearm,forearm],elbowNormal,
-     [[.053,.049],[.040,.039],[.032,.029],[.026,.024]],[sleeve,sleeve,cuff]);
+   tube([a,beforeElbow,b,afterElbow,cuffAt,c],
+     [upper,upper,joint,forearm,forearm,forearm],elbowNormal,
+     [[.053,.049],[.043,.042],[.041,.040],[.039,.036],[.032,.029],[.026,.024]],
+     [sleeve,sleeve,sleeve,sleeve,cuff]);
    const pitch=-.27-.06*mouse-.10*bend;
    const fingerAxis=unit(fixture.turned?[-1,.04,pitch]:[.04,-1,pitch]);
    const relaxed=unit(add(scale(forearm,1-reach),scale(fingerAxis,reach)));

@@ -206,9 +206,8 @@ public final class Home extends Activity {
         @JavascriptInterface public String apps(){synchronized(entries){return catalog;}}
         @JavascriptInterface public void openRecentApps(){runOnUiThread(()->{
             if(!homeActive||!hasWindowFocus())return;
-            if(!EvaAccessibility.openRecentApps()){
-                Toast.makeText(Home.this,"Смахни от нижнего края и задержи палец",Toast.LENGTH_SHORT).show();
-            }
+            if(EvaAccessibility.openRecentApps())scene.postDelayed(Home.this::showRecentAppsHint,650);
+            else showRecentAppsHint();
         });}
         @JavascriptInterface public void open(String key){if(find(key)!=null)launch(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(ComponentName.unflattenFromString(key)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED));}
         @JavascriptInterface public boolean bootEnabled(){return getSharedPreferences("theme",0).getBoolean("boot",true);}
@@ -228,6 +227,11 @@ public final class Home extends Activity {
         }
         @JavascriptInterface public void chooseHome(){launch(new Intent(Settings.ACTION_HOME_SETTINGS));}
         @JavascriptInterface public void eva(){launch(new Intent(Home.this,ru.eva.envtest.MainActivity.class));}
+    }
+    private void showRecentAppsHint(){
+        if(homeActive&&hasWindowFocus()){
+            Toast.makeText(this,"Смахни от нижнего края и задержи палец",Toast.LENGTH_SHORT).show();
+        }
     }
     public void onCreate(Bundle b){
         super.onCreate(b);getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);getWindow().setStatusBarColor(0x00000000);getWindow().setNavigationBarColor(0x00000000);
