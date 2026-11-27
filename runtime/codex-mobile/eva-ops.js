@@ -18,7 +18,7 @@ const operations={
   ...Object.fromEntries(Object.entries(phoneTools).map(([name,[,actions]])=>[name,actions.split(' ')])),
   server:['list','uptime','disk','memory','services','status','logs','restart'],
   github:['status','diff','log','branches','fetch','pull','push','checks'],
-  project:['check','build','audit','install-check','install']
+  project:['check','build','audit','compare','install-check','install']
 };
 const descriptions={
  phone:'Действия Android через приложение Ева',adb:'Отладка сопряжённого телефона',
@@ -90,9 +90,10 @@ function buildPlan(config,group,action,params){
     if(config.buildProfile)return command(config.python||'python3',['tools/build_offline.py','--profile',config.buildProfile],{cwd});
     return command(config.gradle||'gradle',[':app:assembleDebug'],{cwd});
   }
-  argCount(params,1);
-  const apk=path.resolve(params[0]);
+  argCount(params,action==='compare'?2:1);
+  const apk=path.resolve(params.at(-1));
   const installArgs=action==='audit'?['tools/audit_apk.py',apk]:['tools/install_apk.py',apk];
+  if(action==='compare')installArgs.push('--previous',path.resolve(params[0]));
   if(action==='install-check')installArgs.push('--check');
   if(action!=='audit'&&config.applicationId)installArgs.push('--package',config.applicationId);
   if(action!=='audit'){
@@ -130,7 +131,7 @@ function help(){
   return ['node eva-ops.js <группа> <операция> [аргументы]',''].concat(Object.entries(operations).map(([key,verbs])=>
     key+' — '+descriptions[key]+'\n  '+verbs.join(' · ')),['',
     'server list [профиль] · server status|logs|restart <профиль> <служба>','server uptime|disk|memory|services <профиль>',
-    'project audit|install-check|install <APK>','phone photo front|back · adb key back|home|recent|enter',
+    'project audit|install-check|install <APK> · project compare <прежний APK> <новый APK>','phone photo front|back · adb key back|home|recent|enter',
     'Список в JSON: list --json. Аргументы с пробелами передавай одной строкой.']).join('\n');
 }
 async function main(argv){

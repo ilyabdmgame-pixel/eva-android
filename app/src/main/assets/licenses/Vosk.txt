@@ -5,3 +5,7 @@ License: Apache License, Version 2.0 (Apache-2.0.txt)
 Publisher catalog: https://alphacephei.com/vosk/models/model-list.json
 Original ZIP: 46236750 bytes, MD5 d1759dc83eb8fd87850129afbd9f4b7b
 SHA-256: 961d5ff98a17f4aa6de69864d0aa71fa5bac682301d2b5d17a3f24c5c99a46d4
+
+Vosk Android 0.3.75, Alpha Cephei, Apache License 2.0
+https://repo.maven.apache.org/maven2/com/alphacephei/vosk-android/0.3.75/vosk-android-0.3.75.pom
+Vosk Android includes Java Native Access (JNA) 5.18.1. This distribution uses its Apache License 2.0 option. See JNA-LICENSE.txt and Apache-2.0.txt.

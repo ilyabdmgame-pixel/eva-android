@@ -77,7 +77,7 @@ async function startCodex(home, baseUrl, t, installPersona = true) {
       const timer = setTimeout(() => {
         pending.delete(key);
         reject(new Error('Codex timeout: ' + key + '\n' + stderr));
-      }, 7000);
+      }, 30000); // A cold app-server can take several seconds to start on ARM64.
       const finish = callback => result => { clearTimeout(timer); pending.delete(key); callback(result); };
       pending.set(key, { resolve: finish(resolve), reject: finish(reject) });
       if (send) send();

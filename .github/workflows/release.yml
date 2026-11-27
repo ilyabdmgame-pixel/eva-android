@@ -1,0 +1,132 @@
+name: Public Android release
+
+on:
+  push:
+    tags:
+      - 'candidate-*'
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eva-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    if: startsWith(github.ref, 'refs/tags/candidate-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+          cache-read-only: true
+      - name: Install Android SDK and native reproducibility tool
+        run: |
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y llvm-15
+      - name: Verify detached signatures on a disposable real APK
+        run: |
+          sdk_tools="$ANDROID_HOME/build-tools/35.0.0"
+          python3 tools/distribution/check_signing.py --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" --aapt2 "$sdk_tools/aapt2" --apksigner-jar "$sdk_tools/lib/apksigner.jar"
+      - name: Build fresh, hash-pinned public runtime and speech model
+        run: |
+          set -euo pipefail
+          mkdir -p local-runtime
+          python3 tools/prepare_public_rootfs.py --output local-runtime/rootfs.pack --cache "$RUNNER_TEMP/eva-debian"
+          python3 tools/native_provenance.py fetch local-runtime --llvm-strip llvm-strip-15 --cache "$RUNNER_TEMP/eva-native"
+          curl --fail --location --retry 4 --output local-runtime/vosk-ru-small.zip https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
+          echo '961d5ff98a17f4aa6de69864d0aa71fa5bac682301d2b5d17a3f24c5c99a46d4  local-runtime/vosk-ru-small.zip' | sha256sum --check --strict
+      - name: Compile, align and audit the unsigned release APK
+        run: |
+          set -euo pipefail
+          gradle --no-daemon :app:assembleRelease
+          mkdir -p candidate
+          sdk_tools="$ANDROID_HOME/build-tools/35.0.0"
+          "$sdk_tools/zipalign" -P 16 -f 4 app/build/outputs/apk/release/app-release-unsigned.apk candidate/Eva-unsigned.apk
+          "$sdk_tools/zipalign" -c -P 16 4 candidate/Eva-unsigned.apk
+          python3 tools/audit_apk.py candidate/Eva-unsigned.apk
+          python3 tools/native_provenance.py verify candidate/Eva-unsigned.apk
+          python3 tools/distribution/release.py candidate candidate --tag "$GITHUB_REF_NAME" --commit "$(git rev-parse HEAD)" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Store candidate for local signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: eva-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: candidate/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 60
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind the release tag and public signature to the original source
+        id: receipt
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/receipt.env"
+          python3 tools/distribution/release.py info --tag "$GITHUB_REF_NAME" > "$receipt"
+          source "$receipt"
+          test "$(git rev-parse --verify "refs/tags/${candidate_tag}^{commit}")" = "$source_commit"
+          git merge-base --is-ancestor "$source_commit" HEAD
+          receipt_path="tools/distribution/receipts/$GITHUB_REF_NAME.json"
+          if git cat-file -e "${source_commit}:$receipt_path" 2>/dev/null; then exit 1; fi
+          test "$(git diff --name-only "$source_commit" HEAD)" = "$receipt_path"
+          cat "$receipt" >> "$GITHUB_OUTPUT"
+      - name: Verify an already-published release
+        id: existing
+        env:
+          SIGNED_SHA: ${{ steps.receipt.outputs.signed_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/distribution/github_release.py status "$GITHUB_REF_NAME" "$SIGNED_SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v4
+        if: steps.existing.outputs.complete != 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Restore the exact local signature and verify the APK
+        if: steps.existing.outputs.complete != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ steps.receipt.outputs.run_id }}
+          CANDIDATE_ATTEMPT: ${{ steps.receipt.outputs.run_attempt }}
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;35.0.0'
+          sdk_tools="$ANDROID_HOME/build-tools/35.0.0"
+          python3 tools/distribution/fetch_candidate.py "$GITHUB_REPOSITORY" "$CANDIDATE_RUN" "$RUNNER_TEMP/candidate" --attempt "$CANDIDATE_ATTEMPT"
+          mkdir -p "$RUNNER_TEMP/eva-release"
+          apk="$RUNNER_TEMP/eva-release/Eva-${GITHUB_REF_NAME#v}-arm64.apk"
+          python3 tools/distribution/release.py restore "$RUNNER_TEMP/candidate" --apksigner-jar "$sdk_tools/lib/apksigner.jar" --output "$apk"
+          "$sdk_tools/zipalign" -c -P 16 4 "$apk"
+      - name: Prepare corresponding source archives, licenses and checksum manifest
+        if: steps.existing.outputs.complete != 'true'
+        run: python3 tools/distribution/source_archives.py "$RUNNER_TEMP/eva-release" --cache "$RUNNER_TEMP/eva-source-cache"
+      - name: Upload, verify every asset, and publish
+        if: steps.existing.outputs.complete != 'true'
+        env:
+          SIGNED_SHA: ${{ steps.receipt.outputs.signed_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/distribution/github_release.py publish "$GITHUB_REF_NAME" "$SIGNED_SHA" "$RUNNER_TEMP/eva-release"

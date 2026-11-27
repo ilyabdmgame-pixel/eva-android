@@ -8,7 +8,7 @@ const {promisify}=require('node:util');
 const {persona}=require('./persona');
 
 const topics={
-  games:'Игра про прыжки по крышам и жука-босса',
+  games:'Платформер про прыжки по крышам, жуков и сбор фонариков',
   kitchen:'Неожиданный кухонный спор',
   cinema:'Кино и безумный сюжет для фильма',
   pets:'Что творят питомцы, пока идёт стрим',

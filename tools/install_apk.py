@@ -41,19 +41,24 @@ def check_update(adb, args, package, version, candidate_signers, paths):
     with tempfile.TemporaryDirectory(prefix="eva-apk-") as directory:
         installed = Path(directory) / "installed.apk"
         run([*adb, "pull", base, str(installed)])
-        installed_package, installed_version = apk_info(args.aapt, installed)
-        if installed_package != package:
-            raise ValueError("Installed APK package does not match")
-        if installed_version > version:
-            raise ValueError(f"Installed version {installed_version} is newer than {version}")
-        if apk_signers(args.apksigner, installed) != candidate_signers:
-            raise ValueError("Signing certificate mismatch. Keep the installed app and its data.")
-        return installed_version
+        return compare_previous(args, package, version, candidate_signers, installed)
+
+
+def compare_previous(args, package, version, candidate_signers, installed):
+    installed_package, installed_version = apk_info(args.aapt, installed)
+    if installed_package != package:
+        raise ValueError("Installed APK package does not match")
+    if installed_version > version:
+        raise ValueError(f"Installed version {installed_version} is newer than {version}")
+    if apk_signers(args.apksigner, installed) != candidate_signers:
+        raise ValueError("Signing certificate mismatch. Keep the installed app and its data.")
+    return installed_version
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("apk", type=Path)
+    parser.add_argument("--previous", type=Path, help="compare a previous APK offline and exit")
     parser.add_argument("--package", default="org.evaassistant.app", help="expected Android application ID")
     parser.add_argument("--serial", help="ADB device serial, if multiple devices are connected")
     parser.add_argument("--check", action="store_true", help="check the build and device without installing")
@@ -66,6 +71,10 @@ def main():
     if package != args.package:
         raise ValueError(f"Expected {args.package}, got {package}")
     signers = apk_signers(args.apksigner, apk)
+    if args.previous:
+        old = compare_previous(args, package, version, signers, args.previous)
+        print(f"{package}: matching certificate, compatible version {old} -> {version}")
+        return
     adb = [args.adb, *["-s", args.serial]] if args.serial else [args.adb]
     if run([*adb, "get-state"]) != "device":
         raise ValueError("No authorized ADB device")

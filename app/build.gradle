@@ -34,7 +34,12 @@ android {
     }
 
     packagingOptions {
-        jniLibs { useLegacyPackaging = true }
+        jniLibs {
+            useLegacyPackaging = true
+            // Public upstream digests apply to these four already-stripped runtime files.
+            keepDebugSymbols += ['**/libproot.so', '**/libproot-loader.so',
+                                 '**/libtalloc.so', '**/libandroid-shmem.so']
+        }
     }
     androidResources { noCompress += ['pack'] }
 }
