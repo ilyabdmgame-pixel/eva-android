@@ -1198,11 +1198,20 @@ function paint(t=now()){
  }
  speechLayer.hidden=Boolean(sheet);
  speech.layout(speechAnchors,canvas);
- if(stream&&!sheet&&!layout&&!town.composing){
-   const monitor=project(view,computerLayout(playing.fixture)(.795,.180,.365));
-   streamChat.layout({x:monitor.x*view.cssWidth/view.width,y:monitor.y*view.cssHeight/view.height},t);
- }else streamChat.hide();
  const anchor=speechAnchors.get(EVA_ID);
+ if(stream&&!sheet&&!layout&&!town.composing){
+   const xScale=view.cssWidth/view.width,yScale=view.cssHeight/view.height;
+   const monitor=project(view,computerLayout(playing.fixture)(.795,.180,.365));
+   let figure;
+   if(anchor){
+     const floor=project(view,{...at,z:surfaceAt(at.u,at.v)});
+     const floorX=floor.x*xScale,height=Math.max(0,floor.y*yScale-anchor.y);
+     const padding=Math.max(14,height*.4);
+     figure={x:Math.min(anchor.x,floorX)-padding,y:anchor.y-padding/2,
+       w:Math.abs(anchor.x-floorX)+2*padding,h:height+padding};
+   }
+   streamChat.layout({x:monitor.x*xScale,y:monitor.y*yScale},t,figure);
+ }else streamChat.hide();
  if(anchor)anchor.feetY=project(view,at).y*view.cssHeight/view.height;
  town.anchor(anchor,sheet);
 }

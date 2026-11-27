@@ -46,6 +46,9 @@ test('stream chat stays near the monitor and moves below it if shortcuts occupy 
   assert.equal(streamChatPosition(monitor,size,screen,[{x:0,y:0,...screen}]),null);
   const moved=streamChatPosition({x:20,y:750},size,screen,[]);
   assert(moved.x>=8&&moved.y+moved.h<=screen.h-8);
+  const eva={x:240,y:403,w:51,h:67};
+  const nearSeatedEva=streamChatPosition(monitor,size,screen,[{x:0,y:0,w:369,h:395}],eva);
+  assert(nearSeatedEva.x+size.w<=eva.x);
 });
 
 test('stream chat retains four latest messages while temporarily hidden and clears between streams',()=>{

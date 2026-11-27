@@ -13,10 +13,12 @@ const gap=8;
 const overlap=(a,b)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 
-export function streamChatPosition(anchor,size,screen,obstacles){
+export function streamChatPosition(anchor,size,screen,obstacles,figure){
   const {x,y}=anchor,{w,h}=size;
   if(w+2*gap>screen.w||h+2*gap>screen.h||x<0||x>screen.w||y<0||y>screen.h)return null;
-  const left=x-w-gap,right=x+gap,above=y-h-gap,below=y+gap;
+  const left=Math.min(x,figure?.x??x)-w-gap;
+  const right=Math.max(x,figure?figure.x+figure.w:x)+gap;
+  const above=y-h-gap,below=y+gap;
   const candidates=[
     [left,above],[right,above],[x-w/2,above],
     [left,y-h/2],[right,y-h/2],
@@ -25,6 +27,7 @@ export function streamChatPosition(anchor,size,screen,obstacles){
   for(const [column,row] of candidates){
     const box={x:clamp(column,gap,screen.w-w-gap),y:clamp(row,gap,screen.h-h-gap),w,h};
     if(box.x<=x&&box.x+w>=x&&box.y<=y&&box.y+h>=y)continue;
+    if(figure&&overlap(box,figure))continue;
     if(!obstacles.some(obstacle=>overlap(box,obstacle)))return box;
   }
   return null;
@@ -60,7 +63,7 @@ export function createStreamChat(panel,canvas,protectedElements){
     followLatest=true;
   }
 
-  function layout(anchor,time){
+  function layout(anchor,time,figure){
     if(!anchor){hide();return}
     if(time-lastCheck<150)return;
     lastCheck=time;
@@ -73,7 +76,7 @@ export function createStreamChat(panel,canvas,protectedElements){
       });
     }
     const position=streamChatPosition(anchor,{w:panel.offsetWidth,h:panel.offsetHeight},
-      {w:viewport.width,h:viewport.height},obstacles);
+      {w:viewport.width,h:viewport.height},obstacles,figure);
     if(!position){panel.hidden=true;return}
     const transform=`translate(${position.x}px, ${position.y}px)`;
     if(panel.style.transform!==transform)panel.style.transform=transform;
