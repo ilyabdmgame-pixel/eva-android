@@ -293,12 +293,17 @@ public final class Home extends Activity {
     protected void onResume(){
         super.onResume();homeActive=true;chat.resume();
         if(web==null&&recovery==null)createRoomView();
-        if(web!=null){web.onResume();web.evaluateJavascript("window.setHomeActive?.(true)",null);}
+        if(web!=null){web.onResume();web.evaluateJavascript("window.setHomeActive?.(true,true)",null);}
         refresh();
     }
     protected void onPostResume(){super.onPostResume();LifeService.updateSchedule(this);}
     @Override public void onWindowFocusChanged(boolean focused){
         super.onWindowFocusChanged(focused);
+        if(focused&&web!=null){
+            homeActive=true;
+            web.onResume();
+            web.evaluateJavascript("window.setHomeActive?.(true,true)",null);
+        }
         if(focused&&Build.VERSION.SDK_INT>=30){
             android.view.WindowInsetsController controller=getWindow().getInsetsController();
             if(controller!=null)controller.show(android.view.WindowInsets.Type.navigationBars());

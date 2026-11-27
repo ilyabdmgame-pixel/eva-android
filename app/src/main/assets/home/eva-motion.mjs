@@ -55,7 +55,7 @@ const smooth=t=>{const x=Math.max(0,Math.min(1,t));return x*x*(3-2*x);};
 function normalizeBody(point,body){
  if(!body||body.width===body.reference)return point;
  const [x,y]=point,[u,v]=body.hip;
- const scale=1+(body.reference/body.width-1)*smooth((v-y)/(v-body.neck));
+ const scale=body.reference/body.width;
  return [u+(x-u)*scale,v+(y-v)*scale];
 }
 
@@ -76,7 +76,11 @@ export function registeredPose(pose,amount){
    crown:{from:heads[columns[source]],to:target(heads[columns[start]],heads[columns[end]])}
  };
  const body=source===start?startProfile:endProfile;
- if(body)grip.body=body;
+ if(body){
+   grip.body=body;
+   const first=startProfile?.hip??body.hip,last=endProfile?.hip??body.hip;
+   grip.hip={from:body.hip,to:mix(first,last,part)};
+ }
  if(pose.row===2){
    const hands=lap[pose.key],shoes=soles[pose.key];
    grip.other=target(ratio(hands[start]),ratio(hands[end]));
@@ -126,6 +130,7 @@ export function gripGrid(corners,grip,flip){
  const crown=grip.crown&&landmark(grip.crown.from,grip.crown.to);
  if(crown)points.push(crown);
  if(grip.otherFrom)points.push(landmark(grip.otherFrom,grip.other));
+ if(grip.hip)points.push(landmark(grip.hip.from,grip.hip.to));
  if(grip.support)points.push(landmark(grip.support,grip.support));
  if(grip.foot)points.push(landmark(grip.foot.from,grip.foot.to));
  const body=grip.body;

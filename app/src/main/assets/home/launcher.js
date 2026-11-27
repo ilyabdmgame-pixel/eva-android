@@ -25,18 +25,19 @@ function showSheet(id,title){
  return $('content');
 }
 window.closeSheet=()=>{
- if(!sheet)return false;
+ const wasOpen=Boolean(sheet);
  sheet='';pinMode=false;
  $('sheet').hidden=$('scrim').hidden=true;$('screen').inert=false;
  const focus=(sheetOpener?.isConnected&&sheetOpener!==document.body?sheetOpener:folderButton(folderAnchor))||$('all');
- focus.focus({preventScroll:true});
+ focus?.focus({preventScroll:true});
  sheetOpener=folderAnchor=null;
  window.evaMonitorChanged?.();
  window.homeSheetChanged?.();
- return true;
+ return wasOpen;
 };
 $('close').onclick=$('scrim').onclick=closeSheet;
-function repairHomeSheet(){
+function repairHomeSheet(returning=false){
+ if(returning){closeSheet();return;}
  const open=Boolean(sheet)&&!$('sheet').hidden&&!$('scrim').hidden;
  if(!open&&sheet){closeSheet();return}
  $('screen').inert=open;

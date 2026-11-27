@@ -97,7 +97,7 @@
  };
  window.evaMonitorChanged=()=>{if(!open())stop()};
  document.addEventListener('visibilitychange',()=>{if(open())poll();else stop()});
- $('device-monitor')?.addEventListener('click',()=>{
+ window.openDeviceMonitor=()=>{
   const out=showSheet('device-monitor','Диспетчер');
   tabBar=node('div',null,'device-tabs');
   for(const [key,title] of Object.entries(tabs)){
@@ -107,5 +107,6 @@
   refresh=btn('Обновить','device-refresh',poll);
   body=node('div',null,'device-results');
   out.append(tabBar,refresh,body);setTab('phone');
- });
+ };
+ $('device-monitor')?.addEventListener('click',window.openDeviceMonitor);
 }

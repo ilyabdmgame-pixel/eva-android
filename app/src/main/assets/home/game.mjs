@@ -860,6 +860,12 @@ function layoutPointerMove(event){
 }
 let hold=null;
 function clearHold(){if(hold){clearTimeout(hold.timer);hold=null}}
+function releaseHomePointer(){
+ const pointer=hold?.id??layout?.gesture?.id;
+ clearHold();
+ if(layout)layout.gesture=null;
+ if(pointer!=null&&canvas.hasPointerCapture(pointer))canvas.releasePointerCapture(pointer);
+}
 canvas.addEventListener('pointerdown',event=>{
  if(!event.isPrimary||event.button!==0||!view||sheet)return;
  if(layout){layoutPointerDown(event);return}
@@ -890,7 +896,9 @@ canvas.addEventListener('pointerup',event=>{
    if(long)setTimeout(()=>tapAt(hit,true),85);else tapAt(hit);
  }
 });
-canvas.addEventListener('pointercancel',()=>{if(layout)layout.gesture=null;clearHold()});
+canvas.addEventListener('pointercancel',releaseHomePointer);
+canvas.addEventListener('lostpointercapture',releaseHomePointer);
+window.addEventListener('blur',releaseHomePointer);
 canvas.addEventListener('pointerleave',clearHold);
 canvas.addEventListener('contextmenu',event=>{
  event.preventDefault();
@@ -1116,7 +1124,7 @@ function paint(t=now()){
    at.z=surfaceAt(at.u,at.v)+(sample.height??seat.height*amount);
    if(ready){
      const {seat:[x,y],pillow}=actionAnchors[pose.key];
-     const anchor=[x,y+.030];
+     const anchor=pose.grip?.hip?.to??[x,y+.030];
      if(target==='sleep'){
        opt.anchor=anchor.map((value,i)=>value+(pillow[i]-value)*recline);
        opt.bedPlane=Math.max(seat.edge.height+.035,at.z);
@@ -1299,14 +1307,15 @@ function updateHomeVisibility(){
  if(active){
    last=now();pullClock();wake();
  }else{
-   storage();
+   releaseHomePointer();storage();
    cancelAnimationFrame(nextFrame);clearTimeout(timer);nextFrame=timer=0;
  }
 }
-window.setHomeActive=value=>{
+window.setHomeActive=(value,returning=false)=>{
  nativeActive=Boolean(value);updateHomeVisibility();
  if(nativeActive){
-   repairHomeSheet();clearHold();
+   repairHomeSheet(returning);releaseHomePointer();
+   if(returning)town.close();
    if(graphicsRestored)Desk.reloadRoom?.();
    else if(active){dirty=true;wake();}
  }
@@ -1386,6 +1395,7 @@ $('home-menu').onclick=()=>{
  out.append(
    label('Комната','Обстановка, занятия и распорядок','⌂',openRoom),
    label('В комнате','Предметы и действия','◇',openRoomObjects),
+   label('Диспетчер','Температура, память, приложения и службы','▤',window.openDeviceMonitor),
    label('События','','◷',openTimeline),
    label('Карман','','＋',openInventory),
    label('Звук в комнате','','♫',window.openHomeSound));

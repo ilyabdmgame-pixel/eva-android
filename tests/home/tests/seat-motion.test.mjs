@@ -94,6 +94,13 @@ test('the head has one registered size through every frame of a sit, rise or rec
        assert(Math.abs(headSize-reference)<1e-8);
        assert(Math.abs(headSize-(width*grip.body.reference/210))<1e-8);
        assert(Math.abs(left[2]-right[2])<1e-8);
+       // Shoulder width scales by the same fixed factor as the head for this drawing.
+       const neck=grip.body.neck;
+       const torsoY=neck,torsoHalf=grip.body.width/420;
+       const torsoLeft=mesh.move(fx-torsoHalf,torsoY),torsoRight=mesh.move(fx+torsoHalf,torsoY);
+       const shoulderBase=(corners[1][0]-corners[0][0])*grip.body.reference/210;
+       assert(Math.abs(torsoRight[0]-torsoLeft[0]-shoulderBase)<1e-8);
+
        const skull=mesh.move(fx,y),brow=mesh.move(fx,y+grip.body.width/504);
        assert(Math.abs(skull[2]-brow[2]-(corners[0][2]-corners[3][2])*grip.body.reference/504)<1e-8);
        if(grip.foot){
