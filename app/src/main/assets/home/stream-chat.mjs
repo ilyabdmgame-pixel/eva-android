@@ -83,6 +83,14 @@ export function createStreamChat(panel,canvas,protectedElements){
   const log=panel.querySelector('ol'),empty=panel.querySelector('.stream-chat-empty');
   const document=panel.ownerDocument;
   let lastCheck=-Infinity,followLatest=true,position=null,logLimit='';
+  let expanded=null;
+
+  function showIn(list){
+    expanded=list;
+    if(!list)return;
+    list.replaceChildren(...Array.from(log.children,row=>row.cloneNode(true)));
+    list.scrollTop=list.scrollHeight;
+  }
 
   function add(cue){
     followLatest=panel.hidden||log.scrollHeight-log.scrollTop-log.clientHeight<=8;
@@ -98,6 +106,12 @@ export function createStreamChat(panel,canvas,protectedElements){
     message.append(author,document.createTextNode(' '+cue.text));
     log.append(message);
     if(log.children.length>recentLimit)log.firstElementChild.remove();
+    if(expanded){
+      const atBottom=expanded.scrollHeight-expanded.scrollTop-expanded.clientHeight<=8;
+      expanded.append(message.cloneNode(true));
+      if(expanded.children.length>recentLimit)expanded.firstElementChild.remove();
+      if(atBottom)expanded.scrollTop=expanded.scrollHeight;
+    }
     empty.hidden=true;
     lastCheck=-Infinity;
   }
@@ -109,6 +123,7 @@ export function createStreamChat(panel,canvas,protectedElements){
 
   function clear(){
     hide();
+    expanded?.replaceChildren();expanded=null;
     position=null;
     log.replaceChildren();
     empty.hidden=false;
@@ -144,5 +159,5 @@ export function createStreamChat(panel,canvas,protectedElements){
     return position;
   }
 
-  return {add,clear,hide,layout};
+  return {add,clear,hide,layout,showIn};
 }

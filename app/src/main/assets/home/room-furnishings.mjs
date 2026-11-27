@@ -1,3 +1,6 @@
+import {fixtureFrame} from './room-mesh.mjs';
+import {drawRoomModel} from './room-models.mjs';
+import {collectMesh,meshThumbnail} from './mesh-preview.mjs';
 const part=(u,v,z,a,b,h,tint,mat='oak')=>({u,v,z,a,b,h,tint,mat});
 const walnut=[.70,.51,.39],linen=[.78,.66,.61],bronze=[.76,.58,.38];
 const legs=(w,d,h)=>[.038,w-.094].flatMap(u=>[.039,d-.093].map(v=>part(u,v,0,.056,.054,h,walnut)));
@@ -12,6 +15,9 @@ export const streamChair=item(307,'Кресло у компьютера','Меб
  part(.04,.389,.49,.40,.075,.40,[.45,.38,.50],'cloth'),
  part(.07,.388,.81,.34,.08,.071,[.62,.49,.62],'cloth')
 ],{seatHeight:.51,solid:true});
+
+export const originalRoomDecor=[[708,1.42,1.82],[707,2.80,-1.82],[709,-2.07,.98]];
+export const studioRoomDecor=[[711,2.49,-3.32],[706,-1.34,-.08],[705,-1.08,1.02],[704,2.88,.51]];
 
 export const roomFurnishings=[
  item(701,'Прикроватная тумба','Мебель',.47,.37,'storage',[
@@ -53,7 +59,8 @@ export const roomFurnishings=[
  item(710,'Высокая этажерка','Мебель',.61,.35,'storage',[
    ...legs(.61,.35,1.40),...[.12,.54,.96,1.38].map(z=>part(0,0,z,.61,.35,.045,walnut)),
    part(.09,.08,.588,.25,.19,.13,[.64,.61,.54],'cloth')
- ])
+ ]),
+ item(711,'Платяной шкаф','Мебель',.94,.49,'wardrobe',[],{surfaceHeight:1.77})
 ];
 
 export function drawFloorDecor(renderer,o){
@@ -67,38 +74,23 @@ export function drawFloorDecor(renderer,o){
  for(let i=1;i<5;i++)quad(i/5-.013,.23,i/5+.013,.77,[.63,.71,.57],.003);
 }
 
+const furniturePreviews=new Map();
+
 export function furnishingThumbnail(canvas,model){
  canvas.width=112;canvas.height=86;
- const c=canvas.getContext('2d');
- const coordinates=([u,v,z])=>[u-v,(u+v-2*z)*.58];
- const modelParts=model.kind==='floorDecor'
-   ?[part(0,0,0,model.w,model.d,.025,[.48,.64,.52]),part(.12,.12,.027,model.w-.24,model.d-.24,.004,[.68,.74,.59])]
-   :model.parts;
- const faces=[];
- for(const p of modelParts){
-   const {u,v,z,a,b,h,tint}=p;
-   const corners=[[u,v,z],[u+a,v,z],[u+a,v+b,z],[u,v+b,z],
-     [u,v,z+h],[u+a,v,z+h],[u+a,v+b,z+h],[u,v+b,z+h]];
-   for(const [indexes,shade] of [[[2,3,7,6],.71],[[1,2,6,5],.83],[[4,5,6,7],1.08]]){
-     faces.push({points:indexes.map(i=>coordinates(corners[i])),
-       depth:indexes.reduce((sum,i)=>sum+corners[i].reduce((a,b)=>a+b,0),0),
-       tint:tint.map(x=>Math.min(255,Math.round(x*255*shade)))});
+ const ctx=canvas.getContext('2d'),key=model.model??model.id;
+ const cached=furniturePreviews.get(key);
+ if(cached){ctx.drawImage(cached,0,0);return;}
+ const o={...model,u:0,v:0,z:0};
+ const faces=collectMesh(renderer=>{
+   if(o.kind==='floorDecor'){drawFloorDecor(renderer,o);return;}
+   if(drawRoomModel(renderer,o))return;
+   for(const p of o.parts){
+     renderer.box(o.id,{u:p.u,v:p.v,z:p.z},p.a,p.b,p.h,p.tint,p.mat);
    }
- }
- const points=faces.flatMap(face=>face.points);
- const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
- const left=Math.min(...xs),right=Math.max(...xs),top=Math.min(...ys),bottom=Math.max(...ys);
- const scale=Math.min(92/(right-left),70/(bottom-top));
- faces.sort((a,b)=>a.depth-b.depth);
- for(const face of faces){
-   c.beginPath();
-   for(const [i,[x,y]] of face.points.entries()){
-     c[i?'lineTo':'moveTo'](56+(x-(left+right)/2)*scale,43+(y-(top+bottom)/2)*scale);
-   }
-   c.closePath();
-   c.fillStyle='rgb('+face.tint.join(',')+')';c.fill();
-   c.strokeStyle='#47372e42';c.lineWidth=.8;c.stroke();
- }
+ });
+ meshThumbnail(canvas,faces);
+ furniturePreviews.set(key,canvas);
 }
 
 export function roomDesk(fixture){
@@ -111,8 +103,11 @@ export function roomDesk(fixture){
 const bezel=[.32,.34,.36],stand=[.49,.46,.41],keycaps=[.55,.54,.51];
 
 export function computerLayout(fixture){
- const {u,v,z}=fixture;
- return (x,y,height)=>fixture.turned?{u:u+y,v:v+x,z:z+height}:{u:u+x,v:v+y,z:z+height};
+ const frame=fixtureFrame(fixture);
+ return (x,y,height)=>{
+   const [u,v,z]=frame.point(x,y,height);
+   return {u,v,z};
+ };
 }
 
 export function computerGesture(fixture,sample,reduced=false){
@@ -213,25 +208,37 @@ export function drawComputerArms(renderer,actor,fixture,gesture,id=0){
      [[.024,.019],[.030,.018],[.015,.009],[0,0]],[palm,palm,tips]);
  }
 }
-export function drawComputer(renderer,o,powered,streaming,seconds=0,gesture=null){
+export function drawComputer(renderer,o,powered,streaming,seconds=0,gesture=null,pass='all'){
  const point=computerLayout(o);
- const box=(x,y,z,w,d,h,t,mat)=>renderer.box(o.id,point(x,y,z),o.turned?d:w,o.turned?w:d,h,t,mat);
+ const box=(x,y,z,w,d,h,t,mat)=>{
+   const a=point(x,y,z),b=point(x+w,y+d,z);
+   renderer.box(o.id,{u:Math.min(a.u,b.u),v:Math.min(a.v,b.v),z:a.z},Math.abs(b.u-a.u),Math.abs(b.v-a.v),h,t,mat);
+ };
  const screen=(x,z,w,h,t,mat)=>{
    const verts=[[x,z],[x+w,z],[x+w,z+h],[x,z+h]].map(([a,b])=>point(a,.177,b)).map(p=>[p.u,p.v,p.z]);
    renderer.panel(verts,t,mat,o.id);
  };
- // Tower, monitor and peripherals all share the desk's local axes.
- box(.025,.045,0,.17,.265,.341,bezel);
- box(.052,.309,.071,.11,.008,.21,[.41,.42,.42]);
+ if(pass!=='display'){
+   // Rigid parts are cached with the desk. The two animated caps belong to the display pass.
+   box(.025,.045,0,.17,.265,.341,bezel);
+   box(.052,.309,.071,.11,.008,.21,[.41,.42,.42]);
+   for(let i=0;i<5;i++)box(.054,.319,.100+i*.022,.104,.003,.005,[.30,.32,.35]);
+   box(.428,.074,.001,.34,.187,.030,stand);
+   box(.564,.097,.030,.062,.053,.143,stand);
+   box(.291,.075,.15,.61,.10,.30,bezel);
+   box(.545,.120,.45,.102,.068,.049,bezel);
+   box(.955,.25,0,.093,.102,.025,stand);
+   box(.988,.282,.025,.027,.034,.126,stand);
+   box(.974,.27,.137,.058,.058,.075,bezel);
+   box(.404,.419,0,.45,.145,.027,bezel);
+   for(let row=0;row<3;row++)for(let column=0;column<8;column++){
+     if(row!==1||column!==2&&column!==5)box(.432+column*.052,.434+row*.041,.028,.035,.027,.011,keycaps);
+   }
+   box(.905,.448,.005,.066,.100,.040,bezel);
+ }
+ if(pass==='hardware')return;
  box(.08,.320,.277,.030,.007,.023,powered?[.34,.70,.60]:stand,powered?'glow':undefined);
- box(.428,.074,.001,.34,.187,.030,stand);
- box(.564,.097,.030,.062,.053,.143,stand);
- box(.291,.075,.15,.61,.10,.30,bezel);
- box(.545,.120,.45,.102,.068,.049,bezel);
  box(.584,.183,.467,.028,.008,.019,streaming?[.92,.29,.31]:[.47,.48,.48],streaming?'glow':undefined);
- box(.955,.25,0,.093,.102,.025,stand);
- box(.988,.282,.025,.027,.034,.126,stand);
- box(.974,.27,.137,.058,.058,.075,bezel);
  screen(.323,.186,.547,.235,powered?[.185,.32,.37]:[.18,.20,.22],powered?'glow':undefined);
  if(streaming){
    const display=[[.330,.414],[.749,.414],[.749,.193],[.330,.193]]
@@ -249,11 +256,8 @@ export function drawComputer(renderer,o,powered,streaming,seconds=0,gesture=null
      screen(.377,.341-row*.036,length,.008,row%2?[.47,.69,.66]:[.71,.70,.49],'glow');
    }
  }
- box(.404,.419,0,.45,.145,.027,bezel);
- for(let row=0;row<3;row++)for(let column=0;column<8;column++){
-   const press=gesture?.key?.column===column&&row===1?gesture.key.pressure:0;
-   box(.432+column*.052,.434+row*.041,.028,.035,.027,.011-.005*press,
-     press>.7?[.69,.67,.55]:keycaps);
+ for(const column of [2,5]){
+   const press=gesture?.key?.column===column?gesture.key.pressure:0;
+   box(.432+column*.052,.475,.028,.035,.027,.011-.005*press,press>.7?[.69,.67,.55]:keycaps);
  }
- box(.905,.448,.005,.066,.100,.040,bezel);
 }

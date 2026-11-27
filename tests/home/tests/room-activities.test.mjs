@@ -12,7 +12,6 @@ import {computerGesture,drawComputer,streamChair} from '../../../app/src/main/as
 import {roomDialogue} from '../../../app/src/main/assets/home/room-dialogue.mjs';
 import {streamScenes} from '../../../app/src/main/assets/home/stream-scenes.mjs';
 import {createStreamDialogue,streamExpression} from '../../../app/src/main/assets/home/stream-dialogue.mjs';
-import {drawStreamFrame} from '../../../app/src/main/assets/home/stream-game.mjs';
 
 const assets=new URL('../../../app/src/main/assets/home/',import.meta.url);
 const read=name=>JSON.parse(readFileSync(new URL(name,assets),'utf8'));
@@ -113,24 +112,23 @@ test('stream repeats typing and mouse phases, then releases the hands exactly on
  assert.equal(phase(plan.duration),3);
 });
 
-test('stream viewers use the full 3–10 second range and Eva answers the first one',()=>{
+test('all stream messages share a 3–10 second clock including replies from Eva',()=>{
  const random=[0,.999999,0,0,0];
  const dialogue=createStreamDialogue(0,()=>random.shift()??0);
  assert.equal(dialogue.next(2999),null);
  const first=dialogue.next(3000);
  assert(first.chat);
- assert.equal(dialogue.next(4199),null);
- const reply=dialogue.next(4200);
+ assert.equal(dialogue.next(12999),null);
+ const reply=dialogue.next(13000);
  assert.equal(reply.respondsTo,first.id);
  assert.equal(reply.emotion,'wry');
  assert.match(reply.text,/Падать буду по расписанию/);
- assert.equal(dialogue.next(12999),null);
- const second=dialogue.next(13000);
+ assert.equal(dialogue.next(15999),null);
+ const second=dialogue.next(16000);
  assert(second.chat);
  assert.notEqual(first.author,second.author);
- assert(dialogue.next(16000).chat);
- assert.equal(dialogue.next(17200),null);
  assert(dialogue.next(19000).chat);
+ assert(dialogue.next(22000).chat);
  assert(dialogue.next(200000).chat);
  assert.equal(dialogue.next(200001),null);
 });
@@ -140,8 +138,8 @@ test('each local opening gives Eva a reply even with the slowest viewer cadence'
    const dialogue=createStreamDialogue(visit,()=>.999999);
    const viewer=dialogue.next(10000);
    assert(viewer?.chat);
-   assert.equal(dialogue.next(11999),null);
-   assert.equal(dialogue.next(12000)?.respondsTo,viewer.id);
+   assert.equal(dialogue.next(19999),null);
+   assert.equal(dialogue.next(20000)?.respondsTo,viewer.id);
  }
 });
 
@@ -179,7 +177,7 @@ test('model improvises after viewers have spoken and waits for a scene boundary'
    else if(cue)replies.push(cue.text);
    const next=dialogue.takeGeneration(t,185000-t);
    if(next){
-     assert.equal(t,12000);
+     assert.equal(t,15000);
      request=next;
      dialogue.addGenerated(generated);
    }
@@ -189,19 +187,20 @@ test('model improvises after viewers have spoken and waits for a scene boundary'
  assert(request.context.filter(line=>line.role==='viewer').every(line=>shown.slice(0,4).includes(line.text)));
  assert.deepEqual(shown.slice(6,11),generated.map(line=>line[0]));
  assert(replies.some(line=>line.startsWith('Новый ответ')));
- assert(dialogue.takeGeneration(92000,93000));
+ assert(dialogue.takeGeneration(95000,90000));
  assert.equal(dialogue.takeGeneration(180000,90000),null);
 });
 
-test('viewer chat keeps moving and skips stale replies after a pause',()=>{
+test('viewer chat skips a stale pending answer after a long pause without a catch-up burst',()=>{
  const dialogue=createStreamDialogue(0,()=>0);
- assert(dialogue.next(3000).chat);
- assert(dialogue.next(6000).chat);
- assert(dialogue.next(9000).chat);
- assert(dialogue.next(12000).chat);
- assert.equal(dialogue.next(12100),null);
+ const opening=dialogue.next(3000);
+ assert(opening.chat);
  assert(dialogue.next(60000).chat);
  assert.equal(dialogue.next(60001),null);
+ assert.equal(dialogue.next(62999),null);
+ const next=dialogue.next(63000);
+ assert(next);
+ assert.notEqual(next.respondsTo,opening.id);
 });
 
 test('ordinary room activities retain topic-specific lines',()=>{
@@ -214,16 +213,15 @@ test('ordinary room activities retain topic-specific lines',()=>{
  }
 });
 
-test('the stream monitor paints a colored scrolling game with a visible jump',()=>{
- const records=frame=>{
-   const calls=[];
-   drawStreamFrame({fillRect(...args){calls.push([this.fillStyle,...args]);}},frame);
-   return calls;
- };
- const running=records(6),jump=records(17);
- assert(running.length>100);
- assert(new Set(running.map(([color])=>color)).size>16);
- const player=calls=>calls.filter(([color])=>color==='#a885e1').map(([,x,y])=>y);
- assert(Math.min(...player(jump))<Math.min(...player(running))-12);
- assert.notDeepEqual(records(1300),running);
+test('every household activity has two distinct story openings and makes room for quiet',()=>{
+  for(const [key,definition] of Object.entries(activities)){
+    if(key==='computer')continue;
+    const first=roomDialogue(key,definition.category,14000,0);
+    assert.notEqual(first.text,roomDialogue(key,definition.category,14000,1).text,key);
+    const cues=Array.from({length:12},(_,i)=>roomDialogue(key,definition.category,14000+i*23000,0));
+    const texts=cues.filter(Boolean).map(cue=>cue.text);
+    assert.equal(new Set(texts).size,texts.length,key);
+    assert(cues.some(cue=>cue===null),key);
+    if(key==='nap'||key==='sleep')assert.equal(texts.length,2,key);
+  }
 });

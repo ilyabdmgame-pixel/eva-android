@@ -44,7 +44,7 @@ function bedSample(seat,amount,complete){
 export function roomSeat(fixture,walk,pillow=null,asleep=false){
  const bed=fixture.kind==='bed';
  const office=fixture.kind==='streamChair';
- const reversed=office||fixture.back;
+ const reversed=office!==Boolean(fixture.back);
  const alongU=Boolean(fixture.turned)!==bed;
  const sign=reversed?-1:1;
  const front=alongU?'u':'v';

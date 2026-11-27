@@ -366,8 +366,10 @@ public final class PetMotionTest {
         check(PetMotion.mantleContact(PetMotion.MANTLE_LAST)==374,"Seat contact must remain on the ledge");
         check(Math.abs(PetMotion.mantleContactAt(PetMotion.mantleStart(337.5f))-337.5f)<.01f,
             "Starting partway through a pull-up must preserve the hand contact");
-        check(PetMotion.poseTime(41)==0&&PetMotion.poseTime(42)==42&&PetMotion.poseTime(1000)==1000,
-            "Sampling must stay at 24 ticks per second after tempo changes");
+        java.util.Set<Long> sampled=new java.util.HashSet<>();
+        for(int ms=0;ms<1000;ms++)sampled.add(PetMotion.poseTime(ms));
+        check(sampled.size()==30 && PetMotion.poseTime(33)==0 && PetMotion.poseTime(34)==34 &&
+            PetMotion.poseTime(1000)==1000, "30 distinct timeline samples per second");
         check(PetMotion.displacementTime(PetMotion.HOME_WALK,200)>=2000
             &&new PetLadderMotion(402,286,877,306,410,false).duration(3.25f)>=2400,
             "Walking and climbing must use the slower pace");

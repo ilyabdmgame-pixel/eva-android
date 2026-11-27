@@ -21,18 +21,12 @@
 .eva-composer button[hidden] { display:none!important; }
 :is(#town-compose,#form).eva-composer .listening { color:#ffaf9b; background:#633a3a; }
 .eva-composer :is(button,input,textarea):focus-visible { outline:2px solid #a9dbd4; outline-offset:-2px; }
-.eva-composer-icon,#form.eva-composer :is(#mic,#send)::before {
-  content:'';
-  display:block; width:24px; height:24px; flex:none; pointer-events:none;
-  background:url('art/theme-icons.png') var(--icon-x,0%) 50% / 400% 300% no-repeat;
-  filter:grayscale(1) sepia(.22) hue-rotate(112deg) saturate(.72) brightness(1.15);
-}
-.eva-composer-send,#form.eva-composer #send::before { --icon-x:33.3333%; width:36px; height:36px; filter:none; }
-.eva-composer-expand { --icon-x:66.6667%; }
-#form.eva-composer :is(#mic,#send) > .ui-icon { display:none; }
 
+.eva-composer .ui-icon { width:22px; height:22px; pointer-events:none; }
+.eva-composer button[type=submit] .ui-icon { width:23px; height:23px; }
+.eva-composer .ui-icon-accent { stroke:var(--icon-accent,currentColor); }
+.eva-composer :is([data-mic],#mic,[data-expand],#eva-compose-expand) { --icon-accent:#b4e3d3; }
 @media (prefers-reduced-motion:no-preference) {
-  .eva-composer .listening :is(.eva-composer-icon,.ui-icon),
-  #form.eva-composer #mic.listening::before { animation:eva-mic-listening .8s ease-in-out infinite alternate; }
+  .eva-composer .listening .ui-icon { animation:eva-mic-listening .8s ease-in-out infinite alternate; }
 }
-@keyframes eva-mic-listening { from { opacity:.65; scale:.92; } to { opacity:1; scale:1.09; } }
+@keyframes eva-mic-listening { from { opacity:.7; scale:.95; } to { opacity:1; scale:1.05; } }

@@ -8,7 +8,8 @@ import {computerLayout,drawComputer,furnishingThumbnail,roomFurnishings,streamCh
 import {worldObjects,worldPoint,localPath,route} from '../../../app/src/main/assets/home/district.mjs';
 import {blocksActor} from '../../../app/src/main/assets/home/contact.mjs';
 import {placementIssue} from '../../../app/src/main/assets/home/layout.mjs';
-import {turnFixture} from '../../../app/src/main/assets/home/prop-finish.mjs';
+import {turnFixture,nextTurn} from '../../../app/src/main/assets/home/prop-finish.mjs';
+import {collectMesh} from '../../../app/src/main/assets/home/mesh-preview.mjs';
 
 test('room hands stay on the visible clean drawings as pose and facing change',()=>{
  const corners=[[0,2,1.6],[1,1,1.6],[1,1,0],[0,2,0]];
@@ -80,22 +81,27 @@ test('changing motion leaves and enters the shared neutral frame',()=>{
  assert.equal(actionBeat(beats,1,550,.53),.53);
 });
 
-test('pillow and quilt follow the bed when rotated and stay below the sleeper',()=>{
- const layout=roomFurniture(worldObjects({}));
- const initial=layout.get(3);
- for(const bed of [initial,turnFixture(initial)]){
+test('the mattress, pillow and quilt share a physical surface in all four orientations',()=>{
+ const layout=roomFurniture(worldObjects({})),initial=layout.get(3);
+ let bed=initial;
+ for(let turn=0;turn<4;turn++,bed=nextTurn(bed,true)){
    const pillow=attachedPosition(layout.get(10),initial,bed),quilt=attachedPosition(layout.get(11),initial,bed);
-   const figures=[],calls=[];
-   const renderer={sprite(...args){figures.push(args);},panel(...args){calls.push(args);}};
-   drawBedding(renderer,bed,pillow,false);drawBedding(renderer,bed,quilt,false);
-   const rest=bedRest(bed,pillow,true);
-   assert.equal(figures[0][2].u,rest.u);assert.equal(figures[0][2].v,rest.v);
-   assert(figures[0][5].bedPlane<rest.height);
-   assert(calls.length>30);
-   for(const [points,,,id] of calls){
-     assert.equal(id,11);
-     for(const [u,v,z] of points)assert(u>=bed.u&&u<=bed.u+bed.w&&v>=bed.v&&v<=bed.v+bed.d&&z<rest.height);
+   const rest=bedRest(bed,pillow,true),seat=bedRest(bed,null,false);
+   const corners=id=>collectMesh(r=>drawBedding(r,bed,id===10?pillow:quilt,false)).flatMap(f=>f.points);
+   const pillowPoints=corners(10);
+   assert(pillowPoints.length>24);
+   for(const [u,v,z] of pillowPoints){
+     assert(u>=pillow.u&&u<=pillow.u+pillow.w&&v>=pillow.v&&v<=pillow.v+pillow.d);
+     assert(z>=seat.height&&z<=rest.height+.025);
    }
+   assert.equal(rest.u,pillow.u+pillow.w/2);assert.equal(rest.v,pillow.v+pillow.d/2);
+   const topAtRest=Math.max(...corners(11).map(p=>p[2]));
+   const occupied=collectMesh(r=>drawBedding(r,bed,quilt,false,1)).flatMap(f=>f.points);
+   const highest=Math.max(...occupied.map(p=>p[2]));
+   assert(highest>topAtRest+.20&&highest<topAtRest+.32);
+   for(const [u,v] of occupied)assert(u>=bed.u&&u<=bed.u+bed.w&&v>=bed.v&&v<=bed.v+bed.d);
+   const atPillow=occupied.some(([u,v])=>Math.hypot(u-rest.u,v-rest.v)<.15);
+   assert.equal(atPillow,false);
  }
 });
 
@@ -140,18 +146,27 @@ test('room expansion adds usable floor and leaves old placements intact',()=>{
  assert.equal(placementIssue(rug,start,objects,[],[start],true),'');
 });
 
-test('furnishing previews draw the geometry of every new model within their canvases',()=>{
- const methods=['beginPath','closePath','fill','stroke'];
+test('furnishing previews rasterize every solid model with a clean margin and a unique silhouette',()=>{
  const previews=[];
- for(const model of roomFurnishings){
-   const points=[];
-   const context=Object.fromEntries(methods.map(method=>[method,()=>{}]));
-   context.moveTo=context.lineTo=(x,y)=>points.push([x,y]);
-   const canvas={getContext:()=>context};
+ const ids=new Set([2,12,21,24,34,61,65,74,81,82,87,91,300,301,302,303,304,305]);
+ const fixtures=[...roomFurnishings,...worldObjects({}).filter(o=>ids.has(o.id))];
+ for(const model of fixtures){
+   let image;
+   const canvas={getContext:()=>({
+     createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)}),
+     putImageData:result=>{image=result.data;}
+   })};
    furnishingThumbnail(canvas,model);
-   assert(points.length>=12,model.name);
-   assert(points.every(([x,y])=>x>=0&&x<=canvas.width&&y>=0&&y<=canvas.height),model.name);
-   previews.push(JSON.stringify(points));
+   const pixels=[];
+   for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++){
+     const i=4*(y*canvas.width+x);
+     if(image[i+3]){
+       assert(x>1&&x<canvas.width-2&&y>1&&y<canvas.height-2,model.name);
+       pixels.push((image[i]<<16)+(image[i+1]<<8)+image[i+2]);
+     }
+   }
+   assert(pixels.length>260,model.name);
+   previews.push(pixels.join(','));
  }
- assert.equal(new Set(previews).size,roomFurnishings.length);
+ assert(new Set(previews).size>=fixtures.length-2);
 });

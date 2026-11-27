@@ -137,8 +137,11 @@ public final class Home extends Activity {
                 return new WebResourceResponse("image/png",null,new ByteArrayInputStream(bytes));
             }
             if(p==null||!p.matches("/[a-z0-9_./-]+")||p.contains(".."))return empty();
-            String mime=p.endsWith(".html")?"text/html":p.endsWith(".css")?"text/css":(p.endsWith(".js")||p.endsWith(".mjs"))?"text/javascript":p.endsWith(".svg")?"image/svg+xml":p.endsWith(".jpg")?"image/jpeg":"image/png";
-            String asset="/question-options.js".equals(p)?"eva-questions.js":"home"+p;
+            String mime=p.endsWith(".html")?"text/html":p.endsWith(".css")?"text/css":(p.endsWith(".js")||p.endsWith(".mjs"))?"text/javascript":p.endsWith(".svg")?"image/svg+xml":p.endsWith(".jpg")?"image/jpeg":p.endsWith(".webp")?"image/webp":p.endsWith(".json")?"application/json":"image/png";
+            String asset;
+            if ("/question-options.js".equals(p)) asset = "eva-questions.js";
+            else if ("/ui-icons.js".equals(p)) asset = "eva-icons.js";
+            else asset = "home"+p;
             return new WebResourceResponse(mime,mime.startsWith("text/")?"utf-8":null,getAssets().open(asset));
         }catch(Exception ignored){return empty();}
     }

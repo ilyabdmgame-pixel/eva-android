@@ -82,3 +82,11 @@ body.eva-pet-chat #eva-pet-work-cards {display:block;flex:none;max-height:32%;ov
 }
 @keyframes eva-mini-voice { from { transform:scaleY(.36); } to { transform:scaleY(1.15); } }
 @media (prefers-reduced-motion:reduce) { .eva-mini-presence i { transition:none; } }
+
+#eva-pet-header .ui-icon { width:21px; height:21px; flex:none; }
+#eva-pet-header { --icon-accent:#b4decb; }
+#eva-pet-header #eva-pet-games-launcher { display:inline-flex; align-items:center; justify-content:center; gap:5px; }
+#eva-pet-header #eva-pet-games-launcher .ui-icon { width:19px; height:19px; }
+@media (max-width:320px) {
+  #eva-pet-header #eva-pet-games-launcher span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+}

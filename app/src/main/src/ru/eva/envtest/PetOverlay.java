@@ -741,10 +741,8 @@ final class PetOverlay {
 
     private void onFrame(long frameTimeNanos){
         if(sprite==null||touched||composerVisible)return;
-        boolean resting=mode==PetMotion.SEATED_PEEK||mode==PetMotion.IDLE_WINK||
-            mode==PetMotion.IDLE_YAWN||mode==PetMotion.LOOK_AROUND;
-        long interval=resting?31_000_000:15_000_000;
-        if(lastFrameNanos!=0&&frameTimeNanos-lastFrameNanos<interval){
+        long slot=frameTimeNanos/PetMotion.FRAME_NANOS;
+        if(lastFrameNanos!=0&&lastFrameNanos/PetMotion.FRAME_NANOS==slot){
             choreographer.postFrameCallback(tick);
             return;
         }

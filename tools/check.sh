@@ -5,3 +5,4 @@ eva_script=${BASH_SOURCE[0]}
 cd "${eva_script%/*}/.."
 TZ=Europe/Moscow node --test tests/*.test.cjs tests/pet/*.cjs tests/home/tests/*.test.mjs
 python3 -m unittest discover -s tests -p 'test_*.py'
+python3 tools/check_java.py

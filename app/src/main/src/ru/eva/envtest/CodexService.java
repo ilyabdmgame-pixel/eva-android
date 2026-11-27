@@ -1,6 +1,9 @@
 package ru.eva.envtest;
 import android.app.*;
 import android.content.*;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
 import android.os.*;
 import java.io.*;
 import java.security.DigestInputStream;
@@ -17,6 +20,8 @@ public final class CodexService extends Service {
  private PetOverlay pet;
  private boolean notificationShowsPet;
  private static CodexService active;
+ private ConnectivityManager networkManager;
+ private ConnectivityManager.NetworkCallback dnsChanges;
  private final Handler handler=new Handler(Looper.getMainLooper());
  private final ExecutorService io=Executors.newSingleThreadExecutor();
  private final AtomicBoolean starting=new AtomicBoolean();
@@ -28,9 +33,25 @@ public final class CodexService extends Service {
   active=this;
   notificationShowsPet=petNotificationEnabled();
   startForeground(11,notification(notificationShowsPet));
+  watchRuntimeNetwork();
   try{pet=new PetOverlay(this);applyPetPresentation();}catch(RuntimeException error){android.util.Log.w("EvaPet","Could not initialise overlay",error);}
   retry();
  }catch(Exception e){report("Ошибка запуска: "+e.getMessage());}}
+ private void watchRuntimeNetwork(){
+  networkManager=getSystemService(ConnectivityManager.class);
+  if(networkManager==null)return;
+  dnsChanges=new ConnectivityManager.NetworkCallback(){
+   @Override public void onLinkPropertiesChanged(Network network,LinkProperties properties){
+    if(network.equals(networkManager.getActiveNetwork()))syncDns(properties);
+   }
+  };
+  try{networkManager.registerDefaultNetworkCallback(dnsChanges);}catch(RuntimeException e){dnsChanges=null;}
+ }
+ private void syncDns(LinkProperties properties){
+  if(properties==null)return;
+  try{RuntimeDns.update(new File(getFilesDir(),"rootfs"),properties.getDnsServers());}
+  catch(IOException e){android.util.Log.w("EvaRuntime","Could not update the local resolver",e);}
+ }
  private boolean petNotificationEnabled(){
   return PetOverlay.enabled(this)&&android.provider.Settings.canDrawOverlays(this);
  }
@@ -128,6 +149,11 @@ public final class CodexService extends Service {
   if(!root.isDirectory()&&!root.mkdirs())throw new IOException("Не удалось создать каталог среды");
   report(status);
   unpack(asset,root,version);
+  if("eva-runtime.pack".equals(asset)){
+   try(InputStream replaced=getAssets().open("eva-replaced-portraits.tsv")){
+    RuntimePortraits.removeReplaced(root,replaced);
+   }catch(IOException e){android.util.Log.w("EvaRuntime","Could not reclaim all replaced portraits",e);}
+  }
   File staged=new File(root,markerName+".tmp");
   try(Writer output=new FileWriter(staged)){output.write(version+"\n");}
   android.system.Os.rename(staged.getAbsolutePath(),marker.getAbsolutePath());
@@ -137,14 +163,19 @@ public final class CodexService extends Service {
   String[] versions=runtimeVersions();
   installPack(root,"rootfs.pack",".eva-base-version",versions[0],"Подготавливаю среду…");
   installPack(root,"eva-runtime.pack",".eva-runtime-version",versions[1],"Подготавливаю Еву…");
+  if(networkManager!=null){Network current=networkManager.getActiveNetwork();if(current!=null)syncDns(networkManager.getLinkProperties(current));}
   for(String directory:new String[]{"dev","proc","sys","sdcard","tmp"})new File(root,directory).mkdirs();
   new File(root,"root/.codex/generated_images").mkdirs();
   String loaderAlias="p";
   for(String[] item:new String[][]{{"libtalloc.so.2","libtalloc.so"},{loaderAlias,"libproot-loader.so"}}){File alias=new File(dir,item[0]);try{android.system.Os.remove(alias.getAbsolutePath());}catch(Exception ignored){}android.system.Os.symlink(new File(lib,item[1]).getAbsolutePath(),alias.getAbsolutePath());}
-  ProcessBuilder b=new ProcessBuilder(new File(lib,"libproot.so").getAbsolutePath(),"-0","-r",root.getAbsolutePath(),"-b","/dev:/dev","-b","/proc:/proc","-b","/sys:/sys","-b","/sdcard:/sdcard","-w","/root","/usr/bin/env","-i","HOME=/root","PATH=/usr/local/bin:/usr/bin:/bin","LANG=C.UTF-8","ADB_SERVER_SOCKET=tcp:localhost:5038","/usr/bin/node","/root/codex-mobile/server.js");
+  ProcessBuilder b=new ProcessBuilder(new File(lib,"libproot.so").getAbsolutePath(),"-0","-r",root.getAbsolutePath(),"-b","/dev:/dev","-b","/proc:/proc","-b","/sys:/sys","-b","/sdcard:/sdcard","-w","/root","/usr/bin/env","-i","HOME=/root","PATH=/usr/local/bin:/usr/bin:/bin","LANG=C.UTF-8","SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt","NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt","GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt","ADB_SERVER_SOCKET=tcp:localhost:5038","/usr/bin/node","/root/codex-mobile/server.js");
   b.environment().put("LD_LIBRARY_PATH",dir.getAbsolutePath()+":"+lib.getAbsolutePath());b.environment().put("PROOT_TMP_DIR",getCacheDir().getAbsolutePath());b.redirectError(new File(dir,"runtime-error.log"));process=b.start();
   try(BufferedReader in=new BufferedReader(new InputStreamReader(process.getInputStream(),"UTF-8"))){String line;while((line=in.readLine())!=null){if(line.equals("EVA_PET_WORK done")||line.equals("EVA_PET_WORK waiting")){boolean waiting=line.endsWith("waiting");handler.post(()->{if(pet!=null)pet.workNotice(waiting);});}else if(line.startsWith("EVA_READY ")){String ready=line.substring(10);if(ready.matches("^http://127\\.0\\.0\\.1:[0-9]{1,5}/#[0-9a-f]{48}$")){url=ready;report("Ева готова");}}}}
   url="";report("Среда остановлена. Откройте приложение заново.");
   }catch(Exception e){url="";if(process!=null)process.destroy();report("Ошибка запуска: "+e.getMessage());}}
- @Override public void onDestroy(){if(active==this)active=null;if(pet!=null)pet.destroy();if(process!=null)process.destroy();io.shutdownNow();handler.removeCallbacksAndMessages(null);super.onDestroy();}
+ @Override public void onDestroy(){
+  if(active==this)active=null;
+  if(dnsChanges!=null){networkManager.unregisterNetworkCallback(dnsChanges);dnsChanges=null;}
+  if(pet!=null)pet.destroy();if(process!=null)process.destroy();io.shutdownNow();handler.removeCallbacksAndMessages(null);super.onDestroy();
+ }
 }

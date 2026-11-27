@@ -1,0 +1,7 @@
+Vosk Russian speech model
+vosk-model-small-ru-0.22, Alpha Cephei
+https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
+License: Apache License, Version 2.0 (Apache-2.0.txt)
+Publisher catalog: https://alphacephei.com/vosk/models/model-list.json
+Original ZIP: 46236750 bytes, MD5 d1759dc83eb8fd87850129afbd9f4b7b
+SHA-256: 961d5ff98a17f4aa6de69864d0aa71fa5bac682301d2b5d17a3f24c5c99a46d4

@@ -72,7 +72,7 @@ export function worldObjects(saved){
     const du=[3,10,11,21,22,23].includes(o.id)?-.70:0;
     const dv=o.id===7?-.86:[1,5,6,25,26,27,64,71,73,84].includes(o.id)?-.63:0;
     return {
-      ...restoreTurn(finishFixture(o),override),sector:override?.world&&named.has(override.sector)?override.sector:d.key,
+      ...restoreTurn(finishFixture(o),override,override?.sector==='home'),sector:override?.world&&named.has(override.sector)?override.sector:d.key,
       u:override?.world?override.u:d.u+(override?.u??o.u+du),
       v:override?.world?override.v:d.v+(override?.v??o.v+dv),
       approach:o.approach&&!override?[d.u+o.approach[0]+du,d.v+o.approach[1]+dv]:null

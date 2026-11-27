@@ -34,3 +34,5 @@ runtime/**/.adb-device.json
 runtime/**/runs/
 runtime/**/workspace/
 runtime/**/provider-settings.json
+**/operations.json
+**/android-build.json

@@ -3,9 +3,22 @@ const $=id=>document.getElementById(id);
 let apps=[],sheet='',drawerSection='all',pinMode=false;
 function node(tag,value,cls){const e=document.createElement(tag);if(value!==null)e.textContent=value;if(cls)e.className=cls;return e}
 function btn(text,cls,fn){const e=node('button',text,cls);e.type='button';e.onclick=fn;return e}
+const menuIcons = {
+ '☾':'moon','⌂':'home','♫':'volume','◷':'clock','↻':'restart','↗':'open','▱':'folder',
+ '−':'remove','＋':'add','✥':'move','◇':'item','▤':'monitor','☁':'cloud','›':'next',
+ '×':'close','↶':'rotateLeft','↷':'rotateRight','▥':'grid','◎':'compass','◉':'compass',
+ '□':'expand','⊞':'grid','✧':'activity','✦':'activity','◈':'model','☷':'menu'
+};
 function label(text,detail,icon,fn){
- const b=btn(null,'row',fn);const art={'☾':'wall-art','⌂':'grid-art','♫':'speaker-art','◷':'journal-art'}[icon];
- const tag=node('span',art?null:icon,'tag');if(art)tag.append(node('i',null,'art-icon '+art));b.append(tag);const body=node('span',null);body.append(node('strong',text),node('small',detail));b.append(body);return b;
+ const b=btn(null,'row',fn),tag=node('span',null,'tag');
+ tag.setAttribute('aria-hidden','true');
+ const key=menuIcons[icon];
+ if(key)tag.innerHTML=EvaIcons.html(key);else tag.textContent=icon;
+ const body=node('span',null);
+ body.append(node('strong',text));
+ if(detail)body.append(node('small',detail));
+ b.append(tag,body);
+ return b;
 }
 let sheetOpener,folderAnchor;
 function showSheet(id,title){
@@ -112,7 +125,8 @@ function appCard(app,back,showOptionsButton=true){
  };
  card.append(tile);
  if(showOptionsButton){
-  const options=btn('⋯','app-options',showOptions);
+  const options=btn(null,'app-options',showOptions);
+  options.innerHTML=EvaIcons.html('more');
   options.setAttribute('aria-label','Действия · '+app.name);
   card.append(options);
  }

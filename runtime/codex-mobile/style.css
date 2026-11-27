@@ -329,21 +329,10 @@ body .avatar-glow{animation:evaGlow 8s ease-in-out infinite alternate}
 @media (prefers-reduced-motion:reduce){.avatar-generated{transition:none}}
 
 /* Speech overlays show only the mouth; the original eyes and hair remain stable. */
-.avatar-speech-frame{z-index:7;opacity:0;clip-path:polygon(36% 31%,64% 31%,64% 38%,36% 38%);-webkit-mask-image:radial-gradient(ellipse 14% 3.5% at 50% 34.2%,#000 55%,transparent 100%);mask-image:radial-gradient(ellipse 14% 3.5% at 50% 34.2%,#000 55%,transparent 100%);transition:opacity .10s linear;pointer-events:none}
+.avatar-mouth-patch{position:absolute;left:36%;top:31%;width:28%;height:7%;z-index:7;opacity:0;background-size:400% 300%;background-repeat:no-repeat;mask-image:radial-gradient(ellipse 50% 50% at 50% 46%,#000 55%,transparent 100%);transition:opacity .065s linear;pointer-events:none}
+.avatar-multimouth-ready .avatar-mouth-patch{background-image:url('/avatar/visemes.webp')}
 .avatar-multimouth-ready.avatar-speaking .avatar-talking{animation:none;opacity:0}
-.avatar-expression-speech-01-active .avatar-expression-speech-01{opacity:1}
-.avatar-expression-speech-02-active .avatar-expression-speech-02{opacity:1}
-.avatar-expression-speech-03-active .avatar-expression-speech-03{opacity:1}
-.avatar-expression-speech-04-active .avatar-expression-speech-04{opacity:1}
-.avatar-expression-speech-05-active .avatar-expression-speech-05{opacity:1}
-.avatar-expression-speech-06-active .avatar-expression-speech-06{opacity:1}
-.avatar-expression-speech-07-active .avatar-expression-speech-07{opacity:1}
-.avatar-expression-speech-08-active .avatar-expression-speech-08{opacity:1}
-.avatar-expression-speech-09-active .avatar-expression-speech-09{opacity:1}
-.avatar-expression-speech-10-active .avatar-expression-speech-10{opacity:1}
-.avatar-expression-speech-11-active .avatar-expression-speech-11{opacity:1}
-.avatar-expression-speech-12-active .avatar-expression-speech-12{opacity:1}
-@media (prefers-reduced-motion:reduce){.avatar-speech-frame{transition:none}}
+@media (prefers-reduced-motion:reduce){.avatar-mouth-patch{transition:none}}
 
 .chat-backup-dialog form{display:grid;gap:10px}.chat-backup-dialog input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #6a7b85;border-radius:10px;color:#fff;background:#101a22;font-size:16px}.chat-backup-dialog input[hidden]{display:none}.chat-backup-dialog p[role=status]{min-height:1.2em;color:#eac892}.chat-backup-dialog button{min-height:44px}
 #sidebar #chat-backup-open{display:block;width:100%;text-align:left;background:#2d4748;color:#e3f1ed;border-radius:12px;padding:12px 14px;margin:0 0 8px;min-height:46px;font-size:15px;line-height:1.3}
@@ -428,3 +417,48 @@ body #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
 #steer:hover:not(:disabled){background:#3e6b6d}
 #steer:disabled{opacity:.65}
 #steer[hidden]{display:none!important}
+
+.avatar-front-surface,.avatar-turn { position:absolute; inset:0; width:100%; height:100%; }
+.avatar-turn { z-index:8; pointer-events:none; }
+.avatar-turn[hidden] { display:none!important; }
+.portrait-turned .avatar-front-surface { opacity:calc(1 - var(--portrait-paint,1)); }
+.portrait-turned .avatar-turn { opacity:var(--portrait-paint,1); }
+#avatar-stage[hidden] *,body.eva-pet-chat #avatar-stage * { animation-play-state:paused!important; }
+@media (prefers-reduced-motion:reduce) { .avatar-front-surface { transform:none; } }
+
+.ui-icon { display:inline-block; vertical-align:middle; flex:none; pointer-events:none; }
+.ui-icon-accent { stroke:var(--icon-accent,currentColor); }
+#sidebar { --icon-accent:#a3d5c8; }
+#sidebar #avatar-preview-open { display:flex; align-items:center; gap:9px; width:auto; margin:0; padding:10px 12px; background:transparent; font-size:14px; }
+#sidebar #avatar-preview-open .ui-icon { width:19px; height:19px; flex:none; }
+:is(#form,#work-progress,#avatar-preview) .ui-icon { width:21px; height:21px; }
+#voice-output[aria-pressed=true] { --icon-accent:#b1e4cb; }
+.attachment-chip button .ui-icon { width:17px; height:17px; }
+#form .attach:focus-within { outline:2px solid #a6ded2; outline-offset:-2px; border-radius:12px; }
+
+#avatar-preview {
+  display:grid; grid-template-rows:auto auto auto minmax(0,auto) auto; gap:7px;
+  width:min(430px,calc(100% - 20px)); max-height:min(45dvh,350px); left:50%; right:auto;
+  transform:translateX(-50%); overflow:hidden; padding:12px 14px 10px;
+  background:linear-gradient(155deg,#20313be8,#15202bf5); border-color:#849f9d65;
+}
+#avatar-preview[hidden] { display:none; }
+.avatar-preview-head { min-height:39px; }
+.avatar-preview-head strong { display:block; font-size:16px; line-height:1.15; }
+#avatar-preview-name { margin:2px 0 0; color:#b2d9ca; font-size:13px; line-height:1.2; }
+#avatar-preview-close { width:42px; height:42px; display:grid; place-items:center; padding:0; border-radius:13px; background:#32454a; }
+#avatar-preview-groups { display:flex; align-items:center; gap:3px; border-radius:12px; background:#10202a; padding:3px; }
+#avatar-preview-groups button { min-width:0; flex:1; min-height:40px; padding:4px 6px; border-radius:9px; background:transparent; color:#c4d2d4; font:600 14px/1.2 system-ui,sans-serif; }
+#avatar-preview-groups button[aria-pressed=true] { color:#e9faf3; background:#38554f; }
+#avatar-angle-control { height:32px; display:grid; align-items:center; }
+#avatar-angle-control[hidden] { display:none; }
+#avatar-preview-yaw { width:100%; margin:0; min-height:32px; accent-color:#a3dfca; }
+#avatar-preview-buttons { display:flex; align-content:flex-start; gap:4px 6px; overflow:auto; padding:0 2px 2px; }
+#avatar-preview-buttons button { flex:1 1 auto; min-height:40px; margin:0; padding:5px 10px; font-size:14px; line-height:1.2; background:#263840; border:1px solid #526565; border-radius:11px; color:#e2eceb; }
+#avatar-preview-buttons button[aria-pressed=true] { border-color:#a3dfca; color:#b3ead7; }
+#avatar-preview-play { justify-self:end; margin:0; min-height:40px; padding:5px 12px; background:transparent; color:#a9dccb; font-weight:600; }
+#avatar-preview button:focus-visible,#avatar-preview input:focus-visible { outline:2px solid #e4c8a2; outline-offset:-2px; }
+@media(max-height:465px) {
+ #avatar-preview { width:min(460px,98%); max-height:56dvh; gap:4px; padding-block:6px; overflow:auto; }
+ #avatar-preview-buttons { min-height:42px; }
+}

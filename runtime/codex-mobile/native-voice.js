@@ -11,6 +11,7 @@ if(window.NativeVoice){
   let activeSpeech=null,nextSpeech=0;
   window.__NativeUtterance=class{constructor(text){this.text=text;this.lang='ru-RU';this.pitch=1;this.rate=1}};
   window.__nativeSpeechStart=id=>{if(activeSpeech&&activeSpeech.id===id&&activeSpeech.utterance.onstart)activeSpeech.utterance.onstart()};
+  window.__nativeSpeechRange=(id,start,end)=>{if(activeSpeech?.id===id)activeSpeech.utterance.onboundary?.({name:'word',charIndex:start,charLength:Math.max(0,end-start)})};
   window.__nativeSpeechFinish=(id,error)=>{if(!activeSpeech||activeSpeech.id!==id)return;const u=activeSpeech.utterance;activeSpeech=null;if(error){if(u.onerror)u.onerror({error})}else if(u.onend)u.onend()};
   window.__nativeSpeechSynth={getVoices:()=>[],addEventListener:()=>{},speak(u){const id=String(++nextSpeech);activeSpeech={id,utterance:u};window.NativeVoice.speak(u.text,Number(u.pitch)||1,Number(u.rate)||1,id)},cancel(){activeSpeech=null;window.NativeVoice.stopSpeech()}};
 }

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <base href="../app/src/main/assets/home/"><title>Проверка движений Евы</title>
+  <style>
+    :root{color-scheme:dark;font:16px system-ui,sans-serif;background:#211e23;color:#f1e5d8}
+    body{max-width:48rem;margin:1rem auto;padding:0 1rem} canvas{width:100%;height:min(64vh,32rem);display:block;background:#28252b;border-radius:12px}
+    .controls{display:flex;align-items:center;flex-wrap:wrap;gap:.7rem;margin:.8rem 0}
+    button,select,input{font:inherit}button,select{padding:.45rem .7rem;border:1px solid #6f6467;border-radius:.45rem;color:inherit;background:#363037}
+    label{display:flex;gap:.4rem;align-items:center}label input{max-width:8rem}
+  </style>
+</head>
+<body>
+  <canvas id="scene" aria-label="Объёмная модель Евы в выбранной позе"></canvas>
+  <div class="controls">
+    <label>Занятие <select id="clip"></select></label><button id="play">Пауза</button>
+    <label>Кадр <input id="frame" type="range" min="0" step="1"><output id="number"></output></label>
+    <label>Ракурс <input id="yaw" type="range" min="-180" max="180" value="0"></label>
+    <button id="sheet">Сохранить лист кадров</button>
+  </div>
+  <script type="module">
+    import {createScene} from './render.mjs';
+    import {evaClips,EVA_FPS} from './eva-clips.mjs';
+    import {uvz} from './eva-rig.mjs';
+    import {evaModel} from './eva-model.mjs';
+    const {createMotionStage}=await import(new URL('./eva-motion-stage.mjs',document.URL));
+    const $=id=>document.getElementById(id),canvas=$('scene'),renderer=createScene(canvas);
+    const activities=await(await fetch('room-activities.json')).json(),selector=$('clip');
+    const poseAt=createMotionStage(activities);
+    for(const name of Object.keys(evaClips)){
+      const label=activities[name]?.title??({idle:'Покой',walk:'Ходьба',sit:'На стуле',wave:'Помахать рукой',reach:'Дотянуться',stoop:'Наклониться'})[name];
+      selector.add(new Option(label??name,name));
+    }
+    const mesh=evaModel(),lamps=new Float32Array(16);
+    let paused=false,epoch=performance.now(),last=-1,current=0;
+    function draw(key,frame,orbit=0){
+      const sample=poseAt(key,frame/EVA_FPS),{at,area,rig}=sample;
+      const yaw=(sample.yaw+orbit)*Math.PI/180;
+      // Use the limiting screen dimension in both portrait and landscape.
+      const metres=sample.asleep?.49:key==='stretch'||key==='air'?.48:.54;
+      const scale=Math.min(.62,metres*canvas.clientHeight/canvas.clientWidth);
+      renderer.prepare(area,scale,sample.asleep?.18:.32,yaw);
+      renderer.reset();
+      renderer.scenery([{key:'stage/'+key}],()=>{
+        renderer.box(1,{u:area.u-1.35,v:area.v-1.35,z:-.061},2.70,2.70,.061,[.72,.65,.56],'oak');
+      });
+      sample.furniture(renderer);
+      renderer.actorMesh(mesh,rig,15);
+      sample.props(renderer);
+      if(!sample.asleep)renderer.shadow({...at,z:.016},.25,.21);
+      renderer.setLightingFocus(uvz(rig.head),.88);
+      renderer.flush(false,.06,lamps,[1,.98,.99]);
+      return rig;
+    }
+    function sync(){
+      last=-1;epoch=performance.now();current=0;
+      $('frame').max=evaClips[selector.value].count-1;
+    }
+    function tick(t){
+      if(!paused)current=Math.floor((t-epoch)*EVA_FPS/1000)%evaClips[selector.value].count;
+      if(last!==current){
+        draw(selector.value,current,Number($('yaw').value));$('frame').value=current;$('number').value=current;last=current;
+      }
+      requestAnimationFrame(tick);
+    }
+    selector.onchange=sync;$('yaw').oninput=()=>{last=-1;};
+    $('frame').oninput=()=>{paused=true;current=Number($('frame').value);$('play').textContent='Пуск';};
+    $('play').onclick=()=>{paused=!paused;epoch=performance.now()-current*1000/EVA_FPS;$('play').textContent=paused?'Пуск':'Пауза';};
+    canvas.addEventListener('art',()=>{last=-1;});
+    function contactSheet(names=Object.keys(activities),columns=5,width=180,height=160){
+      const page=document.createElement('canvas');page.width=width*columns;page.height=(height+25)*names.length;
+      const ctx=page.getContext('2d');ctx.fillStyle='#28252b';ctx.fillRect(0,0,page.width,page.height);
+      names.forEach((name,row)=>{
+        ctx.font='16px system-ui';ctx.fillStyle='#f1e5d8';ctx.fillText(activities[name]?.title??name,8,row*(height+25)+19);
+        for(let i=0;i<columns;i++){
+          draw(name,Math.floor(i*evaClips[name].count/columns),Number($('yaw').value));
+          const ratio=Math.min(width/canvas.width,height/canvas.height);
+          const w=canvas.width*ratio,h=canvas.height*ratio;
+          ctx.drawImage(canvas,i*width+(width-w)/2,row*(height+25)+25+(height-h)/2,w,h);
+        }
+      });
+      last=-1;return page;
+    }
+    $('sheet').onclick=()=>{
+      const a=document.createElement('a');a.download='eva-motion.png';
+      a.href=contactSheet().toDataURL();a.click();
+    };
+    window.evaProof={draw,contactSheet,clips:Object.keys(evaClips),mesh};
+    sync();requestAnimationFrame(tick);
+  </script>
+</body>
+</html>

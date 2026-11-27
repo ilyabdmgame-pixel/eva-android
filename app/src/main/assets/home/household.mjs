@@ -24,11 +24,15 @@ export const domestic={
  screen:['Поправить ширму',['Так из коридора меньше видно.','Ширма чуть съехала. Поправила.','Вот теперь приватность.']]
 };
 export const actionTime={fridge:1750,basin:1560,screen:1050};
-export function useFrame(kind,uses,progress){
+export function useProgress(kind,uses,progress){
  if(!actionTime[kind])return 0;
- if(progress==null)return kind==='basin'&&uses?8:kind==='screen'&&uses%2?8:0;
+ if(progress==null)return Number(Boolean(kind==='basin'&&uses||kind==='screen'&&uses%2));
  const x=Math.min(1,Math.max(0,progress));
  const stage=kind==='fridge'?Math.min(1,x/.32,(1-x)/.30):
    kind==='screen'?(uses%2?x:1-x):uses<=1?x:Math.abs(2*x-1);
- return Math.round(8*stage*stage*(3-2*stage));
+ return stage*stage*(3-2*stage);
+}
+
+export function useFrame(kind,uses,progress){
+ return Math.round(8*useProgress(kind,uses,progress));
 }

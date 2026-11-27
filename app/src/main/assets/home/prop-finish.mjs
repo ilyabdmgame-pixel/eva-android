@@ -66,13 +66,13 @@ export function halfTurn(o){
  return {...o,back:!o.back,parts:o.parts.map(p=>({...p,u:o.w-p.u-p.a,v:o.d-p.v-p.b})),
    seatDirection:opposite[o.seatDirection||'down-left'],approach:null};
 }
-export function restoreTurn(o,record){
+export function restoreTurn(o,record,volumetric=false){
  if(record?.turned)o=turnFixture(o);
- return record?.back&&hasReverse(o)?halfTurn(o):o;
+ return record?.back&&(volumetric||hasReverse(o))?halfTurn(o):o;
 }
-export function nextTurn(o){
+export function nextTurn(o,volumetric=false){
  const result=turnFixture(o);
- return o.turned&&hasReverse(o)?halfTurn(result):result;
+ return o.turned&&(volumetric||hasReverse(o))?halfTurn(result):result;
 }
 export function seatFront(o,gap=.28){
  const side=o.back?-1:1;

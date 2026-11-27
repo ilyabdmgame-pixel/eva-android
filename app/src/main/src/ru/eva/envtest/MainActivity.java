@@ -239,7 +239,21 @@ public final class MainActivity extends Activity implements CodexService.Listene
   private void runJs(String js){if(web!=null)web.post(()->{if(web!=null)web.evaluateJavascript(js,null);});}
   private void sendRecognitionResult(Bundle results,boolean finalResult){if(results==null)return;ArrayList<String> lines=results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);if(lines!=null&&!lines.isEmpty())runJs("window.__nativeRecognitionResult&&window.__nativeRecognitionResult("+JSONObject.quote(lines.get(0))+","+(finalResult?"true":"false")+")");}
   private void sendRecognitionFinish(String error){runJs("window.__nativeRecognitionFinish&&window.__nativeRecognitionFinish("+(error==null?"null":JSONObject.quote(error))+")");}
-  private void setupNativeTts(){nativeTts=new TextToSpeech(this,status->{nativeTtsReady=status==TextToSpeech.SUCCESS;if(nativeTtsReady){nativeTts.setLanguage(new Locale("ru","RU"));nativeTts.setOnUtteranceProgressListener(new UtteranceProgressListener(){public void onStart(String id){runJs("window.__nativeSpeechStart&&window.__nativeSpeechStart("+JSONObject.quote(id)+")");}public void onDone(String id){runJs("window.__nativeSpeechFinish&&window.__nativeSpeechFinish("+JSONObject.quote(id)+",null)");}public void onError(String id){runJs("window.__nativeSpeechFinish&&window.__nativeSpeechFinish("+JSONObject.quote(id)+",'synthesis-failed')");}});}});}
+  private void setupNativeTts(){
+    nativeTts=new TextToSpeech(this,status->{
+      nativeTtsReady=status==TextToSpeech.SUCCESS;
+      if(!nativeTtsReady)return;
+      nativeTts.setLanguage(new Locale("ru","RU"));
+      nativeTts.setOnUtteranceProgressListener(new UtteranceProgressListener(){
+        @Override public void onStart(String id){runJs("window.__nativeSpeechStart?.("+JSONObject.quote(id)+")");}
+        @Override public void onRangeStart(String id,int start,int end,int frame){
+          runJs("window.__nativeSpeechRange?.("+JSONObject.quote(id)+","+start+","+end+")");
+        }
+        @Override public void onDone(String id){runJs("window.__nativeSpeechFinish?.("+JSONObject.quote(id)+",null)");}
+        @Override public void onError(String id){runJs("window.__nativeSpeechFinish?.("+JSONObject.quote(id)+",'synthesis-failed')");}
+      });
+    });
+  }
   private void startNativeRecognition(){if(!SpeechRecognizer.isRecognitionAvailable(this)){sendRecognitionFinish("service-not-allowed");return;}if(recognizer!=null){recognizer.destroy();recognizer=null;}recognizer=SpeechRecognizer.createSpeechRecognizer(this);recognizer.setRecognitionListener(new RecognitionListener(){
     public void onReadyForSpeech(Bundle x){} public void onBeginningOfSpeech(){} public void onRmsChanged(float x){} public void onBufferReceived(byte[] x){} public void onEndOfSpeech(){} public void onEvent(int x,Bundle y){}
     public void onPartialResults(Bundle x){sendRecognitionResult(x,false);} public void onResults(Bundle x){sendRecognitionResult(x,true);sendRecognitionFinish(null);if(recognizer!=null){recognizer.destroy();recognizer=null;}}

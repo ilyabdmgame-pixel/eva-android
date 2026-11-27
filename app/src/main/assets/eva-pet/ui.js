@@ -35,7 +35,7 @@
   games.type = 'button';
   games.id = 'eva-pet-games-launcher';
   games.className = 'pet-composer-extra';
-  games.textContent = 'Игры';
+  games.innerHTML = uiIcon('game') + '<span>Игры</span>';
   games.setAttribute('aria-label', 'Игры с Евой');
   games.addEventListener('click', openGames);
   header.append(games);
@@ -63,10 +63,7 @@
   expand.type = 'button';
   expand.hidden = true;
   expand.setAttribute('aria-label', 'Развернуть чат');
-  const expandIcon = document.createElement('i');
-  expandIcon.className = 'eva-composer-icon eva-composer-expand';
-  expandIcon.setAttribute('aria-hidden', 'true');
-  expand.append(expandIcon);
+  expand.innerHTML = uiIcon('expand');
   expand.addEventListener('click', () => EvaApp.expandPetChat());
   composer?.append(expand);
   let composing = false;

@@ -1,26 +1,30 @@
 import {roomSeat,seatMotion,seatSample} from './seat-motion.mjs';
 import {reverseCells} from './reverse-cells.mjs';
-import {actionAnchors} from './action-anchors.mjs';
-import {registeredPose} from './eva-motion.mjs';
+import {createEvaAnimator,uvz} from './eva-rig.mjs';
+import {evaModel} from './eva-model.mjs';
+import {drawEvaProps} from './eva-props.mjs';
 import {restoreTurn,nextTurn,turnFixture} from './prop-finish.mjs';
 import {objectLine} from './local-lines.mjs';
 import {propArt} from './prop-art.mjs';
 import {furnitureSurface} from './occlusion.mjs';
-import {domestic,actionTime,useFrame} from './household.mjs';
+import {domestic,actionTime,useFrame,useProgress} from './household.mjs';
 import {editableFixture,placementIssue} from './layout.mjs';
 import {drawNotice,castFurniture} from './street-furniture.mjs';
 import {migrateTown} from './town-plan.mjs';
 import {fixtureTop,canPlace,hitsFixture} from './contact.mjs';
-import {activityPlan,activityLine,activitySample,drawRoomActivity,nextActivity,scheduledPeriod} from './room-activities.mjs';
+import {activityContacts,activityPlan,activityLine,activitySample,drawRoomActivity,nextActivity,scheduledPeriod} from './room-activities.mjs';
 import {project,worldAtHeight,inView} from './camera.mjs';
+import {cameraDefaults,roomCamera,visibleRoomWalls,bindRoomCamera} from './room-camera.mjs';
+import {roomSurface,hasRoomModel,drawRoomModel} from './room-models.mjs';
+import {fridgeVisit} from './room-appliances.mjs';
 import {createScene} from './render.mjs';
-import {room,roomOffset,roomEdge,roomView,expandedRoom,inRoom,fitsRoom,roomWindowFixture,drawRoom,drawRoomWindow,
-  attachedPosition,attachedFurniture,furnitureOwners as parents,roomFurniture,roomApproach,drawBedding} from './room.mjs';
-import {computerGesture,computerLayout,drawComputer,drawComputerArms,drawFloorDecor,furnishingThumbnail,roomDesk,roomFurnishings,streamChair} from './room-furnishings.mjs';
+import {room,roomOffset,roomEdge,roomView,expandedRoom,inRoom,fitsRoom,roomWindowFixture,windowLatch,drawWindowSash,drawRoom,drawRoomWindow,
+  attachedPosition,attachedFurniture,furnitureOwners as parents,roomFurniture,roomApproach,quiltApproach,drawBedding} from './room.mjs';
+import {computerGesture,computerLayout,drawComputer,drawFloorDecor,furnishingThumbnail,originalRoomDecor,studioRoomDecor,roomDesk,roomFurnishings,streamChair} from './room-furnishings.mjs';
 import {windowWeather,windowWeatherMoves} from './window-weather.mjs';
 import {places} from './places.mjs';
 import {startFlight,flightPoint,advanceFlight,drawToy} from './toys.mjs';
-import {gait,heading,walkHeading,orientation,standingPose,evaPose,actionPose} from './orientation.mjs';
+import {gait,heading,walkHeading} from './orientation.mjs';
 import {createSpeech} from './speech.mjs';
 import {createStreamChat} from './stream-chat.mjs';
 import {district,districts,regionAt,worldPoint,worldObjects,paceRoute} from './district.mjs';
@@ -38,12 +42,13 @@ const town=townChat({world:worldSnapshot,apply:useNearby,note:statusNote,quip:()
  usage:publishWeeklyQuota,stream:applyStreamDialogue});
 const canvas=$('scene');
 const EVA_ID=15;
+const animateEva=createEvaAnimator();
 const paintWindow=windowWeather(()=>{dirty=true;wake();});
 const roomControls=()=>document.querySelectorAll('.now,.top-status,#folders button,#actions button,#dock,#town-mark:not([hidden]),#town-answer:not([hidden])');
 const speechLayer=$('speech');
 const speech=createSpeech(speechLayer,$('world-status'),roomControls);
 const streamChat=createStreamChat($('stream-chat'),canvas,roomControls);
-const renderer=createScene(canvas);
+let renderer=null;
 const time=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 const date=new Intl.DateTimeFormat('ru-RU',{weekday:'long',day:'numeric',month:'long'});
 const sectionNames=Object.fromEntries(districts.map(x=>[x.key,x.title]));
@@ -59,6 +64,7 @@ const surfaceAt=()=>0;
 let eva=remembered&&inRoom(remembered.u,remembered.v,.15,roomExtra)?{...remembered}:start;
 const section=room.key;
 let center=roomView(roomExtra).centre;
+let cameraPose=roomCamera(saved.camera);
 const routines=JSON.parse(Desk.routines()).eva;
 const roomActivities=JSON.parse(Desk.roomActivities());
 const currentEntry=at=>scheduledPeriod(routines.entries,at);
@@ -83,18 +89,19 @@ function gestureAmount(g,t){
  const x=Math.min(1,Math.max(0,(t-g.start)/(g.until-g.start)));
  return ease(Math.min(1,x/.32,(1-x)/.32));
 }
-let mood=null,moodUntil=0,roomPulse=null,nextPresence=0,graphicsLost=false,graphicsRestored=false;
+let mood=null,moodUntil=0,roomPulse=null,nextPresence=0;
+let restoreAutomatically=true,restorePending=false,fallbackClock=0;
 const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const presenceProfile=JSON.parse(Desk.presenceProfile?.()||'{}');
 function reactInRoom(kind){
  if(reduceMotion||!presenceProfile[kind])return;
- roomPulse={start:now(),curve:presenceProfile[kind]};
+ roomPulse={kind,start:now(),curve:presenceProfile[kind]};
  dirty=true;wake();
 }
 const lampIsOn=o=>o.kind==='placedLamp'?o.on:saved.lamps[o.id]??(o.id===5||night>.44);
 const drawerOpen=id=>saved.drawers?.[id]??(id===1&&Boolean(saved.desk));
 const now=()=>performance.now();
-let fixtures=[],navigation;
+let fixtures=[],navigation,fixtureRevision=0;
 const fixtureIds=Object.fromEntries(Object.entries(fixtureItems).map(([id,item])=>[item,Number(id)]));
 const models=[...worldObjects({}),...roomFurnishings];
 const modelsById=new Map(models.map(o=>[o.id,o]));
@@ -105,31 +112,23 @@ function attachedTo(child,parent){
  const original=modelsById.get(parent.id);
  const base=child.id===streamChair.id?roomDefaults.get(child.id):modelsById.get(child.id);
  const attachment=attachedPosition(base,original,parent);
- const key=parent.back?'back-'+parent.art:parent.art;
- const top=parent.id===1&&parent.art==null?{height:fixtureTop(parent),shift:0}:furnitureSurface(key,[parent.w,parent.d],parent.artFlip);
  if(child.id===streamChair.id){
-   const shift=top?.shift??0;
-   if(parent.turned)attachment.v-=shift;
-   else attachment.u+=shift;
    return {...attachment,parts:(parent.turned?turnFixture(base):base).parts};
  }
- if(top){
-   attachment.u+=top.shift;attachment.v-=top.shift;
-   attachment.z=parent.kind==='bed'
-     ?top.height+(child.kind==='pillow'?.018:.006)
-     :attachment.z+top.height-fixtureTop(original);
- }
+ const surface=roomSurface(parent);
+ if(surface!=null)attachment.z=surface;
  return attachment;
 }
 saved.decor=Array.isArray(saved.decor)?saved.decor:[];
 function decorFixture(entry){
  const model=modelsById.get(entry.model);
  if(!model||!Number.isInteger(entry.id)||entry.id<1024||entry.id>65534)return null;
- const object=restoreTurn(model,entry);
+ const object=restoreTurn(model,entry,true);
  if(!fitsRoom(entry.u,entry.v,object.w,object.d,roomExtra))return null;
  return {...object,...entry,sector:section,approach:null,decor:true};
 }
 function refreshObjects(){
+ fixtureRevision++;
  const objects=new Map(worldObjects(saved).map(o=>[o.id,o]));
  fixtures=[];
  for(const [id,base] of roomDefaults){
@@ -235,13 +234,14 @@ function appEvent(action){Desk.note(action,section);pullClock()}
 function objectList(){return fixtures.filter(o=>o.kind!=='shell'||!saved.pickedShell);}
 const localUses={shelter:'shelter',chair:'sit',plant:'plant',books:'books',lamp:'lamp',window:'window',bed:'sleep',computer:'useComputer',clock:'clock',lookout:'lookout',fountain:'fountain',flowers:'flowers',stove:'stove',basin:'basin',fridge:'fridge',shower:'shower',screen:'screen',toilet:'toilet',notice:'notice',wallArt:'wallArt'};
 function worldSnapshot(){
- const nearby=objectList().map(o=>({id:o.id,name:o.name,use:localUses[o.kind]||'',distance:Math.round(Math.hypot(o.u+o.w/2-eva.u,o.v+o.d/2-eva.v)*10)/10}))
+ const nearby=(renderer?objectList():[]).map(o=>({id:o.id,name:o.name,use:localUses[o.kind]||'',distance:Math.round(Math.hypot(o.u+o.w/2-eva.u,o.v+o.d/2-eva.v)*10)/10}))
    .filter(o=>o.distance<=6).sort((a,b)=>a.distance-b.distance).slice(0,18);
  return {location:sectionNames[section],time:time.format(new Date()),weather:climate.weather,indoors:true,
    activity:roomActivity?.started?roomActivity.definition.title:
      seated?.sleep?'спит':seated?'сидит':move.length?'идёт':'стоит',coins:saved.economy.coins,nearby};
 }
 function useNearby(id,action){
+ if(!renderer)return '3D-комната пока недоступна';
  if(layout||sheet||selectTarget||dropAim||toyAim||carrying)return 'Сейчас открыто другое действие';
  const o=objectList().find(f=>f.id===id&&localUses[f.kind]===action);
  if(!o||!worldSnapshot().nearby.some(f=>f.id===id&&f.use===action))return 'Предмет больше не рядом';
@@ -347,7 +347,12 @@ function activityAvailable(key){
 }
 function stopRoomActivity(){
  if(!roomActivity)return;
- if(roomActivity.key==='computer')streamChat.clear();
+ if(roomActivity.key==='fridge'&&roomActivity.sample){
+   const stage=useProgress('fridge',0,roomActivity.sample.progress);
+   const {at}=fridgeVisit(roomActivity.fixture,eva,stage,navigation.clear);
+   eva.u=at.u;eva.v=at.v;
+ }
+ if(roomActivity.key==='computer')endBroadcast();
  if(!roomActivity.started){move=[];onArrival=null;automaticWalk=false;walkSpeed=0;walkHold=null;}
  const pose=roomActivity.sample;
  if(!reduceMotion&&!seated&&pose&&(pose.motion==='reach'||pose.motion==='stoop')&&pose.amount){
@@ -360,6 +365,7 @@ function startRoomActivity(key,automatic=false,fromChat=false){
  if(!fixture&&!definition.spot)return;
  const chair=key==='computer'&&fixtures.find(item=>item.id===streamChair.id);
  if(key==='computer'&&!chair)return;
+ if(key==='computer')renderer?.endStream();
  closeSheet();
  stopRoomActivity();
  if(saved.sound)prepareSound();
@@ -371,7 +377,8 @@ function startRoomActivity(key,automatic=false,fromChat=false){
    if(!automatic)say('К сиденью не подойти. Оставь перед ним свободный пол.','wry');
    return;
  }
- const target=seat?[seat.stand.u,seat.stand.v]:fixture?around(fixture):[spot.u,spot.v];
+ const quilting=key==='makeBed'&&quiltApproach(fixture,eva,navigation);
+ const target=seat?[seat.stand.u,seat.stand.v]:quilting||(fixture?around(fixture):[spot.u,spot.v]);
  const state={key,definition,fixture,started:false,startedAt:null,plan:activityPlan(definition),fromChat,automatic};
  roomActivity=state;
  walkTo(...target,()=>{
@@ -382,7 +389,8 @@ function startRoomActivity(key,automatic=false,fromChat=false){
      if(!automatic)statusNote('До места не подойти. Освободи проход.');
      return;
    }
-   if(fixture)face(fixture);
+   if(key==='air')face({...windowLatch(0),w:0,d:0});
+   else if(fixture)face(fixture);
    if(seat)takeSeat(seat);
    if(chair)saved.computerOn=true;
    else if(sleeper)speech.clear();
@@ -404,7 +412,7 @@ function finishRoomActivity(state){
    case 'read':saved.page=(saved.page||0)+1;break;
    case 'water':saved.plant=true;break;
    case 'vinyl':saved.record=true;break;
-   case 'computer':streamChat.clear();leaveSeat();break;
+   case 'computer':endBroadcast();leaveSeat();break;
    case 'tv':saved.channel=(saved.channel||0)%2+1;break;
    case 'nap':leaveSeat();break;
    case 'wash': {
@@ -430,6 +438,7 @@ function applyStreamDialogue(data){
  if(state?.streamRequest===data.id&&data.id)state.dialogue?.addGenerated(data.pairs);
 }
 function advanceStream(state,elapsed,t,canReact){
+ state.dialogue.observeGame?.(renderer?.streamGameState());
  const cue=state.dialogue.next(elapsed);
  if(cue){
    streamChat.add(cue);dirty=true;
@@ -498,6 +507,10 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
    animateAction(action,o.id);
    sound(action==='fountain'?'water':action==='clock'?'chime':action);
    switch(action){
+     case 'wardrobe':
+       saved.cabinets??={};saved.cabinets[o.id]=!saved.cabinets[o.id];
+       if(!reduceMotion)gesture={motion:'reach',id:o.id,start:now(),until:now()+790};
+       say(saved.cabinets[o.id]?'Рубашки слева, худи справа. Парадная толстовка посередине.':'Закрыла. Ни один рукав наружу не торчит.','pleased');break;
      case 'blanket':
        if(o.id===11)saved.blanket=!saved.blanket;
        else {saved.linens??={};saved.linens[o.id]=!saved.linens[o.id];}
@@ -637,6 +650,7 @@ const descriptions={
 };
 function actionsFor(o){
  if(o.kind==='shelter')return [['Переждать дождь','shelter']];
+ if(o.kind==='wardrobe')return [[saved.cabinets?.[o.id]?'Закрыть дверцы':'Открыть шкаф','wardrobe']];
  if(domestic[o.kind])return o.kind==='stove'?[[domestic.stove[0],'stove'],['Разогреть обед','homeMeal']]:[[domestic[o.kind][0],o.kind]];
  if(o.id===225)return [['Посмотреть журнал','mail']];
  if(o.id===82)return [['Протереть столик','tableWipe']];
@@ -678,8 +692,11 @@ function pauseInitiative(){
 function tapAt(hit,longPress=false){
  if(!view||sheet)return;
  const {id,p}=hit;
+ if(!longPress&&!selectTarget&&!toyAim&&!dropAim&&roomActivity?.key==='computer'&&
+   roomActivity.dialogue&&id===roomActivity.fixture.id){openBroadcast();return;}
  if(id===EVA_ID&&!longPress&&!selectTarget&&!toyAim&&!dropAim){
    if(!roomActivity?.started)pauseInitiative();
+   reactInRoom('acknowledge');
    town.tap();wake();return;
  }
  pauseInitiative();
@@ -745,7 +762,7 @@ function layoutHUD(message){
  $('layout-pan').hidden=!o;$('layout-pan').setAttribute('aria-pressed',String(Boolean(layout.pan&&o)));
  $('layout-rotate').hidden=!o||o.placementId!=null;
  $('layout-undo').hidden=!!o||!layout.undo.length;
- $('layout-rotate').textContent=o?'Поворот · '+((o.back?180:0)+(o.turned?90:0))+'°':'Повернуть';
+ $('layout-angle').textContent=o?'Поворот · '+((o.back?180:0)+(o.turned?90:0))+'°':'Повернуть';
  $('layout-apply').hidden=!o;
  $('layout-apply').disabled=!layout.point||Boolean(layout.issue);
  $('layout-cancel').textContent=o?'Отмена':'Готово';
@@ -774,7 +791,7 @@ $('layout-cancel').onclick=backLayout;
 $('layout-pan').onclick=()=>{layout.pan=!layout.pan;layoutHUD(layout.pan?'Потяни комнату для обзора':layout.issue)};
 $('layout-rotate').onclick=()=>{
  const o=layout.object;if(!o)return;
- const p=layout.point||o;layout.object=nextTurn(o);
+ const p=layout.point||o;layout.object=nextTurn(o,true);
  if(layout.point||!layout.newItem)setDestination({u:p.u+o.w/2,v:p.v+o.d/2});
  else layoutHUD('Выбери место для предмета');
 };
@@ -800,8 +817,17 @@ $('layout-undo').onclick=()=>{
  const undo=layout?.undo.pop();if(!undo)return;undo();refreshObjects();storage();
  layoutHUD('Последняя правка отменена');
 };
+let paletteObserver=null;
 function openPalette(){
  const out=showSheet('palette','Добавить предмет'),groups=new Map();
+ paletteObserver?.disconnect();
+ const previews=new WeakMap();
+ paletteObserver=typeof IntersectionObserver==='function'?new IntersectionObserver((entries,observer)=>{
+   for(const entry of entries)if(entry.isIntersecting){
+     const preview=entry.target;
+     observer.unobserve(preview);furnishingThumbnail(preview,previews.get(preview));
+   }
+ },{root:out,rootMargin:'90px'}):null;
  const category=o=>o.category||(
    ['chair','table','shelf'].includes(o.kind)?'Мебель':o.kind==='lamp'?'Свет':
    domestic[o.kind]?'Быт':'Декор');
@@ -816,11 +842,13 @@ function openPalette(){
      const fresh={...o,id,model,decor:true,approach:null};chooseFixture(fresh);layout.newItem=true;layoutHUD();
    });
    const thumb=node('span'),key=[41,42,50].includes(model)?'catalog-'+model:o.art||(o.kind==='seasonTree'?'town-birch':o.poster);
-   if(key){const f=propArt[key];thumb.style.backgroundImage='url(/art/'+(f?.[0]||key)+'.png)';
-     if(f){const w=f[3]-f[1],h=f[4]-f[2];thumb.style.aspectRatio=String(f[5]);thumb.style.backgroundSize=100/w+'% '+100/h+'%';thumb.style.backgroundPosition=100*f[1]/(1-w)+'% '+100*f[2]/(1-h)+'%'}}
-   else if(o.category){
+   if(hasRoomModel(o)||o.category){
      const preview=node('canvas',null,'furnishing-thumb');
-     preview.setAttribute('aria-hidden','true');furnishingThumbnail(preview,o);thumb.append(preview);
+     preview.width=112;preview.height=86;preview.setAttribute('aria-hidden','true');thumb.append(preview);
+     if(paletteObserver){previews.set(preview,o);paletteObserver.observe(preview);}else furnishingThumbnail(preview,o);
+   }else if(key){
+     const f=propArt[key];thumb.style.backgroundImage='url(/art/'+(f?.[0]||key)+'.png)';
+     if(f){const w=f[3]-f[1],h=f[4]-f[2];thumb.style.aspectRatio=String(f[5]);thumb.style.backgroundSize=100/w+'% '+100/h+'%';thumb.style.backgroundPosition=100*f[1]/(1-w)+'% '+100*f[2]/(1-h)+'%'}
    }else thumb.textContent=o.streetMesh?'▥':'◇';
    b.append(thumb,node('span',o.name));groups.get(category(o)).append(b);
  }
@@ -941,25 +969,105 @@ canvas.addEventListener('contextmenu',event=>{
  hold.long=true;clearTimeout(hold.timer);
 });
 
+function setRoomCamera(pose,save){
+ cameraPose=roomCamera(pose);
+ if(save){saved.camera={...cameraPose};storage();}
+ dirty=true;wake();
+}
+const cancelOrbit=bindRoomCamera(canvas,{enabled:()=>renderer&&!sheet&&!layout&&!selectTarget&&!toyAim&&!dropAim,
+ read:()=>cameraPose,write:setRoomCamera,releaseTouch:releaseHomePointer});
+
 function paint(t=now()){
- view=renderer.prepare(center,roomView(roomExtra).scale,roomOffset);
+ view=renderer.prepare(center,roomView(roomExtra).scale*cameraPose.zoom,roomOffset,cameraPose.yaw);
  paintCount++;
  const playing=roomActivity?.started?roomActivity:null;
  const routinePose=playing?.sample;
- const stream=playing?.key==='computer'&&restMotion&&seatSample(restMotion,t,reduceMotion).complete?
+ const rest=restMotion,sample=rest&&seatSample(rest,t,reduceMotion),seat=rest?.seat;
+ const stream=playing?.key==='computer'&&sample?.complete?
    computerGesture(playing.fixture,routinePose,reduceMotion):null;
+ const support=seat&&fixtures.find(o=>o.id===seat.id);
+ const origin=sample?{u:sample.u,v:sample.v,z:surfaceAt(sample.u,sample.v)}:position3D(eva);
+ const {at,windowOpen,grip,barrier,stepAside,station}=activityContacts(playing?.key,playing?.fixture,routinePose,origin,saved.window,navigation.clear);
+ const walking=Boolean((move.length||walkHold)&&!reduceMotion);
+ const clip=playing?.key||(seat?(seat.sleep?'sleep':'sit'):walking?'walk':
+   gesture?.motion||releaseMotion?.motion||(roomPulse?.kind==='acknowledge'?'wave':'idle'));
+ const walkBlend=walkHold?1-ease(Math.min(1,(t-walkHold)/footSettleTime)):
+   ease(Math.min(1,Math.max(0,(t-walkStarted)/footSettleTime)));
+ const gestureStrength=gesture?gestureAmount(gesture,t):releaseMotion?
+   releaseMotion.from*(1-ease(Math.min(1,Math.max(0,(t-releaseMotion.start)/190)))):1;
+ const actionTimeSec=playing?routinePose.seconds:gesture?(t-gesture.start)/1000:
+   roomPulse?(t-roomPulse.start)/1000:t/1000;
+ const object=playing?.fixture;
+ const owner=object&&fixtures.find(o=>o.id===parents.get(object.id));
+ const workArea=owner||object;
+ const workTop=workArea?{u:workArea.u+workArea.w/2,v:workArea.v+workArea.d/2,
+   z:surfaceAt(workArea.u,workArea.v)+(workArea.kind==='window'?1.53:
+     roomSurface(workArea)??fixtureTop(workArea))}:null;
+ const reaction=playing?.streamReaction;
+ const pulse=roomPulse?Math.sin(Math.PI*Math.min(1,(t-roomPulse.start)/roomPulse.curve[0])):0;
+ const expression=reaction&&!reduceMotion?streamExpression(reaction.emotion,t-reaction.start):roomPulse?
+   {x:pulse*roomPulse.curve[1],y:pulse*roomPulse.curve[2]*.019}:null;
+ const rig=animateEva({at,time:t,clip,clipSeconds:actionTimeSec,facing:rest?.facing||(walking?walkFacing:direction),
+   walkDistance:walkPhase,walkWeight:walking?walkBlend:0,seat,seatSample:sample,support,
+   reduced:reduceMotion,workTop,workArea,station,grip,barrier,stepAside,
+   desk:stream,expression,mood,strength:playing||seat?1:gestureStrength});
  lighting=paletteFor(climate,false).map(x=>x*(.95+climate.daylight*.065));
  const sources=[[room.u+.32,room.v-.8,2.47,.58+night*.52]];
  const marginPx=view.scale*.4;
  motionFrames={};
  renderer.setLightingFocus({...eva,z:.81},climate.daylight);
  renderer.reset();
- renderer.scenery([{key:'room',cacheKey:'room-'+roomExtra+'-'+!!saved.window}],()=>drawRoom(renderer,saved.window,roomExtra));
- drawRoomWindow(renderer,paintWindow(t,climate,reduceMotion));
- renderer.sprite(251,'amber-sconce',{u:room.u-2.7,v:room.v-roomEdge+.16,z:1.72},.46,false,{bias:.03});
+ const walls=visibleRoomWalls(cameraPose.yaw);
  const objects=objectList(),heads=new Map();
  const preview=layout?.point&&{...layout.object,...layout.point};
  if(layout?.newItem&&layout.object&&layout.point)objects.push(layout.object);
+ const bed=preview?.kind==='bed'?preview:fixtures.find(o=>o.kind==='bed');
+ const bedding=seat?.sleep&&seat.id===bed?.id?sample:null;
+ const drape=bedding?.recline??0;
+ const movingBed=Boolean(bedding&&!bedding.complete);
+ const makingBed=playing?.key==='makeBed'&&playing.fixture.id===bed?.id;
+ const isBedding=o=>o.kind==='pillow'||o.kind==='blanket';
+ const inMesh=o=>hasRoomModel(o)||isBedding(o)||o.kind==='computer'||o.kind==='floorDecor'||Boolean(o.category&&o.parts?.length);
+ const hiddenModel=o=>playing?.fixture?.id===o.id&&['tea','fluff','fold'].includes(playing.key);
+ const movingModel=o=>o.id===carrying||o.id===preview?.id||preview&&parents.get(o.id)===preview.id||
+   gesture?.id===o.id||playing?.fixture?.id===o.id&&actionTime[o.kind]||
+   o.kind==='record'&&saved.record&&!reduceMotion||isBedding(o)&&(movingBed||o.kind==='blanket'&&(drape>0||makingBed));
+ function stateFor(o){
+   const pressing=gesture?.id===o.id?Math.min(1,Math.max(0,(t-gesture.start)/(gesture.until-gesture.start))):null;
+   const uses=saved.houseUses?.[o.id]||0;
+   const progress=playing?.fixture?.id===o.id?routinePose.progress:pressing;
+   const change=useProgress(o.kind,playing?.key==='wash'&&playing.fixture.id===o.id?uses+1:uses,progress);
+   const opening=open=>pressing==null?Number(Boolean(open)):open?ease(pressing):1-ease(pressing);
+   return {drawer:opening(drawerOpen(o.id)),spin:saved.record?t*.001:0,
+     lit:(o.kind==='lamp'||o.kind==='placedLamp')&&lampIsOn(o),channel:saved.channel,painted:saved.draw,
+     kettleInHand:playing?.key==='kettle'&&playing.fixture.id===o.id,
+     stage:o.kind==='wardrobe'?opening(saved.cabinets?.[o.id]):change};
+ }
+ function model(o){
+   if(hiddenModel(o))return;
+   if(isBedding(o)&&bed){drawBedding(renderer,bed,o,o.kind==='blanket'&&saved.blanket,drape,!!saved.pillow,bedding||makingBed?rig:null);return;}
+   if(o.kind==='computer'){drawComputer(renderer,o,false,false,0,null,'hardware');return;}
+   if(o.kind==='floorDecor'){drawFloorDecor(renderer,o);return;}
+   const fixture=o.id===carrying?{...o,z:(o.z||0)+.48}:o;
+   if(drawRoomModel(renderer,fixture,stateFor(o)))return;
+   for(const p of o.parts){
+     renderer.box(o.id,{u:o.u+p.u,v:o.v+p.v,z:(fixture.z||0)+p.z},p.a,p.b,p.h,p.tint,p.mat);
+   }
+ }
+ const cached=objects.filter(o=>inMesh(o)&&!movingModel(o)&&!hiddenModel(o));
+ const staticKey=[fixtureRevision,Number(!!saved.blanket),Number(!!saved.pillow),Math.round(drape),saved.channel||0,Number(Boolean(saved.draw)),
+   ...cached.map(o=>{
+     const state=stateFor(o);
+     return o.id+'.'+(state.lit?1:0)+'.'+state.drawer+'.'+state.stage+'.'+Number(state.kettleInHand);
+   })].join('/');
+ renderer.scenery([{key:'shell',cacheKey:'shell/'+roomExtra+'/'+Number(walls.u)+Number(walls.v)},
+   ...(walls.v?[{key:'sash',cacheKey:'sash/'+Math.round(windowOpen*30)}]:[]),
+   {key:'furniture',cacheKey:staticKey}],plot=>{
+   if(plot.key==='shell')drawRoom(renderer,windowOpen,roomExtra,walls,false);
+   else if(plot.key==='sash')drawWindowSash(renderer,windowOpen);
+   else for(const o of cached)model(o);
+ });
+ drawRoomWindow(renderer,walls.v?paintWindow(t,climate,reduceMotion):null,walls.v);
  for(const original of objects){
    const o=preview?.id===original.id?preview:preview&&parents.get(original.id)===preview.id
      ?attachedTo(original,preview):carrying===original.id?{...original,u:eva.u+.23,v:eva.v+.23}:original;
@@ -972,6 +1080,33 @@ function paint(t=now()){
    const radius=Math.max(o.w,o.d,o.artSpan||0,1.2);
    const height=Math.max(o.visualHeight||0,o.height||0,3.5)+(o.z||0);
    if(!inView(view,o,radius,height,marginPx))continue;
+   const lamp=o.kind==='lamp'||o.kind==='placedLamp';
+   if(lamp&&lampIsOn(o)){
+     const height=o.lightHeight??(o.kind==='placedLamp'?.43:o.id===5?.38:1.28);
+     sources.push([o.u+o.w*.5,o.v+o.d*.5,(o.z||0)+height,.42+night*.77]);
+   }
+   if(inMesh(o)){
+     if(!o.z&&o.solid!==false&&o.id!==carrying&&o.kind!=='floorDecor'){
+       const floor=.027,c={u:o.u+o.w*.5,v:o.v+o.d*.5,z:floor};
+       renderer.shadow(c,o.w*.63+.026,o.d*.64+.026);
+       if(['chair','bed','table','streamChair'].includes(o.kind)){
+         for(const x of [-1,1])for(const y of [-1,1]){
+           renderer.shadow({u:c.u+x*(o.w*.5-.055),v:c.v+y*(o.d*.5-.055),z:floor+.001},.085,.070);
+         }
+       }
+       const h=roomSurface(o)??Math.min(1.55,fixtureTop(o)),du=-.14*h,dv=.31*h;
+       const {u,v,w,d}=o;
+       const clamp=(n,origin)=>Math.min(origin+roomEdge+roomExtra,Math.max(origin-roomEdge,n));
+       const shade=[[u,v],[u+w,v],[u+w,v+d],[u+w+du,v+d+dv],[u+du,v+d+dv],[u+du,v+dv]]
+         .map(([x,y])=>[clamp(x,room.u),clamp(y,room.v),.023]);
+       renderer.castFloor(shade);
+     }
+     if(movingModel(o))model(o);
+     if(o.kind==='computer')drawComputer(renderer,o,!!saved.computerOn||Boolean(stream),Boolean(stream),
+       stream?streamTime(playing,t):0,stream,'display');
+     continue;
+   }
+   if(o.kind==='wallArt'&&!walls.v)continue;
    if(o.art){renderer.artReady(o.art);if(o.back)renderer.artReady('back-'+o.art);}
    const treeArt=o.kind==='seasonTree'?(o.id%4===1?'town-spruce':climate.season==='autumn'?['town-birch','town-spruce','town-maple',seasons.autumn.trees][o.id%4]:seasons[climate.season].trees):null;
    if(treeArt)renderer.artReady(treeArt);
@@ -997,21 +1132,6 @@ function paint(t=now()){
      continue;
    }
    if(o.kind==='window')continue;
-   if(o.kind==='computer'){
-     const streaming=Boolean(stream);
-     drawComputer(renderer,o,!!saved.computerOn||streaming,streaming,routinePose?.seconds,stream);
-     continue;
-   }
-   if(o.kind==='floorDecor'){drawFloorDecor(renderer,o);continue;}
-   if(playing?.fixture?.id===o.id&&['tea','fluff','fold'].includes(playing.key))continue;
-   if(o.kind==='pillow'||o.kind==='blanket'){
-     const owner=parents.get(o.id);
-     const bed=preview?.id===owner?preview:fixtures.find(item=>item.id===owner);
-     if(bed?.kind==='bed'){
-       drawBedding(renderer,bed,o,o.kind==='blanket'&&saved.blanket);
-       continue;
-     }
-   }
    if(o.kind==='pickup'&&!o.art){
      const p=position3D(o);
      renderer.box(o.id,p,o.w*.64,o.d*.64,o.visualHeight,o.tint||[.66,.65,.52]);
@@ -1019,11 +1139,6 @@ function paint(t=now()){
    }
    const isLamp=o.kind==='lamp'||o.kind==='placedLamp';
    const lit=isLamp&&lampIsOn(o);
-   if(lit){
-     const shade=o.lightHeight??(o.kind==='placedLamp'?.43:o.id===5?1.36:2.22);
-     const shift=o.id===5?.14:0;
-     sources.push([o.u+o.w*.5+shift,o.v+o.d*.5,surfaceAt(o.u,o.v)+shade,.42+night*.77]);
-   }
    if(o.art){
      const p=position3D(o);
      if(o.base)renderer.box(o.id,p,o.w*.85,o.d*.85,.23,[.76,.50,.40],'wood');
@@ -1134,90 +1249,20 @@ function paint(t=now()){
  sources.sort((a,b)=>lightScore(b)-lightScore(a));
  lamps.fill(0);
  sources.slice(0,4).forEach((source,i)=>lamps.set(source,i*4));
- const rest=restMotion,sample=rest&&seatSample(rest,t,reduceMotion);
- const seat=rest?.seat,amount=sample?.poseAmount??sample?.amount??0;
- const recline=sample?.recline??0;
- const target=seat?(sample?.pose??'sit'):routinePose?.motion!=='idle'&&routinePose?.motion||
-   gesture?.motion||releaseMotion?.motion;
- const use=routinePose?.amount??(gesture?gestureAmount(gesture,t):
-   releaseMotion?releaseMotion.from*(1-ease(Math.min(1,Math.max(0,(t-releaseMotion.start)/190)))):0);
- const gaitWeight=walkHold?ease(Math.min(1,Math.max(0,(t-walkHold)/footSettleTime))):
-   1-ease(Math.min(1,Math.max(0,(t-walkStarted)/footSettleTime)));
- const walking=(move.length||walkHold)&&!reduceMotion;
- const pose=target?registeredPose(actionPose(rest?.facing||releaseMotion?.facing||direction,target,seat?amount:use),
-   seat?amount:use):
-   walking?evaPose(walkFacing,'walk',walkPhase,gaitWeight):actionPose(direction,'idle',0,mood);
- const ready=renderer.artReady(pose.key),shown=ready?pose:{...standingPose('eva',direction),height:1.62};
- const at=position3D(eva),opt={...shown};
- if(roomPulse&&!target&&!move.length){
-   const [duration,lean]=roomPulse.curve;
-   const phase=Math.min(1,Math.max(0,(t-roomPulse.start)/duration));
-   opt.lean=lean*Math.sin(Math.PI*phase)**2;
+ if(rig.recline<.02){
+   const ground=surfaceAt(at.u,at.v)+.026;
+   for(const side of ['left','right']){
+     const ankle=rig.joints[side].ankle,weight=1-Math.min(1,(ankle[2]-ground-.045)/.20);
+     if(weight>.1)renderer.shadow({u:ankle[0],v:ankle[1],z:ground},.094*weight,.083*weight);
+   }
+   if(!seat)renderer.shadow({...at,z:ground-.009},.235,.183);
  }
- if(seat){
-   at.u=sample.u;at.v=sample.v;
-   at.z=surfaceAt(at.u,at.v)+(sample.height??seat.height*amount);
-   if(ready){
-     const {seat:[x,y],pillow}=actionAnchors[pose.key];
-     const anchor=pose.grip?.hip?.to??[x,y+.030];
-     if(target==='sleep'){
-       opt.anchor=anchor.map((value,i)=>value+(pillow[i]-value)*recline);
-       opt.bedPlane=Math.max(seat.edge.height+.035,at.z);
-       opt.restAmount=ease(Math.min(1,recline*2.5));
-       opt.bias=.14*(1-opt.restAmount);
-     }else{
-       const sole=pose.grip?.foot?.to??[.5,gait.anchorY];
-       opt.anchor=anchor.map((value,i)=>sole[i]+(value-sole[i])*amount);
-       opt.bias=amount*(seat.id===streamChair.id?.055:.14);
-       opt.footFloor=surfaceAt(at.u,at.v)+.012+opt.bias;
-       if(!reduceMotion&&amount>0&&amount<1)
-         opt.lean=Math.sin(Math.PI*amount)*.043*(orientation(rest.facing).flip?-1:1);
-     }
-   }
- }
- if(playing&&!reduceMotion){
-   if(playing.key==='sweep'||playing.key==='mop'){
-     at.u+=routinePose.swing*.055;at.v-=routinePose.swing*.055;
-   }
-   if(playing.key==='vinyl'&&routinePose.index>=2)opt.lean=Math.sin(routinePose.seconds*4)*.047;
-   if(playing.key==='stretch')opt.lean=(routinePose.amount-.5)*.03;
-   if(playing.key==='tea'&&routinePose.index===1&&opt.grip){
-     const lift=ease(routinePose.amount);
-     opt.grip={...opt.grip,to:[opt.grip.to[0]+(.64-opt.grip.to[0])*lift,
-       opt.grip.to[1]+(.30-opt.grip.to[1])*lift]};
-   }
- }
- if(stream&&opt.grip){
-   opt.deskHands=true;
-   const {crown}=opt.grip;
-   const reaction=playing.streamReaction;
-   const expression=reaction&&!reduceMotion&&streamExpression(reaction.emotion,t-reaction.start);
-   if(crown&&(expression||stream.nod)){
-     const x=stream.nod+(expression?.x??0),y=Math.abs(stream.nod)*.7+(expression?.y??0);
-     opt.grip={...opt.grip,crown:{...crown,to:[crown.to[0]+x,crown.to[1]+y]}};
-   }
- }
- const standing=1-ease(amount);
- if(standing>.03)renderer.shadow({...at,z:surfaceAt(at.u,at.v)+.032},.27*standing,.21*standing);
- opt.crown=actionAnchors[shown.key]?.heads[shown.row]?.[shown.column];
- if(!seat)opt.cast={ground:surfaceAt(at.u,at.v),inside:true};
- const stretch=playing?.key==='stretch'&&!reduceMotion?routinePose.amount*.043:0;
- const breath=target||move.length||reduceMotion?0:Math.sin(t*.002)*.002;
- const head=renderer.sprite(EVA_ID,shown.key,at,
-   shown.height*(1+breath+stretch),shown.flip,opt,true);
- motionFrames[EVA_ID]=shown;
- if(head)heads.set(EVA_ID,head);
- if(stream)drawComputerArms(renderer,at,playing.fixture,stream,EVA_ID);
- if(playing&&playing.key!=='computer'){
-   const o=playing.key==='tv'?fixtures.find(fixture=>fixture.id===26):playing.fixture;
-   let point=at;
-   if(o){
-     const key=o.back?'back-'+o.art:o.art;
-     const top=furnitureSurface(key,[o.w,o.d],o.artFlip);
-     point={u:o.u+o.w/2+(top?.shift??0),v:o.v+o.d/2-(top?.shift??0),
-       z:surfaceAt(o.u,o.v)+(o.kind==='window'?1.53:top?.height??fixtureTop(o))};
-   }
-   drawRoomActivity(renderer,playing.key,routinePose,at,point,direction,head);
+ renderer.actorMesh(evaModel(),rig,EVA_ID);
+ motionFrames[EVA_ID]={key:clip,column:rig.frame,fps:30,seating:rig.seating,recline:rig.recline};
+ heads.set(EVA_ID,uvz(rig.head));
+ if(playing&&playing.key!=='computer'&&!makingBed&&!drawEvaProps(renderer,EVA_ID,rig,playing.key,routinePose.seconds)){
+   const contacts={head:uvz(rig.head),hand:uvz(rig.joints.right.hand),otherHand:uvz(rig.joints.left.hand)};
+   drawRoomActivity(renderer,playing.key,routinePose,at,workTop??at,direction,contacts);
  }
  if(flight){
    const point=flightPoint(flight,flight.impact?last:flight.checkedAt);
@@ -1265,15 +1310,42 @@ function advanceWalker(dt){
  }
  dirty=true;
 }
-let timer=0;
-function wake(){
- if(!active||document.hidden||nextFrame||graphicsLost)return;
+const streamTime=(state,t)=>Math.max(0,t-state.startedAt)/1000;
+function endBroadcast(){
+ streamChat.clear();renderer?.endStream();
+ if(sheet==='stream-view')closeSheet();
+}
+function openBroadcast(){
+ const state=roomActivity;
+ if(!renderer||state?.key!=='computer'||!state.dialogue)return;
+ const content=showSheet('stream-view','Трансляция Евы');
+ const screen=renderer.advanceStreamScreen(streamTime(state,now()));
+ screen.className='broadcast-screen';screen.setAttribute('role','img');
+ screen.setAttribute('aria-label','Игра Евы в прямом эфире');
+ const chat=node('ol',null,'broadcast-chat');chat.setAttribute('role','log');
+ chat.setAttribute('aria-label','Чат стрима');chat.tabIndex=0;
+ content.append(screen,node('h2','Чат стрима','broadcast-heading'),chat);
+ streamChat.showIn(chat);wake();
+}
+$('expand-stream').onclick=openBroadcast;
+const frameInterval=1000/30;
+let timer=0,nextMotionFrame=0;
+function queueFrame(){
+ if(!active||document.hidden||nextFrame||!renderer)return;
  clearTimeout(timer);timer=0;
  nextFrame=requestAnimationFrame(loop);
 }
+function wake(){
+ nextMotionFrame=0;
+ queueFrame();
+}
 function loop(t){
  nextFrame=0;
- if(!active||document.hidden)return;
+ if(!active||document.hidden||!renderer)return;
+ if(nextMotionFrame&&t+1<nextMotionFrame){
+   timer=setTimeout(queueFrame,Math.max(1,nextMotionFrame-t-6));return;
+ }
+ const previousFrame=nextMotionFrame;nextMotionFrame=0;
  const elapsed=Math.max(.001,(t-last)/1000),dt=Math.min(.085,elapsed);last=t;
  if(releaseMotion&&t-releaseMotion.start>=190)releaseMotion=null;
  let rest=restMotion&&seatSample(restMotion,t,reduceMotion);
@@ -1289,7 +1361,10 @@ function loop(t){
  if(settling||releaseMotion)dirty=true;
  if(!sheet&&t>=nextWorldSync){syncWorld();nextWorldSync=t+2200}
  if(t>latestClock){pullClock();latestClock=t+5000;}
- if(!sheet&&!layout){
+ if(sheet==='stream-view'){
+   advanceRoomActivity(t,settling);
+   if(roomActivity?.dialogue)renderer.advanceStreamScreen(streamTime(roomActivity,t));
+ }else if(!sheet&&!layout){
    advanceRoomActivity(t,settling);
    advanceWalker(dt);
 
@@ -1326,26 +1401,32 @@ function loop(t){
    reactInRoom('settle');
  }
  if(speech.tick(t))dirty=true;
- const animated=!sheet&&windowWeatherMoves(climate,reduceMotion);
+ const animated=!sheet&&(windowWeatherMoves(climate,reduceMotion)||saved.record&&!reduceMotion);
  const ambientDue=animated&&t+1>=nextAmbientFrame;
  const responsive=!sheet&&(releaseMotion||settling||gesture||roomPulse||move.length||walkHold||flight);
  const performing=!sheet&&!layout&&roomActivity?.started;
- const paintScene=dirty||!sheet&&(Boolean(gesture)||ambientDue);
+ const watching=sheet==='stream-view';
+ const paintScene=!watching&&(dirty||!sheet&&(Boolean(gesture)||ambientDue));
  if(paintScene){
-   paint(t);dirty=false;
+   try{paint(t);}catch(error){useFallback(error);return;}
+   dirty=false;
    nextAmbientFrame=t+72;
  }
  if(!sheet)ambience(climate.weather,section,false,Boolean(saved.window));
- if(responsive)wake();
- else if(!nextFrame){
-   const delay=sheet?750:performing?(reduceMotion?480:25):animated?Math.max(8,nextAmbientFrame-t-8):
+ if(watching||responsive||performing&&!reduceMotion){
+   nextMotionFrame=(previousFrame&&Math.abs(t-previousFrame)<frameInterval?previousFrame:t)+frameInterval;
+   if(!nextFrame)timer=setTimeout(queueFrame,Math.max(0,nextMotionFrame-now()-6));
+ }else if(!nextFrame){
+   const delay=sheet?750:performing?480:animated?Math.max(8,nextAmbientFrame-t-8):
      speech.waiting||mood?75:300;
    timer=setTimeout(wake,delay);
  }
 }
 
 window.homeSheetChanged=()=>{
- speechLayer.hidden=Boolean(sheet);
+ if(sheet!=='stream-view')streamChat.showIn(null);
+ if(sheet!=='palette'){paletteObserver?.disconnect();paletteObserver=null;}
+ speechLayer.hidden=Boolean(sheet)||!renderer;
  if(sheet)streamChat.hide();
  if(!sheet){last=now();dirty=true;nextAmbientFrame=0}
  wake();
@@ -1357,10 +1438,11 @@ function updateHomeVisibility(){
  active=visible;
  town.active(active);audioVisible(active);
  if(active){
-   last=now();pullClock();wake();
+   if(restorePending)restoreRoom();
+   last=now();pullClock();updateFallbackClock();wake();
  }else{
-   streamChat.hide();
-   releaseHomePointer();storage();
+   streamChat.hide();updateFallbackClock();
+   cancelOrbit();releaseHomePointer();storage();
    cancelAnimationFrame(nextFrame);clearTimeout(timer);nextFrame=timer=0;
  }
 }
@@ -1369,24 +1451,53 @@ window.setHomeActive=(value,returning=false)=>{
  if(nativeActive){
    repairHomeSheet(returning);releaseHomePointer();
    if(returning)town.close();
-   if(graphicsRestored)Desk.reloadRoom?.();
-   else if(active){dirty=true;wake();}
+   if(active){dirty=true;wake();}
  }
 };
 window.addEventListener('resize',()=>{dirty=true;wake()});
 canvas.addEventListener('art',()=>{dirty=true;wake()});
 document.addEventListener('visibilitychange',updateHomeVisibility);
-canvas.addEventListener('webglcontextlost',e=>{
- e.preventDefault();
- graphicsLost=true;
+function updateFallbackClock(){
+ clearTimeout(fallbackClock);
+ if(!renderer&&active&&!document.hidden){
+   fallbackClock=setTimeout(()=>{pullClock();updateFallbackClock();},60000-Date.now()%60000+20);
+ }
+}
+function useFallback(error){
+ if(error)console.warn('Room graphics:',error.message||error);
+ renderer?.retire();renderer=null;view=null;restorePending=false;
  cancelAnimationFrame(nextFrame);clearTimeout(timer);nextFrame=timer=0;
- $('world-status').textContent='Восстанавливаю графику комнаты…';
- $('world-status').hidden=false;
-});
+ cancelOrbit();releaseHomePointer();pauseInitiative();
+ layout=null;$('layout-tools').hidden=true;$('screen').classList.remove('arranging');
+ if(['home-menu','room','room-activities','decor','item','palette','furnishing','room-camera','stream-view'].includes(sheet))closeSheet();
+ streamChat.hide();town.close();town.anchor(null,sheet);speechLayer.hidden=true;
+ $('world-status').hidden=true;$('screen').dataset.graphics='fallback';
+ $('fallback-chat').hidden=false;canvas.setAttribute('aria-hidden','true');
+ updateFallbackClock();
+}
+function restoreRoom(){
+ restorePending=false;
+ if(renderer)return;
+ try{
+   renderer=createScene(canvas);
+   paintWindow.invalidate();
+   last=now();paint(last);
+ }catch(error){useFallback(error);return;}
+ $('screen').dataset.graphics='ready';$('fallback-chat').hidden=true;$('world-status').hidden=true;canvas.removeAttribute('aria-hidden');
+ updateFallbackClock();dirty=true;wake();
+}
+canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();useFallback();});
 canvas.addEventListener('webglcontextrestored',()=>{
- graphicsRestored=true;
- if(active)Desk.reloadRoom?.();
+ // Restore the same page once. Even a failing driver must leave the drawer and settings usable.
+ if(!restoreAutomatically)return;
+ restoreAutomatically=false;
+ if(active&&!document.hidden)restoreRoom();else restorePending=true;
 });
+$('fallback-chat').onclick=()=>Desk.openRoomChat(false);
+function restoreFromMenu(){
+ closeSheet();restoreAutomatically=true;restoreRoom();
+ if(!renderer){$('world-status').textContent='3D пока недоступно. Чат и приложения работают.';$('world-status').hidden=false;}
+}
 
 function openRoom(){
  const out=showSheet('room','Комната Евы');
@@ -1418,6 +1529,7 @@ function openRoom(){
 }
 function openFurnishing(){
  const out=showSheet('furnishing','Обстановка');
+ out.append(label('Ракурс и масштаб','Поворот комнаты и расстояние камеры','⌖',openCamera));
  const extended=!!roomExtra;
  out.append(label(extended?'Вернуть обычный размер':'Увеличить комнату',
    extended?'Расширенная комната':'Добавить место вдоль открытых сторон','⌂',()=>{
@@ -1437,6 +1549,16 @@ function openFurnishing(){
    label('Переставить мебель','','✥',()=>beginLayout()),
    label('Каталог мебели','Свет, мебель, декор и бытовые предметы','＋',()=>{beginLayout();openPalette()}));
 }
+function openCamera(){
+ const out=showSheet('room-camera','Камера комнаты');
+ out.append(node('p','Поверни комнату двумя пальцами или разведи их, чтобы приблизить.','sub'));
+ const select=(yaw,zoom)=>{setRoomCamera({yaw,zoom},true);closeSheet();};
+ out.append(label('Повернуть влево','45°','↶',()=>select(cameraPose.yaw-Math.PI/4,cameraPose.zoom)),
+   label('Повернуть вправо','45°','↷',()=>select(cameraPose.yaw+Math.PI/4,cameraPose.zoom)),
+   label('Приблизить','Текущий масштаб '+Math.round(cameraPose.zoom*100)+'%','＋',()=>select(cameraPose.yaw,cameraPose.zoom+.15)),
+   label('Отдалить','','−',()=>select(cameraPose.yaw,cameraPose.zoom-.15)),
+   label('Исходный вид','Угол комнаты и обычный масштаб','⌂',()=>select(cameraDefaults.yaw,cameraDefaults.zoom)));
+}
 function openRoomActivities(program=Object.keys(roomActivities),title='Занятия'){
  const out=showSheet('room-activities',title);
  for(const category of new Set(program.map(key=>roomActivities[key].category))){
@@ -1451,9 +1573,14 @@ function openRoomActivities(program=Object.keys(roomActivities),title='Заня�
 }
 $('home-menu').onclick=()=>{
  const out=showSheet('home-menu','Дом Евы');
+ if(renderer){
+   out.append(label('Комната','Обстановка, занятия и распорядок','⌂',openRoom),
+     label('В комнате','Предметы и действия','◇',openRoomObjects));
+ }else{
+   out.append(label('Восстановить 3D-комнату','Повторить запуск графики','↻',restoreFromMenu),
+     label('Чат с Евой','','◇',()=>{closeSheet();Desk.openRoomChat(false);}));
+ }
  out.append(
-   label('Комната','Обстановка, занятия и распорядок','⌂',openRoom),
-   label('В комнате','Предметы и действия','◇',openRoomObjects),
    label('Диспетчер','Температура, память, приложения и службы','▤',window.openDeviceMonitor),
    label('События','','◷',openTimeline),
    label('Карман','','＋',openInventory),
@@ -1586,15 +1713,15 @@ function openTimeline(){
  }
 }
 window.worldCheck=()=>{
- const close=project(view,{u:1,v:1,z:1.62}).y-project(view,{u:1,v:1}).y;
- const far=project(view,{u:-2,v:-1,z:1.62}).y-project(view,{u:-2,v:-1}).y;
+ const close=view&&project(view,{u:1,v:1,z:1.62}).y-project(view,{u:1,v:1}).y;
+ const far=view&&project(view,{u:-2,v:-1,z:1.62}).y-project(view,{u:-2,v:-1}).y;
  return {section,climate,lighting,motionFrames,paintCount,activeLights:Array.from(lamps).filter((strength,i)=>i%4===3&&strength>0).length,
-   cameraScale:roomView(roomExtra).scale,cameraOffset:roomOffset,roomExpanded:!!roomExtra,
+   cameraScale:roomView(roomExtra).scale*cameraPose.zoom,cameraYaw:cameraPose.yaw,cameraOffset:roomOffset,roomExpanded:!!roomExtra,
    sound:audioState(),outdoors:false,
    anchors:Object.fromEntries(speechAnchors),move:move.length,direction,
    activity:roomActivity?.key||null,activityPhase:roomActivity?.sample?.index??null,
    pose:seated?.sleep?'sleep':seated?'sit':move.length||walkHold?'walk':roomActivity?.sample?.motion||gesture?.motion||'idle',
-   center,eva,depth:renderer.depthBits,sizeConstant:Math.abs(close-far)<.0001,windowOpen:!!saved.window,
+   center,eva,depth:renderer?.depthBits??0,graphics:renderer?'ready':'fallback',sizeConstant:!!view&&Math.abs(close-far)<.0001,windowOpen:!!saved.window,
    lamp:saved.lamps,chairs:saved.chairs,flight:flight?.kind||null,economy:saved.economy,timeline:JSON.parse(Desk.timeline())};
 };
 soundSettings(Boolean(saved.sound),saved.volume??.42);
@@ -1602,20 +1729,30 @@ document.addEventListener('click',event=>{
  const button=event.target.closest('button');
  if(saved.sound&&button){prepareSound();sound(button.closest('#town-compose')?'chatTap':'uiTap');}
 },true);
-for(const key of ['walk-eva','act-eva-front','act-eva-rear','desk-drawer','amber-sconce','closed-umbrella','folded-throw'])renderer.artReady(key);
+
 refreshObjects();
-if(!saved.roomDecorIntroduced){
- saved.roomDecorIntroduced=true;
+function furnishDefault(plan){
  const ids=new Set(saved.decor.map(item=>item.id));
  let id=1024;
- for(const [model,u,v] of [[708,1.42,1.82],[707,2.80,-1.82],[709,-2.07,.98]]){
+ for(const [model,u,v] of plan){
    const fixture=modelsById.get(model),point=worldPoint(room.key,u,v);
    if(!fitsRoom(point.u,point.v,fixture.w,fixture.d)||
       placementIssue(fixture,point,fixtures,[],[eva],true))continue;
    while(ids.has(id))id++;
    if(id>65534)break;
-   saved.decor.push({id:id++,model,...point});
+   ids.add(id);saved.decor.push({id:id++,model,...point});
    refreshObjects();
  }
 }
-last=now();pullClock();paint();storage();wake();
+if(!saved.roomStudioIntroduced){
+ // Existing layouts keep every choice: a removed rug is as intentional as a moved chair.
+ const untouched=!Object.keys(saved.chairs??{}).length&&!Object.keys(saved.packed??{}).length&&
+   (!saved.roomDecorIntroduced||originalRoomDecor.every(([model,u,v])=>{
+     const point=worldPoint(room.key,u,v);
+     return saved.decor.some(item=>item.model===model&&!item.turned&&!item.back&&item.u===point.u&&item.v===point.v);
+   }))&&saved.decor.length<=(saved.roomDecorIntroduced?originalRoomDecor.length:0);
+ if(!saved.roomDecorIntroduced)furnishDefault(originalRoomDecor);
+ if(untouched)furnishDefault(studioRoomDecor);
+ saved.roomDecorIntroduced=saved.roomStudioIntroduced=true;
+}
+last=now();pullClock();storage();restoreRoom();

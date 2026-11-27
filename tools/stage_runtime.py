@@ -41,15 +41,29 @@ def runtime_files():
             if source.is_symlink() or not source.is_file():
                 continue
             relative = source.relative_to(RUNTIME)
-            if dirname == "eva-builtins" and source.suffix == ".png":
+            if source.suffix == ".png" and source.with_suffix(".webp").is_file() and not source.with_suffix(".webp").is_symlink():
+                continue  # PNG masters stay in the checkout for the rig and future artwork.
+            if dirname == "eva-builtins" and relative.parent in (Path(dirname, "emotions"), Path(dirname, "speech")) and source.suffix in (".png", ".webp"):
                 yield source, "root/.codex/generated_images/eva-builtin-20261116/" + str(relative.relative_to(dirname))
-            elif dirname != "eva-builtins" and source.suffix in (".js", ".py", ".html", ".css", ".md", ".png"):
+            elif dirname == "codex-mobile" and relative.parent == Path(dirname, "avatar") and source.suffix in (".png", ".webp"):
+                yield source, "root/" + relative.as_posix()
+            elif dirname != "eva-builtins" and relative.parent == Path(dirname) and source.suffix in (".js", ".py", ".html", ".css", ".md"):
                 yield source, "root/" + relative.as_posix()
 
 
 def sha256(path):
     with path.open("rb") as content:
         return hashlib.file_digest(content, "sha256").hexdigest()
+
+
+def portrait_replacements():
+    """Name only shipped, byte-identifiable PNG masters with a packaged successor."""
+    lines = []
+    for source, name in runtime_files():
+        master = source.with_suffix(".png")
+        if source.suffix == ".webp" and master.is_file() and not master.is_symlink():
+            lines.append(f"{sha256(master)}\t{PurePosixPath(name).with_suffix('.png')}")
+    return ("\n".join(lines) + "\n").encode("ascii")
 
 
 def stage(deps, output):
@@ -65,7 +79,15 @@ def stage(deps, output):
         shutil.copyfile(deps / name, assets / name)
     for name in LIBRARIES:
         shutil.copyfile(deps / name, libraries / name)
+    pack_application(assets, deps / "rootfs.pack")
+
+
+def pack_application(assets, rootfs):
+    """Write just the application layer. Both APK build paths use this exact manifest."""
+    assets.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(RUNTIME / "codex-mobile" / "question-options.js", assets / "eva-questions.js")
+    shutil.copyfile(RUNTIME / "codex-mobile" / "ui-icons.js", assets / "eva-icons.js")
+    (assets / "eva-replaced-portraits.tsv").write_bytes(portrait_replacements())
     pack = assets / "eva-runtime.pack"
     with pack.open("wb") as destination, gzip.GzipFile(filename="", fileobj=destination, mode="wb", mtime=0) as compressed:
         with tarfile.open(fileobj=compressed, mode="w|") as archive:
@@ -74,7 +96,7 @@ def stage(deps, output):
                 add_parent_dirs(archive, name, seen)
                 add_file(archive, source, name)
     (assets / "eva-runtime.version").write_text(
-        sha256(assets / "rootfs.pack") + "\n" + sha256(pack) + "\n", encoding="ascii"
+        sha256(rootfs) + "\n" + sha256(pack) + "\n", encoding="ascii"
     )
 
 

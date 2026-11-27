@@ -5,8 +5,10 @@ import {propArt} from './prop-art.mjs';
 import {furnitureCorners,surfaceTriangles} from './occlusion.mjs';
 import {parts} from './painted-parts.mjs';
 import {gait} from './orientation.mjs';
+import {bones} from './eva-rig.mjs';
+import {createEvaSkin} from './eva-skin.mjs';
 import {groundSole,gripGrid} from './eva-motion.mjs';
-import {drawStreamFrame} from './stream-game.mjs';
+import {createStreamGame} from './stream-game.mjs';
 
 const vertexSize=10;
 export const cameraScale=.174;
@@ -14,12 +16,19 @@ export const cameraOffset=.073;
 
 export function createScene(canvas) {
   const gl=canvas.getContext('webgl2',{alpha:false,antialias:true,stencil:true});
-  if(!gl)throw Error('Нет WebGL2');
+  if(!gl||gl.isContextLost())throw Error('Нет WebGL2');
+  let retired=false;
+  const shaders=[];
   function shader(type,source){
     const s=gl.createShader(type);
     gl.shaderSource(s,source);
     gl.compileShader(s);
-    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+      const message=gl.getShaderInfoLog(s);gl.deleteShader(s);
+      for(const compiled of shaders)gl.deleteShader(compiled);
+      gl.deleteProgram(program);throw Error(message);
+    }
+    shaders.push(s);
     return s;
   }
   const program=gl.createProgram();
@@ -31,10 +40,18 @@ export function createScene(canvas) {
     layout(location=4) in float cell;
     flat out float atlasCell;
     uniform bool placingPart;
+    layout(location=5) in vec3 skinNormal;
+    layout(location=6) in vec3 secondPoint;
+    layout(location=7) in vec2 skinWeights;
+    uniform bool rigged;
+    uniform mat4 rigMatrix[${bones.length}];
+    uniform vec2 rigInfo;
     uniform mat4 partMatrix;
     uniform vec2 partInfo;
     uniform vec2 partMotion;
     uniform vec3 view;
+    uniform vec2 orbit;
+    uniform bool backdrop;
     uniform vec2 size;
     uniform bool wave;
     uniform float wavePhase;
@@ -43,7 +60,21 @@ export function createScene(canvas) {
     out vec2 coord;
     flat out float id;
     void main(){
+      if(backdrop){
+        vec2 p=vec2(gl_VertexID==1?3.:-1.,gl_VertexID==2?3.:-1.);
+        gl_Position=vec4(p,.999,1.);coord=p*.5+.5;return;
+      }
       vec3 at=point;
+      float skinLight=1.;
+      if(rigged){
+        mat4 primary=rigMatrix[int(key)],secondary=rigMatrix[int(cell)];
+        at=mix((primary*vec4(point,1.)).xyz,(secondary*vec4(secondPoint,1.)).xyz,skinWeights.x);
+        if(skinWeights.y>1.5)at.z=max(rigInfo.y,at.z);
+        vec3 normal=normalize(mix(mat3(primary)*skinNormal,mat3(secondary)*skinNormal,skinWeights.x));
+        float diffuse=smoothstep(-.55,.80,dot(normal,vec3(-.32,.48,.816)));
+        skinLight=mix(.75,1.07,diffuse);
+        if(skinWeights.y==1.)skinLight=mix(.91,1.03,diffuse);
+      }
       if(placingPart){
         if(partMotion.x==1.){
           float k=(1.-point.x)*.5;
@@ -56,9 +87,11 @@ export function createScene(canvas) {
         at=(partMatrix*vec4(at,1.)).xyz;
       }
       if(wave)at.y+=sin(point.x*1.75+uv.x+wavePhase)*.15+sin(point.x*3.6+uv.x-wavePhase)*.031;
-      vec2 p=view.xy+view.z*vec2((at.x-at.y)*.70710678,(at.x+at.y-2.*at.z)*.40824829);
-      gl_Position=vec4(2.*p.x/size.x-1.,1.-2.*p.y/size.y,-(at.x+at.y+at.z)*.009,1.);
-      atlasCell=placingPart?partInfo.y:cell;tint=color;world=at;coord=uv;id=placingPart?partInfo.x:key;
+      float forward=dot(at.xy,orbit);
+      vec2 projected=vec2(at.x*orbit.y-at.y*orbit.x,forward*.57735027-at.z*.81649658);
+      vec2 p=view.xy+view.z*projected;
+      gl_Position=vec4(2.*p.x/size.x-1.,1.-2.*p.y/size.y,-(forward*1.41421356+at.z)*.009,1.);
+      atlasCell=placingPart?partInfo.y:cell;tint=color*skinLight;world=at;coord=uv;id=rigged?rigInfo.x:(placingPart?partInfo.x:key);
     }`));
   gl.attachShader(program,shader(gl.FRAGMENT_SHADER,`#version 300 es
     precision highp float;
@@ -68,8 +101,15 @@ export function createScene(canvas) {
     flat in float id;
     flat in float atlasCell;
     uniform sampler2D source;
+    uniform bool rigged;
+    uniform vec2 portrait;
     uniform float materialMeters;
+    uniform int homeFinish;
     uniform bool pick;
+    uniform bool backdrop;
+    uniform float daylight;
+    uniform vec3 windowBounds;
+    uniform vec2 orbit;
     uniform int shadow;
     uniform vec3 revealCenter;
     uniform int structure;
@@ -95,6 +135,16 @@ export function createScene(canvas) {
     }
 
     void main(){
+      if(backdrop){
+        vec3 top=mix(vec3(.145,.147,.224),vec3(.271,.334,.384),daylight);
+        vec3 base=mix(vec3(.196,.164,.211),vec3(.471,.368,.339),daylight);
+        vec3 color=mix(base,top,smoothstep(.12,.93,coord.y));
+        vec2 delta=(coord-vec2(.52,.43))*vec2(.82,1.47);
+        float bloom=exp(-dot(delta,delta)*6.);
+        color+=vec3(.105,.075,.054)*bloom;
+        float vignette=smoothstep(.40,.82,length((coord-.5)*vec2(.73,1.05)));
+        outColor=vec4(color*(1.-.21*vignette),1.);return;
+      }
       // Gradients are evaluated before the cutaway discards any neighbouring fragment.
       vec2 tile=coord/max(materialMeters,.001)+vec2(.213,.367);
       vec2 cell=vec2(mod(atlasCell,2.),floor(atlasCell*.5))*.5;
@@ -112,8 +162,8 @@ export function createScene(canvas) {
       float opacity=1.;
       if(structure!=0){
         vec3 d=world-revealCenter;
-        vec2 screen=vec2((d.x-d.y)*.70710678,(d.x+d.y-2.*d.z)*.40824829);
-        float front=structure==3?1.:smoothstep(-.28,.48,d.x+d.y+d.z+.48);
+        vec2 screen=vec2(d.x*orbit.y-d.y*orbit.x,dot(d.xy,orbit)*.57735027-d.z*.81649658);
+        float front=structure==3?1.:smoothstep(-.28,.48,dot(d.xy,orbit)*1.41421356+d.z+.48);
         float opening=structure==2?smoothstep(.43,.87,length(screen)):smoothstep(1.42,2.48,length(screen));
         opacity=1.-front*(1.-opening);
         if(pick){if(opacity<.5)discard;}
@@ -151,6 +201,13 @@ export function createScene(canvas) {
           gradX*=orientation;gradY*=orientation;
         }
         px=textureGrad(source,atlasUV,.476*gradX,.476*gradY);
+        if(homeFinish>0){
+          float pigment=dot(px.rgb,vec3(.26,.56,.18));
+          // Keep the brushwork, but dye the weave and wood to each object's own finish.
+          if(homeFinish==1)px.rgb=vec3(.86+.24*pigment);
+          else if(homeFinish==2)px.rgb=vec3(.78+.31*pigment,.76+.31*pigment,.73+.30*pigment);
+          else px.rgb=vec3(.89+.15*pigment);
+        }
         float wash=.98+.035*sin(dot(world.xy,vec2(.55,.31))+world.z*.35);
         // Keep the painted values across the scene, soften the noisy far mip levels.
         float distant=smoothstep(.011,.060,max(length(gradX),length(gradY)));
@@ -170,13 +227,20 @@ export function createScene(canvas) {
           currentUV=clamp(coord-travel*extent*evaStep.y,low,high);
           nextUV=clamp(coord+travel*extent*(1.-evaStep.y),low,high)+vec2(evaStep.x,evaStepRow);
         }
-        px=texture(source,currentUV);
+        if(rigged&&coord.y<.5){
+          px=texture(source,coord+vec2(portrait.x,0.));
+          if(portrait.y>0.)px=mix(px,texture(source,coord+vec2(.25,0.)),portrait.y);
+        }else px=texture(source,currentUV);
         if(evaStep.y>0.){
           vec4 next=texture(source,nextUV);
           vec3 rgb=mix(px.rgb*px.a,next.rgb*next.a,evaStep.y);
           float a=mix(px.a,next.a,evaStep.y);
           px=vec4(rgb/max(.001,a),a);
         }
+      }
+      if(homeFinish==4){
+        float thread=smoothstep(.10,.72,dot(px.rgb,vec3(.31,.54,.15)));
+        px.rgb=mix(vec3(.235,.349,.342),vec3(.855,.753,.578),thread);
       }
       if(deskHands.z>0.){
         vec2 cellUV=(coord-deskHands.xy)*vec2(8.,5.);
@@ -216,17 +280,31 @@ export function createScene(canvas) {
         float reach=max(0.,1.-dot(delta,delta)*.15);
         local+=lamps[i].w*reach*reach*reach;
       }
-      vec3 lit=mix(ambient,vec3(1.,.87,.73),min(.72,local*.64))+vec3(.34,.21,.10)*min(local,1.55);
+      vec3 lit=mix(ambient,vec3(.99,.90,.80),min(.70,local*.59))+vec3(.18,.123,.069)*min(local,1.38);
+      // Window light is attached to the room, so the mullion shadows stay put during an orbit.
+      if(materialMeters>0.&&world.z<.12&&daylight>.05){
+        float run=world.y-windowBounds.z;
+        float across=world.x+.25*run;
+        float pane=(across-windowBounds.x)/(windowBounds.y-windowBounds.x);
+        float sun=smoothstep(.90,1.24,run)*(1.-smoothstep(3.09,3.61,run));
+        sun*=smoothstep(-.025,.045,pane)*(1.-smoothstep(.955,1.025,pane));
+        float bar=abs(fract(pane*3.+.5)-.5);
+        sun*=mix(.55,1.,smoothstep(.009,.041,bar));
+        lit+=vec3(.23,.15,.066)*sun*daylight;
+      }
       outColor=vec4(px.rgb*tint*lit,opacity);
     }`));
   gl.linkProgram(program);
-  if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
+  for(const compiled of shaders)gl.deleteShader(compiled);
+  if(!gl.getProgramParameter(program,gl.LINK_STATUS)){
+    const message=gl.getProgramInfoLog(program);gl.deleteProgram(program);throw Error(message);
+  }
   gl.useProgram(program);
   gl.enable(gl.DEPTH_TEST);
   gl.disable(gl.DITHER);
   const hasCoverage=gl.getParameter(gl.SAMPLES)>1;
   const shadowStencil=gl.getParameter(gl.STENCIL_BITS)>0;
-  const uniforms=Object.fromEntries(['placingPart','partMatrix','partInfo','partMotion','view','size','pick','ambient','lamps[0]','shadow','glow','cutout','structure','coverage','revealCenter','castStrength','materialMeters','wave','wavePhase','evaStep','evaStepRow','evaFeet','evaShoeTravel','deskHands'].map(name=>[name,gl.getUniformLocation(program,name)]));
+  const uniforms=Object.fromEntries(['rigged','rigMatrix[0]','rigInfo','portrait','backdrop','daylight','windowBounds','homeFinish','orbit','placingPart','partMatrix','partInfo','partMotion','view','size','pick','ambient','lamps[0]','shadow','glow','cutout','structure','coverage','revealCenter','castStrength','materialMeters','wave','wavePhase','evaStep','evaStepRow','evaFeet','evaShoeTravel','deskHands'].map(name=>[name,gl.getUniformLocation(program,name)]));
   const buf=gl.createBuffer();
   function vertexArray(buffer){
     const vao=gl.createVertexArray();
@@ -238,6 +316,7 @@ export function createScene(canvas) {
     }
     return vao;
   }
+  const backdropVao=gl.createVertexArray();
   const dynamicVao=vertexArray(buf);
   const textures=new Map();
   const anisotropic=gl.getExtension('EXT_texture_filter_anisotropic');
@@ -253,6 +332,7 @@ export function createScene(canvas) {
     if(src){
       const image=new Image();
       image.onload=()=>{
+        if(retired||gl.isContextLost())return;
         gl.bindTexture(gl.TEXTURE_2D,t);
         gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
         // Packed cells have padding for the first two minified levels.
@@ -269,8 +349,8 @@ export function createScene(canvas) {
       image.src=src;
     }
   }
-  texture('white');texture('glow');texture('foam');texture('material','art/material.jpg');texture('district','art/district.jpg');texture('terrain','art/anime-ground.jpg');
-  texture('building','art/anime-building.jpg');texture('coast','art/anime-coast.jpg');texture('roofs','art/anime-roofs.jpg');
+  const materialSheets={material:'material',district:'district',terrain:'anime-ground',building:'anime-building',coast:'anime-coast',roofs:'anime-roofs'};
+  texture('white');texture('glow');texture('foam');
   function artReady(key){
     const sheet=propArt[key]?.[0]??key;
     if(!textures.has(sheet))texture(sheet,'art/'+sheet+'.png');
@@ -319,17 +399,17 @@ export function createScene(canvas) {
       if(!plot.preload)sceneryBuffers.push(layers);
     }
     batches=dynamic;
-    if(resident.size>32){
-      for(const [key,layers] of resident)if(!keep.has(key)){
-        for(const x of layers){gl.deleteVertexArray(x.vao);gl.deleteBuffer(x.buffer);}
-        resident.delete(key);
-      }
+    // Edits and rotation can create arbitrarily many revisions of one room. Retain only the active buffers.
+    for(const [key,layers] of resident)if(!keep.has(key)){
+      for(const x of layers){gl.deleteVertexArray(x.vao);gl.deleteBuffer(x.buffer);}
+      resident.delete(key);
     }
   }
   const material={
     water:[.012,.012,.487,.487],ceramic:[.512,.012,.987,.487],glass:[.012,.512,.487,.987],asphalt:[.512,.512,.987,.987],
     'slate-roof':[.012,.012,.487,.487],'clay-roof':[.512,.012,.987,.487],
     'zinc-roof':[.012,.512,.487,.987],'copper-roof':[.512,.512,.987,.987],
+    'room-oak':[.512,.012,.987,.487],'room-weave':[.012,.512,.487,.987],'room-plaster':[.012,.012,.487,.487],
     wood:[.012,.012,.487,.487],wall:[.512,.012,.987,.487],
     cloth:[.012,.512,.487,.987],stone:[.512,.512,.987,.987],
     studio:[.012,.012,.487,.487],glaze:[.512,.012,.987,.487],
@@ -338,7 +418,7 @@ export function createScene(canvas) {
     plaster:[.012,.012,.487,.487],oak:[.512,.012,.987,.487],facade:[.012,.512,.487,.987],roof:[.512,.512,.987,.987],slate:[.012,.012,.487,.487]
   };
   const materialTexture=mat=>{
-    if(!mat||mat==='glow')return mat||'white';
+    if(!mat||mat==='glow'||mat.startsWith('room-'))return mat||'white';
     if(mat.endsWith('-roof'))return 'roofs';
     if(['water','ceramic','glass','asphalt'].includes(mat))return 'coast';
     if(['studio','glaze','seat'].includes(mat))return 'district';
@@ -346,10 +426,18 @@ export function createScene(canvas) {
     if(['plaster','oak','facade','roof','brick'].includes(mat))return 'building';
     return 'material';
   };
-  function triangle(points,tint,id=0){
-    if(!batches.has('white'))batches.set('white',[]);
-    const out=batches.get('white');
-    for(const p of points)out.push(...p,...tint,0,0,id,0);
+  function triangle(points,tint,id=0,mat){
+    const key=materialTexture(mat),rect=material[mat];
+    if(!batches.has(key))batches.set(key,[]);
+    const out=batches.get(key),uv=rect?faceUV(points):null;
+    const cell=rect?Math.floor(rect[0]*2)+2*Math.floor(rect[1]*2):0;
+    for(const [i,p] of points.entries())out.push(...p,...tint,uv?.[i][0]??0,uv?.[i][1]??0,id,cell);
+  }
+
+  const evaSkin=createEvaSkin(gl);
+  function actorMesh(mesh,pose,id){
+    artReady('eva-rig-skin');
+    evaSkin.submit(mesh,pose,id);
   }
   const partBuffers=new Map(),partInstances=[];
   function illustratedPart(name,matrix,id,variant,flex=0){
@@ -363,9 +451,9 @@ export function createScene(canvas) {
       }
       const buffer=gl.createBuffer(),vao=vertexArray(buffer);
       gl.bufferData(gl.ARRAY_BUFFER,vertices,gl.STATIC_DRAW);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,gl.createBuffer());
+      const elements=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,elements);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(i),gl.STATIC_DRAW);
-      gpu={vao,count:i.length};partBuffers.set(name,gpu);
+      gpu={vao,buffer,elements,count:i.length};partBuffers.set(name,gpu);
     }
     partInstances.push({gpu,matrix,id,variant,flex,mode:name==='tail'?1:name==='wing'?2:0});
   }
@@ -390,9 +478,9 @@ export function createScene(canvas) {
   function box(id,{u,v,z=0},a,b,h,tint,mat){
     const p=[[u,v,z],[u+a,v,z],[u+a,v+b,z],[u,v+b,z],[u,v,z+h],[u+a,v,z+h],[u+a,v+b,z+h],[u,v+b,z+h]];
     const textureKey=materialTexture(mat);
-    const faces=[[4,5,6,7],[1,2,6,5],[2,3,7,6]];
+    const faces=[[4,5,6,7],[1,2,6,5],[2,3,7,6],[3,0,4,7],[0,1,5,4]];
     for(const [i,side] of faces.entries()){
-      const s=[1,.79,.63][i];
+      const s=[1,.86,.76,.68,.72][i];
       quad(side.map(j=>p[j]),id,tint.map(x=>x*s),textureKey,material[mat],material[mat]);
     }
   }
@@ -447,21 +535,25 @@ export function createScene(canvas) {
     // Offsets along the view axis preserve screen placement and adjust occlusion.
     const bias=options?.bias??0;
     const foot=options?.floor?h*(1-anchorY)+.016:0;
-    const calibrated=options?.footprint?furnitureCorners(key,{u,v,z},options.footprint,flip):null;
-    const physical=calibrated??[[u-left,v+left,top],[u+right,v-right,top],[u+right,v-right,bottom],[u-left,v+left,bottom]];
+    const canonical=Math.abs(view.cosYaw-Math.SQRT1_2)<.00001&&Math.abs(view.sinYaw-Math.SQRT1_2)<.00001;
+    const acrossU=Math.SQRT2*view.sinYaw,acrossV=-Math.SQRT2*view.cosYaw;
+    const calibrated=options?.footprint&&canonical?furnitureCorners(key,{u,v,z},options.footprint,flip):null;
+    const physical=calibrated??[[u-left*acrossU,v-left*acrossV,top],[u+right*acrossU,v+right*acrossV,top],[u+right*acrossU,v+right*acrossV,bottom],[u-left*acrossU,v-left*acrossV,bottom]];
     const lean=options?.lean??0;
-    if(lean)for(const point of physical.slice(0,2)){point[0]+=lean;point[1]-=lean;}
-    const corners=!options?.limits&&(bias||foot)?physical.map(p=>[...p]):physical;
-    if(!options?.limits&&(bias||foot))for(const [index,point] of corners.entries()){
+    if(lean)for(const point of physical.slice(0,2)){point[0]+=lean*acrossU;point[1]+=lean*acrossV;}
+    const limited=Boolean(canonical&&options?.limits);
+    const viewRay=[Math.SQRT2*view.cosYaw,Math.SQRT2*view.sinYaw,1];
+    const corners=!limited&&(bias||foot)?physical.map(p=>[...p]):physical;
+    if(!limited&&(bias||foot))for(const [index,point] of corners.entries()){
       const depth=bias+(index>=2?foot:0);
-      for(let axis=0;axis<3;axis++)point[axis]+=depth;
+      for(let axis=0;axis<3;axis++)point[axis]+=depth*viewRay[axis];
     }
     if(options?.bedPlane!=null)for(const p of corners){
       const delta=(options.bedPlane-p[2])*options.restAmount;
-      for(let i=0;i<3;i++)p[i]+=delta;
+      for(let i=0;i<3;i++)p[i]+=delta*viewRay[i];
     }
     const uv=flip&&!calibrated?[rightU,y,x,bottomV]:[x,y,rightU,bottomV];
-    const volume=options?.limits?surfaceTriangles(corners,uv,options.limits,options.floorPlane):null;
+    const volume=limited?surfaceTriangles(corners,uv,options.limits,options.floorPlane):null;
     if(options?.cast){
       const {ground,inside}=options.cast;
       const [sx,sy]=shadowOffset(1,inside);
@@ -510,7 +602,7 @@ export function createScene(canvas) {
     const crownPoint=options?.grip?.crown?.to??options?.crown;
     const crown=crownPoint?.[0]??crowns[key]??.5;
     const crownX=span*((flip?1-crown:crown)-anchor)+lean;
-    return {...(grip?.head??{u:u+crownX,v:v-crownX,z:top-h*(crownPoint?.[1]??(atlas?.027:0))}),
+    return {...(grip?.head??{u:u+crownX*acrossU,v:v+crownX*acrossV,z:top-h*(crownPoint?.[1]??(atlas?.027:0))}),
       hand:grip?.hand,otherHand:grip?.other};
   }
   function sleepingSprite(id,{u,v,z},key='eva-asleep'){
@@ -524,17 +616,21 @@ export function createScene(canvas) {
     quad(corners,id,[1,1,1],key);
     return {u,v,z:z+.15};
   }
-  function prepare(center,scale=cameraScale,offset=cameraOffset){
-    const cw=canvas.clientWidth,ch=canvas.clientHeight;
+  function prepare(center,scale=cameraScale,offset=cameraOffset,yaw){
+    const cw=Math.max(1,canvas.clientWidth),ch=Math.max(1,canvas.clientHeight);
     const d=Math.min(devicePixelRatio,Math.sqrt(3200000/Math.max(1,cw*ch)));
     const w=Math.round(cw*d),h=Math.round(ch*d);
     if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
-    view=camera({width:w,height:h,pixelsPerMeter:w*scale,u:center.u,v:center.v});
+    view=camera({width:w,height:h,pixelsPerMeter:w*scale,u:center.u,v:center.v,yaw});
     view.cssWidth=cw;view.cssHeight=ch;
     view.y+=h*offset;
     return view;
   }
   function bindTexture(key){
+    const finish=key==='room-weave'?1:key==='room-oak'?2:key==='room-plaster'?3:key==='finish-rug'?4:0;
+    gl.uniform1i(uniforms.homeFinish,finish);
+    if(finish>0&&finish<4)key=finish===1?'material':'building';
+    if(!textures.has(key)&&materialSheets[key])texture(key,'art/'+materialSheets[key]+'.jpg');
     const tex=textures.get(key);
     gl.uniform1i(uniforms.glow,key==='glow'||key==='room-window'||key==='stream-game'?1:0);
     gl.uniform1i(uniforms.cutout,tex.cutout?1:0);
@@ -548,6 +644,15 @@ export function createScene(canvas) {
     gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT|(pick?0:gl.STENCIL_BUFFER_BIT));
     gl.uniform3f(uniforms.view,view.x-x,view.y-y,view.scale);
     gl.uniform2f(uniforms.size,width,height);
+    gl.uniform2f(uniforms.orbit,view.cosYaw,view.sinYaw);
+    gl.uniform3fv(uniforms.windowBounds,windowBounds);
+    if(!pick){
+      gl.uniform1i(uniforms.backdrop,1);
+      gl.uniform1f(uniforms.daylight,lightDay);
+      gl.bindVertexArray(backdropVao);gl.depthMask(false);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+      gl.depthMask(true);gl.uniform1i(uniforms.backdrop,0);
+    }
 
     gl.uniform1f(uniforms.wavePhase,wavePhase);
     gl.uniform1i(uniforms.pick,pick?1:0);
@@ -560,7 +665,7 @@ export function createScene(canvas) {
     gl.uniform1f(uniforms.castStrength,.18+.16*lightDay);
     gl.uniform1i(uniforms.coverage,hasCoverage?1:0);
     function material(key,step,typing){
-      const scale=key==='roofs'?2.8:key==='coast'?2.4:key==='terrain'?4.3:key==='building'?3.4:
+      const scale=key==='room-weave'?.64:key==='room-oak'?1.7:key==='room-plaster'?2.3:key==='roofs'?2.8:key==='coast'?2.4:key==='terrain'?4.3:key==='building'?3.4:
         key==='material'||key==='district'?2.7:0;
       gl.uniform1f(uniforms.materialMeters,scale);
       if(step){
@@ -598,6 +703,11 @@ export function createScene(canvas) {
     }
     if(!pick&&hasCoverage)gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
     geometry();
+    if(evaSkin.visible){
+      gl.uniform1i(uniforms.structure,0);
+      material('eva-rig-skin');
+      evaSkin.draw(uniforms);
+    }
     if(partInstances.length){
       gl.uniform1i(uniforms.structure,0);material('street-illustrations');
       gl.uniform1i(uniforms.placingPart,1);
@@ -655,37 +765,70 @@ export function createScene(canvas) {
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   const pixel=new Uint8Array(4);
   function imagePanel(key,points,id,image,pixelated=false){
-    const first=!textures.has(key);
-    if(first)texture(key);
+    if(!textures.has(key))texture(key);
+    const target=textures.get(key);
     if(image){
-      gl.bindTexture(gl.TEXTURE_2D,textures.get(key).t);
-      if(first){
+      gl.bindTexture(gl.TEXTURE_2D,target.t);
+      if(target.width!==image.width||target.height!==image.height){
+        target.width=image.width;target.height=image.height;
         if(pixelated)gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
         gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
       }else gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,image);
     }
     quad(points,id,[1,1,1],key);
   }
-  let streamCanvas,streamFrame=-1;
-  function streamPanel(points,id,seconds){
+  let windowBounds=[0,1,0];
+  let streamCanvas,streamCtx,streamGame,streamFrame=-1,streamTextureFrame=-1,streamSeconds=-1;
+  function advanceStreamScreen(elapsed=0){
     if(!streamCanvas){
       streamCanvas=document.createElement('canvas');
       streamCanvas.width=128;streamCanvas.height=64;
+      streamCtx=streamCanvas.getContext('2d');streamGame=createStreamGame();
     }
-    const frame=Math.floor(seconds*10);
-    if(frame===streamFrame)imagePanel('stream-game',points,id,null,true);
-    else{
-      streamFrame=frame;
-      drawStreamFrame(streamCanvas.getContext('2d'),frame);
-      imagePanel('stream-game',points,id,streamCanvas,true);
+    const seconds=Number.isFinite(elapsed)?Math.max(0,elapsed):0;
+    if(streamSeconds<0||seconds<streamSeconds){
+      streamGame.reset();streamFrame=streamTextureFrame=-1;streamSeconds=seconds;
     }
+    const frame=Math.floor(seconds*30);
+    if(frame!==streamFrame){
+      // Backgrounding or jumping between activities must not simulate minutes of missed physics.
+      streamGame.advance(Math.min(.25,Math.max(0,seconds-streamSeconds)));
+      streamGame.draw(streamCtx);
+      streamFrame=frame;streamSeconds=seconds;
+    }
+    return streamCanvas;
   }
-  return {sleepingSprite,prepare,structure,scenery,streamPanel,
-    windowPanel(points,id,image){imagePanel('room-window',points,id,image);},
+  function streamPanel(points,id,elapsed){
+    const screen=advanceStreamScreen(elapsed);
+    imagePanel('stream-game',points,id,streamTextureFrame===streamFrame?null:screen,true);
+    streamTextureFrame=streamFrame;
+  }
+  return {actorMesh,sleepingSprite,prepare,structure,scenery,streamPanel,advanceStreamScreen,
+    streamGameState(){return streamSeconds>=0?streamGame?.state??null:null;},
+    endStream(){streamFrame=streamTextureFrame=-1;streamSeconds=-1;},
+    windowPanel(points,id,image,visible=true){
+      windowBounds=[Math.min(points[0][0],points[1][0]),Math.max(points[0][0],points[1][0]),points[0][1]];
+      if(visible)imagePanel('room-window',points,id,image);
+    },
+    retire(){
+      retired=true;
+      if(gl.isContextLost())return;
+      for(const layers of resident.values())for(const layer of layers){
+        gl.deleteBuffer(layer.buffer);gl.deleteVertexArray(layer.vao);
+      }
+      for(const entry of textures.values())gl.deleteTexture(entry.t);
+      for(const part of partBuffers.values()){
+        gl.deleteVertexArray(part.vao);gl.deleteBuffer(part.buffer);gl.deleteBuffer(part.elements);
+      }
+      evaSkin.retire?.();
+      gl.deleteBuffer(buf);gl.deleteVertexArray(backdropVao);gl.deleteVertexArray(dynamicVao);
+      gl.deleteFramebuffer(hitBuffer);gl.deleteTexture(hitImage);gl.deleteRenderbuffer(hitDepth);
+      gl.deleteProgram(program);
+    },
     shadeBand(points,contact){quad(points,0,[1,1,1],contact?'cornerShade':'groundShade');},box,panel,artPanel,sprite,triangle,illustratedPart,ball,shadow,castFloor,foam,flush,
     setLightingFocus(at,day){reveal=[at.u,at.v,at.z];lightDay=day;},
     setWavePhase(value){wavePhase=value;},
-    reset(){batches=new Map();partInstances.length=0;deskHands=null;},
+    reset(){batches=new Map();partInstances.length=0;evaSkin.reset();deskHands=null;},
     pick(x,y,night,lamp,climate){
       gl.bindFramebuffer(gl.FRAMEBUFFER,hitBuffer);
       flush(true,night,lamp,climate,Math.floor(x),Math.floor(y));

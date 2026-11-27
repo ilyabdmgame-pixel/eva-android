@@ -1,9 +1,29 @@
 import {actionBeat} from './eva-motion.mjs';
+import {fridgeVisit,fridgeHandle,fridgeDoorPlane,kitchenWorkPoint} from './room-appliances.mjs';
+import {windowLatch} from './room.mjs';
+import {useProgress} from './household.mjs';
 const TAU=2*Math.PI;
 const clamp=x=>Math.max(0,Math.min(1,x));
 const ease=x=>{const t=clamp(x);return t*t*(3-2*t);};
 const mix=(a,b,t)=>a+(b-a)*t;
 const at=(p,u=0,v=0,z=0)=>({u:p.u+u,v:p.v+v,z:p.z+z});
+
+export function activityContacts(key,fixture,sample,origin,windowIsOpen,clear){
+ const seconds=sample?.seconds??0;
+ const windowOpen=windowIsOpen?1:key==='air'?ease((seconds-.65)/.85):0;
+ const contact={at:origin,windowOpen,station:kitchenWorkPoint(fixture)};
+ if(key==='air'){
+   const latch=windowLatch(windowOpen);
+   contact.grip={point:[latch.u,latch.v,latch.z],side:'right',weight:ease(Math.min(seconds/.62,(2.05-seconds)/.48))};
+ }else if(key==='fridge'){
+   const p=sample.progress,stage=useProgress('fridge',0,p);
+   Object.assign(contact,fridgeVisit(fixture,origin,stage,clear));
+   contact.barrier=fridgeDoorPlane(fixture,stage);
+   const weight=ease(Math.min(p/.10,(1-p)/.05,Math.max((.48-p)/.11,(p-.53)/.12)));
+   contact.grip={point:fridgeHandle(fixture,stage),side:fixture.turned?'left':'right',weight};
+ }
+ return contact;
+}
 
 export function activityDuration(activity,reduced){
  const duration=activity.beats.reduce((sum,beat)=>sum+beat[1],0);
@@ -266,9 +286,9 @@ export const activityEffects={
    if(ctx.s.index===1)sleepSigns(ctx,2);
  }
 };
-function sleepSigns({r,s,actor,across},count){
+function sleepSigns({r,s,head,actor,across},count){
  for(let i=0;i<count;i++){
-   const p=at(across(actor,.26+i*.12),0,0,.33+i*.12+(s.seconds*.17+i*.25)%.20);
+   const p=at(across(head??actor,(head ? .13 : .26)+i*.12),0,0,(head ? .04 : .33)+i*.12+(s.seconds*.17+i*.25)%.20);
    const a=at(across(p,-.035)),b=at(across(p,.036)),c=at(a,0,0,-.056),d=at(b,0,0,-.056);
    line(r,a,b,.020,steam);line(r,b,c,.020,steam);line(r,c,d,.020,steam);
  }
@@ -281,5 +301,5 @@ export function drawRoomActivity(renderer,key,sample,actor,top,facing,contacts){
   sample.motion==='sit'?.31:sample.motion==='stoop'?.62:sample.motion==='sleep'?.08:.78+sample.amount*.21);
  const floor=at(actor,.31,.22,-actor.z);
  activityEffects[key]({r:renderer,s:sample,actor,top,hand,floor,across,
-   otherHand:contacts?.otherHand,mirrored:right===-1});
+   head:contacts?.head,otherHand:contacts?.otherHand,mirrored:right===-1});
 }

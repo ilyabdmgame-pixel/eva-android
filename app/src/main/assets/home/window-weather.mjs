@@ -34,7 +34,7 @@ export function windowWeather(onReady){
      base.fillStyle=mist;base.fillRect(0,42,WIDTH,HEIGHT-42);
    }
  }
- return function draw(t,climate,reduced){
+ function draw(t,climate,reduced){
    const key=[climate.weather,climate.season,Math.round(climate.daylight*20)].join('/');
    const animated=windowWeatherMoves(climate,reduced);
    const frame=animated?Math.floor(t/72):0;
@@ -60,5 +60,7 @@ export function windowWeather(onReady){
      }
    }
    return image;
- };
+ }
+ draw.invalidate=()=>{lastFrame=-1;lastKey='';};
+ return draw;
 }
