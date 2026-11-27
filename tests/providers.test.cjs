@@ -69,8 +69,14 @@ test('external providers preserve persona, conversation history and explicit mod
 
   await chat({provider: 'openrouter', messages: history, model: 'test/free:free',
     room: {name: 'Мира', members: ['Мира', 'Алиса']}}, signal);
-  assert.match(calls.at(-1).body.messages[0].content, /имя в этой комнате: Мира/);
+  const mira = calls.at(-1).body.messages[0].content;
+  assert.match(mira, /Имя в этой комнате: Мира/);
+  assert.doesNotMatch(mira, /Ты Ева/);
+  assert.match(mira, /своими словами/);
   assert.equal(calls.at(-1).body.model, 'test/free:free');
+  await chat({provider: 'openrouter', messages: history,
+    room: {name: 'Ева', members: ['Мира', 'Ева']}}, signal);
+  assert.ok(calls.at(-1).body.messages[0].content.includes(persona));
   const sent = calls.length;
   await assert.rejects(chat({provider: 'gemini', messages: [null]}, signal), /неверный формат/);
   await assert.rejects(chat({provider: 'openrouter', messages: history, model: 'test/paid'}, signal), /бесплатная/);

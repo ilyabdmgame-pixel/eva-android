@@ -48,7 +48,7 @@ export function createStreamDialogue(visit,random=Math.random){
     const start=visit*7%lines.length;
     return {topic,lines:Array.from({length:3},(_,i)=>lines[(start+i)%lines.length])};
   }
-  // Keep the game at the start of an inaugural stream. Luna gets a different topic.
+  // The first stream opens with the game. Ask the model for the following topic.
   const initial=load(),generationTopic=scenes[sceneIndex%scenes.length][0];
   pairs=initial.lines;
   return {

@@ -4,12 +4,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const persona = fs.readFileSync(path.join(__dirname, 'persona.md'), 'utf8').trim();
+const [, ...voiceAndBehavior] = persona.split('\n\n');
 const codexInstructions = [
   persona,
   'Пользуйся только доступными инструментами. Действуй на телефоне по соответствующей просьбе пользователя. Не выдавай передачу команды за подтверждение её результата.'
 ].join('\n\n');
 
 const voiceInstructions = 'Этот ответ будут слушать. Сохрани голос Евы и скажи главное короткими фразами. Когда нужны команды, ссылки или таблицы, объясни их смысл простой фразой и приведи детали по делу.';
+
+function forCharacter(name) {
+  if (!name || name.toLocaleLowerCase('ru') === 'ева') return persona;
+  return [`Имя в этой комнате: ${name}. Ты самостоятельная участница разговора.`, ...voiceAndBehavior].join('\n\n');
+}
 
 function forReply(instructions, spoken) {
   return spoken === true ? instructions + '\n\n' + voiceInstructions : instructions;
@@ -62,4 +68,4 @@ function createPersonaRpc(request) {
   };
 }
 
-module.exports = { persona, codexInstructions, forReply, createPersonaRpc };
+module.exports = { persona, codexInstructions, forCharacter, forReply, createPersonaRpc };

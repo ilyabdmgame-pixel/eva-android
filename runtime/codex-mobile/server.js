@@ -4,7 +4,6 @@ const {codexInstructions, createPersonaRpc}=require('./persona');
 const runtimeHome=process.env.EVA_RUNTIME_HOME||'/root';
 const workshopDir=path.join(__dirname,'../eva-workshop');
 const tasks=require('./tasks'), providers=require('./providers'), notes=require('./notes');
-const generateStream=require('./stream-dialogue').createStreamGenerator();
 const chatBackup=require('./chat-backup').createBackupManager();
 const draftsFile=process.env.CODEX_DRAFTS_FILE||path.join(__dirname,'drafts.json');
 const token=crypto.randomBytes(24).toString('hex'), clients=new Set(), pending=new Map(), pendingClientRequests=new Map(); let seq=0, ready=false;
@@ -34,6 +33,7 @@ function openWorkThread(){
 function send(x){if(proc.stdin.writable)proc.stdin.write(JSON.stringify(x)+'\n')}
 function requestCodex(method,params){return new Promise((resolve,reject)=>{const id=++seq; pending.set(id,{resolve,reject}); send({id,method,params});setTimeout(()=>{if(pending.delete(id))reject(Error('Время ожидания ответа Codex истекло'))},30000).unref()})}
 const rpc=createPersonaRpc(requestCodex);
+const generateStream=require('./stream-dialogue').createStreamGenerator({listModels:params=>rpc('model/list',params)});
 const accountLimits=require('./rate-limits').createRateLimits(()=>rpc('account/rateLimits/read',{}));
 const petWork=require('./pet-work')(kind=>console.log('EVA_PET_WORK '+kind),'/sdcard/Documents/Codex',path.join(__dirname,'pet-work-results.json'));
 function emit(x){for(const r of clients)r.write('data: '+JSON.stringify(x)+'\n\n')}

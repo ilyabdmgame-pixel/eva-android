@@ -1376,12 +1376,12 @@ function openRoom(){
  }));
  out.append(label('Обстановка','Размер комнаты и мебель','⌂',openFurnishing));
  out.append(label('Занятия','Уборка, готовка, творчество и отдых','◇',()=>openRoomActivities()));
- const luna=localStorage.getItem('lunaStream')==='yes';
- const streamOption=label('GPT-6 Luna в чате стрима',
-   luna?'Включена для стримов, которые ты запускаешь':'Выключена · при включении используется лимит Codex','◇',()=>{
-     localStorage.setItem('lunaStream',luna?'no':'yes');openRoom();
+ const streamEnabled=localStorage.getItem('lunaStream')==='yes';
+ const streamOption=label('Модель для чата стрима',
+   streamEnabled?'Включена · автоматический выбор по тарифу Codex':'Выключена · при включении используется лимит Codex','◇',()=>{
+     localStorage.setItem('lunaStream',streamEnabled?'no':'yes');openRoom();
    });
- streamOption.setAttribute('aria-pressed',String(luna));out.append(streamOption);
+ streamOption.setAttribute('aria-pressed',String(streamEnabled));out.append(streamOption);
  out.append(label('Распорядок дня','','◷',()=>{
    const panel=showSheet('schedules','Распорядок Евы');
    const current=currentEntry(Date.now());
