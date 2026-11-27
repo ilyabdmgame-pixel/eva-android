@@ -21,6 +21,7 @@ import tempfile
 import time
 import urllib.parse
 import urllib.request
+import zipfile
 
 LOCK = Path(__file__).with_name('public-rootfs.lock.json')
 NODE_PREFIX = 'usr'
@@ -99,7 +100,8 @@ def sources(lock, dest, cache):
     expected = {directory / filename for directory, filename, _, _ in jobs}
     expected.add(dest / LOCK.name)
     expected.update(dest / 'notices/debian' / package for package in lock['sources'])
-    if dest.is_symlink() or any(p.is_symlink() or (not p.is_dir() and p not in expected) for p in dest.rglob('*')):
+    directories = {parent for p in expected for parent in p.parents if parent.is_relative_to(dest)}
+    if dest.is_symlink() or any(p.is_symlink() or p not in (directories if p.is_dir() else expected) for p in dest.rglob('*')):
         raise ValueError('Source export contains unrelated files or links. Select a dedicated output directory.')
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(lambda job: fetch(*job), jobs))
@@ -340,17 +342,18 @@ def stop_process_group(child):
     child.wait(timeout=5)
 
 
-def smoke_application(archive, root, env):
-    if __package__:
-        from .stage_runtime import pack_application
-    else:
-        from stage_runtime import pack_application
-
-    assets = root.parent / 'apk-assets'
-    pack_application(assets, archive)
+def smoke_application(archive, root, env, app_archive=None):
+    if app_archive is None:
+        if __package__:
+            from .stage_runtime import pack_application
+        else:
+            from stage_runtime import pack_application
+        assets = root.parent / 'apk-assets'
+        pack_application(assets, archive)
+        app_archive = assets / 'eva-runtime.pack'
     if any((root / 'root').iterdir()):
         raise RuntimeError('First-launch test requires a clean application home')
-    with tarfile.open(assets / 'eva-runtime.pack', 'r:gz') as layer:
+    with tarfile.open(app_archive, 'r:gz') as layer:
         layer.extractall(root, filter='data')
 
     def enter():
@@ -371,7 +374,7 @@ def smoke_application(archive, root, env):
                     break
             for route, mime, marker in [('/', 'text/html', b'<html lang="ru">'),
                                         ('/portrait.js', 'text/javascript', b'EvaPortrait'),
-                                        ('/avatar/turn-between.webp', 'image/webp', b'RIFF')]:
+                                        ('/avatar/idle.png', 'image/webp', b'RIFF')]:
                 with opener.open(base+route, timeout=5) as response:
                     if response.status != 200 or response.headers.get_content_type() != mime or marker not in response.read():
                         raise RuntimeError(f'Invalid first-launch response for {route}')
@@ -390,11 +393,23 @@ def smoke_application(archive, root, env):
             stop_process_group(child)
 
 
-def smoke(archive_path, root):
+def smoke(archive_path, root, app_archive=None, mount_proc=False):
     if platform.machine() not in ('aarch64','arm64'):
         raise RuntimeError('--smoke needs ARM64 Linux; build itself is cross-platform')
     with tarfile.open(archive_path, 'r:gz') as src:
         src.extractall(root, filter='data')
+    if not mount_proc:
+        return smoke_guest(archive_path, root, app_archive)
+    proc = root / 'proc'
+    proc.mkdir(exist_ok=True)
+    subprocess.run(['mount', '-t', 'proc', '-o', 'nosuid,nodev,noexec', 'proc', str(proc)], check=True)
+    try:
+        smoke_guest(archive_path, root, app_archive)
+    finally:
+        subprocess.run(['umount', str(proc)], check=True)
+
+
+def smoke_guest(archive_path, root, app_archive):
     # Android bind-mounts /dev at startup. Use only this disposable tree for the tests.
     for name, major, minor in [('null',1,3),('zero',1,5),('urandom',1,9)]:
         dev = root/'dev'/name
@@ -441,7 +456,30 @@ def smoke(archive_path, root):
             print('Codex app-server: initialize OK', flush=True)
         finally:
             stop_process_group(child)
-    smoke_application(archive_path, root, env)
+    smoke_application(archive_path, root, env, app_archive)
+
+
+def smoke_apk(apk_path):
+    if os.geteuid() != 0:
+        raise RuntimeError('--smoke-apk requires root in an isolated Linux mount namespace')
+    with tempfile.TemporaryDirectory(prefix='eva-apk-boot-') as directory, zipfile.ZipFile(apk_path) as apk:
+        work = Path(directory)
+        names = ('assets/rootfs.pack', 'assets/eva-runtime.pack')
+        version = 'assets/eva-runtime.version'
+        if any(apk.namelist().count(path) != 1 for path in (*names, version)) or apk.getinfo(version).file_size > 150:
+            raise RuntimeError('Missing or duplicate packaged runtime')
+        hashes = apk.read(version).decode('ascii').splitlines()
+        if len(hashes) != 2 or not all(re.fullmatch(r'[a-f0-9]{64}', h) for h in hashes):
+            raise RuntimeError('Invalid packaged runtime manifest')
+        packs = []
+        for path, expected in zip(names, hashes):
+            target = work / Path(path).name
+            with apk.open(path) as source, target.open('xb') as destination:
+                shutil.copyfileobj(source, destination, 1 << 20)
+            if sha(target) != expected:
+                raise RuntimeError('Pack differs from Android runtime manifest: ' + path)
+            packs.append(target)
+        smoke(packs[0], work / 'root', app_archive=packs[1], mount_proc=True)
 
 
 def main():
@@ -449,9 +487,13 @@ def main():
     parser.add_argument('--output',type=Path,default=Path('local-runtime/rootfs.pack'))
     parser.add_argument('--cache',type=Path,default=Path(os.environ.get('XDG_CACHE_HOME',Path.home()/'.cache'))/'eva-public-rootfs')
     parser.add_argument('--smoke',action='store_true',help='run the packaged ARM64 programs in an isolated chroot')
+    parser.add_argument('--smoke-apk',type=Path,help='boot both actual APK packs under sudo unshare --mount --propagation private on ARM64')
     parser.add_argument('--sources',type=Path,help='additionally download corresponding source archives into this directory')
     parser.add_argument('--sources-only',action='store_true',help='download sources and notices without building the binary image')
     args=parser.parse_args()
+    if args.smoke_apk:
+        smoke_apk(args.smoke_apk)
+        return
     lock=json.loads(LOCK.read_text())
     if args.sources_only:
         if not args.sources:parser.error('--sources-only requires --sources DIRECTORY')

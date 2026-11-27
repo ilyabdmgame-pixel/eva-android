@@ -29,6 +29,10 @@ class PublicRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'unrelated files'):
                 image.sources(json.loads(image.LOCK.read_text()), export, Path(temp) / 'cache')
             self.assertEqual(extra.read_text(), 'personal draft')
+            extra.unlink()
+            (export / 'private-project-name').mkdir()
+            with self.assertRaisesRegex(ValueError, 'unrelated files'):
+                image.sources(json.loads(image.LOCK.read_text()), export, Path(temp) / 'cache')
 
     def test_selects_runtime_and_notices_without_personal_or_demo_key_files(self):
         for name in ['root/.bashrc','home/me/.ssh/id_rsa','usr/share/doc/test/samples/private.pem','etc/skel/.profile']:
