@@ -96,6 +96,11 @@ def sources(lock, dest, cache):
     for role, url, digest in lock['components']:
         if role not in ('node','codex','platform'):
             jobs.append((dest/'notices', role, [url], digest))
+    expected = {directory / filename for directory, filename, _, _ in jobs}
+    expected.add(dest / LOCK.name)
+    expected.update(dest / 'notices/debian' / package for package in lock['sources'])
+    if dest.is_symlink() or any(p.is_symlink() or (not p.is_dir() and p not in expected) for p in dest.rglob('*')):
+        raise ValueError('Source export contains unrelated files or links. Select a dedicated output directory.')
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(lambda job: fetch(*job), jobs))
     for package, records in lock['sources'].items():
@@ -336,7 +341,10 @@ def stop_process_group(child):
 
 
 def smoke_application(archive, root, env):
-    from stage_runtime import pack_application
+    if __package__:
+        from .stage_runtime import pack_application
+    else:
+        from stage_runtime import pack_application
 
     assets = root.parent / 'apk-assets'
     pack_application(assets, archive)

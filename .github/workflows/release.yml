@@ -35,12 +35,12 @@ jobs:
           cache-read-only: true
       - name: Install Android SDK and native reproducibility tool
         run: |
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          bash tools/distribution/android_sdk.sh
           sudo apt-get update -qq
           sudo apt-get install --no-install-recommends -y llvm-15
       - name: Verify detached signatures on a disposable real APK
         run: |
-          sdk_tools="$ANDROID_HOME/build-tools/35.0.0"
+          sdk_tools="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/35.0.0"
           python3 tools/distribution/check_signing.py --android-jar "$ANDROID_HOME/platforms/android-35/android.jar" --aapt2 "$sdk_tools/aapt2" --apksigner-jar "$sdk_tools/lib/apksigner.jar"
       - name: Build fresh, hash-pinned public runtime and speech model
         run: |
@@ -55,7 +55,7 @@ jobs:
           set -euo pipefail
           gradle --no-daemon :app:assembleRelease
           mkdir -p candidate
-          sdk_tools="$ANDROID_HOME/build-tools/35.0.0"
+          sdk_tools="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/35.0.0"
           "$sdk_tools/zipalign" -P 16 -f 4 app/build/outputs/apk/release/app-release-unsigned.apk candidate/Eva-unsigned.apk
           "$sdk_tools/zipalign" -c -P 16 4 candidate/Eva-unsigned.apk
           python3 tools/audit_apk.py candidate/Eva-unsigned.apk
@@ -114,8 +114,8 @@ jobs:
           CANDIDATE_ATTEMPT: ${{ steps.receipt.outputs.run_attempt }}
         run: |
           set -euo pipefail
-          sdkmanager 'build-tools;35.0.0'
-          sdk_tools="$ANDROID_HOME/build-tools/35.0.0"
+          bash tools/distribution/android_sdk.sh
+          sdk_tools="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/35.0.0"
           python3 tools/distribution/fetch_candidate.py "$GITHUB_REPOSITORY" "$CANDIDATE_RUN" "$RUNNER_TEMP/candidate" --attempt "$CANDIDATE_ATTEMPT"
           mkdir -p "$RUNNER_TEMP/eva-release"
           apk="$RUNNER_TEMP/eva-release/Eva-${GITHUB_REF_NAME#v}-arm64.apk"

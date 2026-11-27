@@ -20,6 +20,16 @@ class PublicRuntimeTests(unittest.TestCase):
         expected = {'node','codex','platform','codex-license','codex-notice','rg-license','rg-unlicense','bwrap-copying','bwrap-license'}
         self.assertEqual({x[0] for x in lock['components']},expected)
 
+    def test_source_release_rejects_unrelated_files_before_network_or_packaging(self):
+        with tempfile.TemporaryDirectory() as temp:
+            export = Path(temp) / 'sources'
+            export.mkdir()
+            extra = export / 'unrelated.txt'
+            extra.write_text('personal draft')
+            with self.assertRaisesRegex(ValueError, 'unrelated files'):
+                image.sources(json.loads(image.LOCK.read_text()), export, Path(temp) / 'cache')
+            self.assertEqual(extra.read_text(), 'personal draft')
+
     def test_selects_runtime_and_notices_without_personal_or_demo_key_files(self):
         for name in ['root/.bashrc','home/me/.ssh/id_rsa','usr/share/doc/test/samples/private.pem','etc/skel/.profile']:
             self.assertFalse(image.include_deb(name))
