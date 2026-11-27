@@ -5,15 +5,18 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '../runtime/codex-mobile/app.js'), 'utf8');
-const fadeDepth = vm.runInNewContext(
-  source.slice(source.indexOf('function chatFadeDepth('), source.indexOf('function bindChatFade(')) + '\nchatFadeDepth'
+const fadeStops = vm.runInNewContext(
+  source.slice(source.indexOf('function chatFadeStops('), source.indexOf('function bindChatFade(')) + '\nchatFadeStops'
 );
 
-test('the chat fade stops before the latest reply and shrinks with the visible chat', () => {
+test('the face and neck stay clear and the fade leaves space to read in a smaller window', () => {
   const chat = {top: 0, height: 720};
   const portrait = {top: 20, height: 750};
-  assert.ok(fadeDepth(chat, portrait, 450) > 0);
-  assert.equal(fadeDepth(chat, portrait, 180), 180);
-  assert.equal(fadeDepth(chat, portrait, -25), 0);
-  assert.ok(fadeDepth({top: 0, height: 220}, portrait, Infinity) < 90);
+  const normal = fadeStops(chat, portrait);
+  assert.equal(normal.start, 395);
+  assert.ok(normal.end > normal.start + 60);
+  const compact = fadeStops({top: 0, height: 220}, {top: 0, height: 270});
+  assert.ok(compact.end <= 132);
+  assert.ok(compact.start >= 90 && compact.end > compact.start);
+  assert.equal(fadeStops({top: 0, height: 70}, portrait).end, 0);
 });

@@ -77,8 +77,9 @@ body>header:not([hidden]){height:auto;min-height:56px;overflow:visible;flex-wrap
 #sidebar #accessibility-open{display:block;width:100%;text-align:left;background:#314b49;border-radius:12px;padding:14px;margin:8px 0;font-size:16px}
 
 #messages-viewport{position:relative;z-index:2;display:flex;flex:1;min-height:0;overflow:hidden}#messages-viewport #messages{width:100%;min-height:0}
-/* Older bubbles fade as they reach the top. Open or focused bubbles remain fully readable. */
-#messages-viewport[data-chat-fade]:not(:has(.message.expanded,.message:focus-within)){
+/* Keep the face and neck clear. Leave room to read even the first bubble below the fade. */
+#messages-viewport[data-chat-fade] #messages::before{min-height:var(--chat-fade-end)}
+#messages-viewport[data-chat-fade]:not(:has(.message.expanded,.message:focus-visible,.message :focus-visible)){
  mask-image:linear-gradient(to bottom,transparent var(--chat-fade-start),#000 var(--chat-fade-end));
 }
 
