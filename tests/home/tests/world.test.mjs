@@ -88,9 +88,12 @@ test('stream chat retains a bounded recent history while temporarily hidden and 
   const canvas={getBoundingClientRect:()=>({left:0,top:0,width:369,height:812})};
   const chat=createStreamChat(panel,canvas,()=>[]);
   const anchor={x:290,y:396};
-  for(let i=0;i<25;i++)chat.add({id:i,author:i,text:'сообщение '+i});
+  for(let i=0;i<24;i++)chat.add({id:i,author:i,chat:true,text:'сообщение '+i});
+  chat.add({id:24,chat:false,respondsTo:23,text:'Вот и мой ответ.'});
   assert.deepEqual(log.children.map(item=>item.parts[1].textContent.trim()),
-    Array.from({length:24},(_,i)=>'сообщение '+(i+1)));
+    [...Array.from({length:23},(_,i)=>'сообщение '+(i+1)),'Вот и мой ответ.']);
+  assert.equal(log.children.at(-1).className,'stream-chat-eva');
+  assert.equal(log.children.at(-1).parts[0].textContent,'Ева');
   assert.equal(empty.hidden,true);
   chat.layout(anchor,0);
   assert.equal(panel.hidden,false);
@@ -99,6 +102,7 @@ test('stream chat retains a bounded recent history while temporarily hidden and 
   chat.layout(anchor,1);
   assert.equal(panel.hidden,false);
   assert.equal(log.children.length,24);
+  assert.equal(log.children.at(-1).parts[0].textContent,'Ева');
   chat.clear();
   assert.equal(panel.hidden,true);
   assert.equal(log.children.length,0);

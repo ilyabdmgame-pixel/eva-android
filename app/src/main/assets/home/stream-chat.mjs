@@ -86,10 +86,15 @@ export function createStreamChat(panel,canvas,protectedElements){
 
   function add(cue){
     followLatest=panel.hidden||log.scrollHeight-log.scrollTop-log.clientHeight<=8;
-    const [name,color]=viewers[cue.author%viewers.length];
     const message=document.createElement('li'),author=document.createElement('b');
-    author.textContent=name;
-    author.style.color=color;
+    if(cue.chat){
+      const [name,color]=viewers[cue.author%viewers.length];
+      author.textContent=name;
+      author.style.color=color;
+    }else{
+      message.className='stream-chat-eva';
+      author.textContent='Ева';
+    }
     message.append(author,document.createTextNode(' '+cue.text));
     log.append(message);
     if(log.children.length>recentLimit)log.firstElementChild.remove();

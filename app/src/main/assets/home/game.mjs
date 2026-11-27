@@ -430,11 +430,13 @@ function applyStreamDialogue(data){
  if(state?.streamRequest===data.id&&data.id)state.dialogue?.addGenerated(data.pairs);
 }
 function advanceStream(state,elapsed,t,canReact){
- const cue=state.dialogue.next(elapsed,canReact);
+ const cue=state.dialogue.next(elapsed);
  if(cue){
-   if(cue.emotion)state.streamReaction={emotion:cue.emotion,start:t};
-   if(cue.chat){streamChat.add(cue);dirty=true;}
-   else say(cue.text);
+   streamChat.add(cue);dirty=true;
+   if(canReact){
+     if(cue.emotion)state.streamReaction={emotion:cue.emotion,start:t};
+     if(!cue.chat)say(cue.text);
+   }
  }
  const generation=state.streamModel&&state.dialogue.takeGeneration(elapsed,state.plan.duration-elapsed);
  if(generation){

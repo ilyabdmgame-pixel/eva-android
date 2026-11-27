@@ -113,26 +113,36 @@ test('stream repeats typing and mouse phases, then releases the hands exactly on
  assert.equal(phase(plan.duration),3);
 });
 
-test('stream viewers use the full 3–10 second range and Eva responds selectively',()=>{
- const random=[0,.999999,0,0];
+test('stream viewers use the full 3–10 second range and Eva answers the first one',()=>{
+ const random=[0,.999999,0,0,0];
  const dialogue=createStreamDialogue(0,()=>random.shift()??0);
  assert.equal(dialogue.next(2999),null);
  const first=dialogue.next(3000);
- assert(first.chat&&first.emotion);
+ assert(first.chat);
+ assert.equal(dialogue.next(4199),null);
+ const reply=dialogue.next(4200);
+ assert.equal(reply.respondsTo,first.id);
+ assert.equal(reply.emotion,'wry');
+ assert.match(reply.text,/Падать буду по расписанию/);
  assert.equal(dialogue.next(12999),null);
  const second=dialogue.next(13000);
  assert(second.chat);
  assert.notEqual(first.author,second.author);
- const third=dialogue.next(16000);
- assert(third.chat);
- assert.equal(dialogue.next(17199),null);
- const reply=dialogue.next(17200);
- assert.equal(reply.respondsTo,third.id);
- assert.equal(reply.emotion,'amused');
- assert.match(reply.text,/связь с землёй/);
+ assert(dialogue.next(16000).chat);
+ assert.equal(dialogue.next(17200),null);
  assert(dialogue.next(19000).chat);
  assert(dialogue.next(200000).chat);
  assert.equal(dialogue.next(200001),null);
+});
+
+test('each local opening gives Eva a reply even with the slowest viewer cadence',()=>{
+ for(let visit=0;visit<streamScenes.length;visit++){
+   const dialogue=createStreamDialogue(visit,()=>.999999);
+   const viewer=dialogue.next(10000);
+   assert(viewer?.chat);
+   assert.equal(dialogue.next(11999),null);
+   assert.equal(dialogue.next(12000)?.respondsTo,viewer.id);
+ }
 });
 
 test('the stream rotates a large pool of authored themes and reactions without repeating lines',()=>{
@@ -183,11 +193,12 @@ test('model improvises after viewers have spoken and waits for a scene boundary'
  assert.equal(dialogue.takeGeneration(180000,90000),null);
 });
 
-test('viewer chat keeps moving while Eva is busy and skips stale replies on return',()=>{
+test('viewer chat keeps moving and skips stale replies after a pause',()=>{
  const dialogue=createStreamDialogue(0,()=>0);
- for(const t of [3000,6000,9000])assert(dialogue.next(t).chat);
- assert.equal(dialogue.next(10200,false),null);
- assert(dialogue.next(12000,false).chat);
+ assert(dialogue.next(3000).chat);
+ assert(dialogue.next(6000).chat);
+ assert(dialogue.next(9000).chat);
+ assert(dialogue.next(12000).chat);
  assert.equal(dialogue.next(12100),null);
  assert(dialogue.next(60000).chat);
  assert.equal(dialogue.next(60001),null);

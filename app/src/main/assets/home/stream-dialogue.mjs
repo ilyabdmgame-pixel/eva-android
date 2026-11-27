@@ -2,10 +2,10 @@ import {streamScenes} from './stream-scenes.mjs';
 
 const greetings=[
   'Так, я в эфире. Чат, как слышно?',
-  'Всем сап. Чай поставила, настройки проверила. Сейчас и узнаем, что забыла.',
-  'Чат, заходи. Я место у монитора освободила. Ну, почти.',
-  'О, уже собрались. Ставлю кружку подальше от клавы и начинаем.',
-  'Сап, чат. У кого сегодня есть дурацкая идея? Я тут как раз освободилась.'
+  'Сап, чат. Чай налила, погнали.',
+  'Заходи, чат. Место у монитора есть.',
+  'Кружку убрала с клавы. Начинаем.',
+  'Сап. У кого сегодня дурацкая идея?'
 ];
 const speakers=[0,1,2,0,3,1];
 const minimumReplyGap=14000;
@@ -27,7 +27,7 @@ export function streamExpression(emotion,elapsed){
 
 export function createStreamDialogue(visit,random=Math.random){
   let sceneIndex=visit*9,sceneSerial=-1,scene,index,id=0,viewerCount=0;
-  let due=delay(),reply=null,lastReply=-5000,lastReaction=-Infinity,unanswered=0;
+  let due=delay(),reply=null,lastReply=null,lastReaction=-Infinity,unanswered=0;
   let pending=null,requestTopic,requests=0,lastRequest=-Infinity;
   const recent=[];
 
@@ -63,10 +63,10 @@ export function createStreamDialogue(visit,random=Math.random){
       pending={topic:requestTopic,lines,priorityReply:true};
       requestTopic=null;
     },
-    next(elapsed,canReact=true){
+    next(elapsed){
       if(reply&&elapsed>=reply.at){
         const queued=reply;reply=null;
-        if(elapsed<due&&canReact){
+        if(elapsed<due){
           lastReply=lastReaction=elapsed;unanswered=0;scene.priorityReply=false;
           remember('eva',queued.text);
           return {id:id++,chat:false,text:queued.text,emotion:queued.emotion,respondsTo:queued.respondsTo};
@@ -81,10 +81,10 @@ export function createStreamDialogue(visit,random=Math.random){
       index++;viewerCount++;unanswered++;
       remember('viewer',text);
       due=elapsed+delay();
-      if(canReact&&candidate&&elapsed-lastReply>=minimumReplyGap&&
-          (scene.priorityReply||unanswered>=3||random()<.48)){
+      if(candidate&&(lastReply===null||elapsed-lastReply>=minimumReplyGap&&
+          (scene.priorityReply||unanswered>=3||random()<.48))){
         reply={at:elapsed+1200+Math.floor(random()*801),text:candidate,emotion,respondsTo:cue.id};
-      }else if(canReact&&emotion&&elapsed-lastReaction>=4200){
+      }else if(emotion&&elapsed-lastReaction>=4200){
         cue.emotion=emotion;
         lastReaction=elapsed;
       }
