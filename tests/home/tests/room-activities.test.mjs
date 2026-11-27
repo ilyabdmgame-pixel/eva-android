@@ -123,6 +123,22 @@ test('simulated stream chat asks a question and Eva replies without needing a mo
  assert(roomDialogue('read','Отдых',14500,0).text.length>10);
 });
 
+test('consecutive streams rotate through different viewer lines and paired replies',()=>{
+ const linesFor=(visit,speakerOffset)=>Array.from({length:13},(_,slot)=>
+   roomDialogue('computer','Творчество',14000+23000*slot+speakerOffset,visit).text);
+ for(const offset of [0,6500]){
+   const first=linesFor(0,offset),next=linesFor(1,offset);
+   assert.equal(new Set([...first,...next]).size,26);
+ }
+ for(const [key,activity] of Object.entries(activities)){
+   if(key==='computer')continue;
+   const first=roomDialogue(key,activity.category,14000,0);
+   const next=roomDialogue(key,activity.category,14000,1);
+   assert(first&&!first.chat,key);
+   assert.notEqual(first.text,next?.text,key);
+ }
+});
+
 test('the stream monitor paints a colored scrolling game with a visible jump',()=>{
  const records=frame=>{
    const calls=[];
