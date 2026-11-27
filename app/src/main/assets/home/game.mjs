@@ -22,6 +22,7 @@ import {places} from './places.mjs';
 import {startFlight,flightPoint,advanceFlight,drawToy} from './toys.mjs';
 import {gait,heading,walkHeading,orientation,standingPose,evaPose,actionPose} from './orientation.mjs';
 import {createSpeech} from './speech.mjs';
+import {createStreamChat} from './stream-chat.mjs';
 import {district,districts,regionAt,worldPoint,worldObjects,paceRoute} from './district.mjs';
 import {initialEconomy,items,fixtureItems,fullness,apply as applyEconomy} from './economy.mjs';
 import {remark} from './remarks.mjs';
@@ -35,9 +36,14 @@ import {roomDialogue} from './room-dialogue.mjs';
 const town=townChat({world:worldSnapshot,apply:useNearby,note:statusNote,quip:()=>say(remark('touch'),'wry'),usage:publishWeeklyQuota});
 const canvas=$('scene');
 const EVA_ID=15;
-const STREAM_CHAT='stream-chat';
 const paintWindow=windowWeather(()=>{dirty=true;wake();});
-const speech=createSpeech($('speech'),$('world-status'),()=>document.querySelectorAll('.now,.top-status,#folders button,#actions button,#dock,#town-mark:not([hidden])'));
+const roomControls=()=>document.querySelectorAll('.now,.top-status,#folders button,#actions button,#dock,#town-mark:not([hidden]),#town-answer:not([hidden])');
+const speechLayer=$('speech');
+const speech=createSpeech(speechLayer,$('world-status'),roomControls);
+const streamChat=createStreamChat($('stream-chat'),canvas,()=>[
+  ...roomControls(),
+  ...[...speechLayer.children].filter(balloon=>balloon.style.visibility==='visible')
+]);
 const renderer=createScene(canvas);
 const time=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 const date=new Intl.DateTimeFormat('ru-RU',{weekday:'long',day:'numeric',month:'long'});
@@ -342,6 +348,7 @@ function activityAvailable(key){
 }
 function stopRoomActivity(){
  if(!roomActivity)return;
+ if(roomActivity.key==='computer')streamChat.clear();
  if(!roomActivity.started){move=[];onArrival=null;automaticWalk=false;walkSpeed=0;walkHold=null;}
  const pose=roomActivity.sample;
  if(!reduceMotion&&!seated&&pose&&(pose.motion==='reach'||pose.motion==='stoop')&&pose.amount){
@@ -398,7 +405,7 @@ function finishRoomActivity(state){
    case 'read':saved.page=(saved.page||0)+1;break;
    case 'water':saved.plant=true;break;
    case 'vinyl':saved.record=true;break;
-   case 'computer':leaveSeat();break;
+   case 'computer':streamChat.clear();leaveSeat();break;
    case 'tv':saved.channel=(saved.channel||0)%2+1;break;
    case 'nap':leaveSeat();break;
    case 'wash': {
@@ -436,7 +443,7 @@ function advanceRoomActivity(){
    const cue=roomDialogue(state.key,state.definition.category,elapsed,saved.roomActivityCounts[state.key]||0);
    if(cue&&state.lastCue!==cue.id){
      state.lastCue=cue.id;
-     if(cue.chat){speech.say(STREAM_CHAT,cue.text,now(),{fromOrigin:true});dirty=true;}
+     if(cue.chat){streamChat.add(cue);dirty=true;}
      else say(cue.text);
    }
  }
@@ -1167,10 +1174,7 @@ function paint(t=now()){
    shown.height*(1+breath+stretch),shown.flip,opt,true);
  motionFrames[EVA_ID]=shown;
  if(head)heads.set(EVA_ID,head);
- if(stream){
-   drawComputerArms(renderer,at,playing.fixture,stream,EVA_ID);
-   heads.set(STREAM_CHAT,computerLayout(playing.fixture)(.795,.180,.365));
- }
+ if(stream)drawComputerArms(renderer,at,playing.fixture,stream,EVA_ID);
  if(playing&&playing.key!=='computer'){
    const o=playing.key==='tv'?fixtures.find(fixture=>fixture.id===26):playing.fixture;
    let point=at;
@@ -1192,8 +1196,12 @@ function paint(t=now()){
    const p=project(view,head);
    speechAnchors.set(id,{x:p.x*view.cssWidth/view.width,y:p.y*view.cssHeight/view.height});
  }
- $('speech').hidden=Boolean(sheet);
+ speechLayer.hidden=Boolean(sheet);
  speech.layout(speechAnchors,canvas);
+ if(stream&&!sheet&&!layout&&!town.composing){
+   const monitor=project(view,computerLayout(playing.fixture)(.795,.180,.365));
+   streamChat.layout({x:monitor.x*view.cssWidth/view.width,y:monitor.y*view.cssHeight/view.height},t);
+ }else streamChat.hide();
  const anchor=speechAnchors.get(EVA_ID);
  if(anchor)anchor.feetY=project(view,at).y*view.cssHeight/view.height;
  town.anchor(anchor,sheet);
@@ -1294,7 +1302,8 @@ function loop(t){
 }
 
 window.homeSheetChanged=()=>{
- $('speech').hidden=Boolean(sheet);
+ speechLayer.hidden=Boolean(sheet);
+ if(sheet)streamChat.hide();
  if(!sheet){last=now();dirty=true;nextAmbientFrame=0}
  wake();
 };
@@ -1307,6 +1316,7 @@ function updateHomeVisibility(){
  if(active){
    last=now();pullClock();wake();
  }else{
+   streamChat.hide();
    releaseHomePointer();storage();
    cancelAnimationFrame(nextFrame);clearTimeout(timer);nextFrame=timer=0;
  }

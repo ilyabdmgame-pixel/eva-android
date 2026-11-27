@@ -22,7 +22,7 @@ export function bubblePosition(head,size,screen,obstacles){
 export function createSpeech(layer,status,protectedElements){
   const lines=new Map();
   let noteUntil=0,serial=0,measuredAt=-Infinity,screen,protectedRects;
-  function say(speaker,text,time,{fromOrigin=false}={}){
+  function say(speaker,text,time){
     let line=lines.get(speaker);
     if(!line){
       const el=document.createElement('div');
@@ -34,8 +34,6 @@ export function createSpeech(layer,status,protectedElements){
       line={el};lines.set(speaker,line);
     }
     line.el.textContent=text;
-    line.fromOrigin=fromOrigin;
-    delete line.el.dataset.fromOrigin;
     line.size=null;
     line.until=time+Math.min(6700,Math.max(3600,1600+text.length*48));
     line.order=++serial;
@@ -79,9 +77,7 @@ export function createSpeech(layer,status,protectedElements){
       line.el.style.setProperty('--bubble-x',placement.x+'px');
       line.el.style.setProperty('--bubble-y',placement.y+'px');
       line.el.style.setProperty('--tail-x',placement.tail+'px');
-      const length=line.fromOrigin?head.y-placement.y-placement.h+1:placement.length;
-      line.el.style.setProperty('--tail-height',length+'px');
-      if(line.fromOrigin)line.el.dataset.fromOrigin='';
+      line.el.style.setProperty('--tail-height',placement.length+'px');
       rects.push(placement);
     }
   }

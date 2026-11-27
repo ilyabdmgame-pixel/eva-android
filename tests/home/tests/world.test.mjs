@@ -4,6 +4,7 @@ import {blocksActor} from '../../../app/src/main/assets/home/contact.mjs';
 import assert from 'node:assert/strict';
 import {accessSync,readFileSync} from 'node:fs';
 import {bubblePosition} from '../../../app/src/main/assets/home/speech.mjs';
+import {createStreamChat,streamChatPosition} from '../../../app/src/main/assets/home/stream-chat.mjs';
 import {floorHeight} from '../../../app/src/main/assets/home/places.mjs';
 import {gait,heading,evaPose,walkPose} from '../../../app/src/main/assets/home/orientation.mjs';
 import {districts,regionAt,worldPoint,surfaceAt,waterAt,solidWall,worldObjects,route,roundRoute,followRoute,paceRoute} from '../../../app/src/main/assets/home/district.mjs';
@@ -34,6 +35,54 @@ test('balloons avoid the launcher controls and other visible balloons',()=>{
   assert(second&&second.y+second.h<=first.y);
   const toolbar={x:0,y:0,w:369,h:104};
   assert.equal(bubblePosition({x:184,y:91},size,screen,[toolbar]),null);
+});
+
+test('stream chat stays near the monitor and moves below it if shortcuts occupy the space above',()=>{
+  const monitor={x:298,y:395},size={w:152,h:135},screen={w:369,h:812};
+  const beside=streamChatPosition(monitor,size,screen,[{x:306,y:260,w:52,h:146}]);
+  assert.deepEqual(beside,{x:138,y:252,w:152,h:135});
+  const below=streamChatPosition(monitor,size,screen,[{x:0,y:0,w:369,h:395}]);
+  assert.equal(below.y,403);
+  assert.equal(streamChatPosition(monitor,size,screen,[{x:0,y:0,...screen}]),null);
+  const moved=streamChatPosition({x:20,y:750},size,screen,[]);
+  assert(moved.x>=8&&moved.y+moved.h<=screen.h-8);
+});
+
+test('stream chat retains four latest messages while temporarily hidden and clears between streams',()=>{
+  const empty={hidden:false};
+  const log={
+    children:[],scrollTop:0,clientHeight:48,
+    get firstElementChild(){return this.children[0]},
+    get scrollHeight(){return this.children.length*24},
+    append(item){this.children.push(item);item.remove=()=>this.children.shift()},
+    replaceChildren(){this.children=[]}
+  };
+  const panel={
+    hidden:true,style:{},offsetWidth:170,offsetHeight:90,
+    ownerDocument:{
+      createElement:()=>({style:{},append(...parts){this.parts=parts}}),
+      createTextNode:text=>({textContent:text})
+    },
+    querySelector:selector=>selector==='ol'?log:empty
+  };
+  const canvas={getBoundingClientRect:()=>({left:0,top:0,width:369,height:812})};
+  const chat=createStreamChat(panel,canvas,()=>[]);
+  const anchor={x:290,y:396};
+  for(let i=0;i<5;i++)chat.add({id:i*2,text:'сообщение '+i});
+  assert.deepEqual(log.children.map(item=>item.parts[1].textContent.trim()),
+    ['сообщение 1','сообщение 2','сообщение 3','сообщение 4']);
+  assert.equal(empty.hidden,true);
+  chat.layout(anchor,0);
+  assert.equal(panel.hidden,false);
+  chat.hide();
+  assert.equal(panel.hidden,true);
+  chat.layout(anchor,1);
+  assert.equal(panel.hidden,false);
+  assert.equal(log.children.length,4);
+  chat.clear();
+  assert.equal(panel.hidden,true);
+  assert.equal(log.children.length,0);
+  assert.equal(empty.hidden,false);
 });
 
 test('the shared map has a walkable path to all eighteen districts',()=>{
