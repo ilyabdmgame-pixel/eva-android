@@ -169,18 +169,23 @@ try{
   let devtools=process.env.EVA_DEVTOOLS_URL;
   if(!devtools){
     browser=spawn(process.env.CHROME_BIN||'google-chrome',[
-      '--headless','--no-sandbox','--disable-dev-shm-usage','--disable-background-networking',
+      '--headless','--no-sandbox','--no-first-run','--no-default-browser-check','--disable-dev-shm-usage','--disable-background-networking',
       '--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist',
       '--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'
-    ],{stdio:'ignore'});
-    let failure;browser.on('error',e=>{failure=e;});
-    for(let i=0;i<100;i++){
+    ],{stdio:['ignore','ignore','pipe']});
+    let failure,diagnostic='';browser.on('error',e=>{failure=e;});
+    browser.stderr.on('data',part=>{
+      diagnostic=(diagnostic+part.toString()).slice(-4096);
+      const address=/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//.exec(diagnostic);
+      if(address)devtools='http://127.0.0.1:'+address[1];
+    });
+    for(let i=0;i<375&&!devtools;i++){
       if(failure)throw failure;
-      if(browser.exitCode!==null||browser.signalCode)throw Error('Chromium exited during startup: '+(browser.signalCode||browser.exitCode));
+      if(browser.exitCode!==null||browser.signalCode)throw Error('Chromium exited during startup: '+(browser.signalCode||browser.exitCode)+'\n'+diagnostic);
       try{const line=(await readFile(path.join(profile,'DevToolsActivePort'),'utf8')).split('\n')[0];if(line){devtools='http://127.0.0.1:'+line;break;}}catch{}
       await wait(120);
     }
-    assert(devtools,'Chromium did not open its debugging port');
+    assert(devtools,'Chromium did not open its debugging port\n'+diagnostic);
   }
   const routines=await readFile(path.join(home,'routines.json'),'utf8'),activities=await readFile(path.join(home,'room-activities.json'),'utf8');
   const source=`localStorage.setItem('followSchedule','no');const noop=()=>{};
