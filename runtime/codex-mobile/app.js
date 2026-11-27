@@ -732,6 +732,44 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncActive
 let viewportBaseline=window.visualViewport?window.visualViewport.height:window.innerHeight;
 function updateVisibleViewport(){const v=window.visualViewport;if(!v)return;const h=v.height;viewportBaseline=Math.max(viewportBaseline,h);document.body.style.setProperty('--visible-top',v.offsetTop+'px');document.body.style.setProperty('--visible-left',v.offsetLeft+'px');document.body.style.setProperty('--visible-width',v.width+'px');document.body.style.setProperty('--visible-height',h+'px');document.body.classList.toggle('keyboard-open',viewportBaseline-h>120)}
 if(window.visualViewport){window.visualViewport.addEventListener('resize',updateVisibleViewport);window.visualViewport.addEventListener('scroll',updateVisibleViewport);window.addEventListener('orientationchange',()=>setTimeout(()=>{viewportBaseline=window.visualViewport.height;updateVisibleViewport()},500));updateVisibleViewport()}
+// Keep the fade attached to the viewport while protecting the latest reply.
+function chatFadeDepth(bounds,figure,latestTop){
+ const belowFace=figure.top+figure.height*.52+65-bounds.top;
+ return Math.max(0,Math.min(belowFace,bounds.height*.35,latestTop-bounds.top));
+}
+function bindChatFade(){
+ const viewport=$('messages-viewport'),messages=$('messages');
+ const figure=avatarStage.querySelector('.avatar-figure');
+ let frame=null;
+ function schedule(){
+  if(frame!==null)return;
+  frame=requestAnimationFrame(()=>{
+   frame=null;
+   let latest=messages.lastElementChild;
+   while(latest&&!latest.classList.contains('message'))latest=latest.previousElementSibling;
+   let depth=0;
+   if(latest&&!avatarStage.hidden){
+    const bounds=viewport.getBoundingClientRect();
+    const nearBottom=messages.scrollHeight-messages.clientHeight-messages.scrollTop<=2;
+    depth=chatFadeDepth(bounds,figure.getBoundingClientRect(),
+      nearBottom?latest.getBoundingClientRect().top:Infinity);
+   }
+   viewport.toggleAttribute('data-chat-fade',depth>=12);
+   viewport.style.setProperty('--chat-fade-end',Math.round(depth)+'px');
+   viewport.style.setProperty('--chat-fade-start',Math.round(Math.max(0,depth-120))+'px');
+  });
+ }
+ const resize=new ResizeObserver(schedule);
+ resize.observe(viewport);resize.observe(figure);
+ const changed=new MutationObserver(schedule);
+ changed.observe(messages,{childList:true,subtree:true,characterData:true});
+ changed.observe(avatarStage,{attributes:true,attributeFilter:['hidden']});
+ messages.addEventListener('scroll',schedule,{passive:true});
+ messages.addEventListener('load',schedule,true);
+ schedule();
+}
+bindChatFade();
+
 // Activity follows explicit start/completion events, rather than a random timer.
 const avatarItems=new Map();let avatarActivityTimer=null,avatarActivitySince=0;
 function setAvatarActivity(next){if(avatarActivity===next)return;avatarActivity=next;avatarActivitySince=Date.now();updateAvatar();animateAvatarPresence(next?'consider':'settle')}

@@ -45,8 +45,7 @@ body.keyboard-open #messages::before{min-height:4vh}
 .pose-eyeblink{opacity:0;clip-path:polygon(26% 23%,75% 23%,75% 31%,26% 31%)}.avatar-blinking .avatar-pose .pose-eyeblink{opacity:1}
 @keyframes pageTurn{0%,72%,100%{opacity:0}78%,88%{opacity:1}}@keyframes writingStroke{0%,100%{opacity:0}40%,65%{opacity:1}}
 @media (prefers-reduced-motion:reduce){.avatar-pose{transition:none}.pose-body,.pose-head,.avatar-is-reading .avatar-pose-reading .pose-alt,.avatar-is-working .avatar-pose-work .pose-alt{animation:none}.avatar-blinking .avatar-pose .pose-eyeblink{opacity:0}}
-/* Face occlusion uses a local transparent mask; other message areas stay opaque. */
-#messages .message{opacity:1}#messages .message.expanded{-webkit-mask-image:none!important;mask-image:none!important;opacity:1!important}
+#messages .message{opacity:1}
 /* Blink only the eye region; it must never replace the mouth or expression. */
 .avatar-blink,.avatar-blink-thinking,.avatar-blink-talking{z-index:4;opacity:0;clip-path:polygon(26% 23%,75% 23%,75% 31%,26% 31%);transition:opacity .06s linear}
 .avatar-blink.is-blinking{opacity:0}
@@ -78,6 +77,10 @@ body>header:not([hidden]){height:auto;min-height:56px;overflow:visible;flex-wrap
 #sidebar #accessibility-open{display:block;width:100%;text-align:left;background:#314b49;border-radius:12px;padding:14px;margin:8px 0;font-size:16px}
 
 #messages-viewport{position:relative;z-index:2;display:flex;flex:1;min-height:0;overflow:hidden}#messages-viewport #messages{width:100%;min-height:0}
+/* Older bubbles fade as they reach the top. Open or focused bubbles remain fully readable. */
+#messages-viewport[data-chat-fade]:not(:has(.message.expanded,.message:focus-within)){
+ mask-image:linear-gradient(to bottom,transparent var(--chat-fade-start),#000 var(--chat-fade-end));
+}
 
 /* Softer expression changes and small motions between the existing drawings. */
 .avatar-thought,.avatar-happy,.avatar-glance{transition:opacity .65s ease-in-out}
