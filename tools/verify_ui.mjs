@@ -133,7 +133,14 @@ async function verifyRoomTouches(page){
   let last=initial.yaw;
   for(const [angle,radius] of [[174,47],[179,50],[183,53],[191,55],[204,57]]){
     await dispatch('touchMove',fingers(angle,radius));
-    const measured=await current();
+    // Touch moves can be delivered at the next frame. Sample each new pair of
+    // contacts before issuing the next move, including the crossing of ±π.
+    const wanted=initial.yaw+(angle-166)*Math.PI/180;
+    const measured=await page.until(`(()=>{
+      const {cameraYaw:yaw,cameraScale:scale}=worldCheck(),d=yaw-(${wanted});
+      return Math.abs(Math.atan2(Math.sin(d),Math.cos(d)))<.025
+        && Math.abs(scale/${initial.scale}-${radius/44})<.025 && {yaw};
+    })()`,'The camera did not follow the two touch contacts at '+angle+'°',5000);
     assert(Math.abs(delta(measured.yaw,last))<.34,'Camera jumped when the pair crossed ±π');
     last=measured.yaw;
   }
