@@ -372,12 +372,14 @@ def smoke_application(archive, root, env, app_archive=None):
                 if match:
                     base, token = match.groups()
                     break
-            for route, mime, marker in [('/', 'text/html', b'<html lang="ru">'),
-                                        ('/portrait.js', 'text/javascript', b'EvaPortrait'),
-                                        ('/avatar/idle.png', 'image/webp', b'RIFF')]:
+            mobile = root / 'root/codex-mobile'
+            for route, mime, source in [('/', 'text/html', mobile/'index.html'),
+                                        ('/portrait.js', 'text/javascript', mobile/'portrait.js'),
+                                        ('/avatar/idle.png', 'image/webp', mobile/'avatar/idle.webp')]:
                 with opener.open(base+route, timeout=5) as response:
-                    if response.status != 200 or response.headers.get_content_type() != mime or marker not in response.read():
-                        raise RuntimeError(f'Invalid first-launch response for {route}')
+                    if (response.status != 200 or response.headers.get_content_type() != mime
+                            or hashlib.file_digest(response, 'sha256').hexdigest() != sha(source)):
+                        raise RuntimeError(f'First-launch response differs from packaged source: {route}')
                 print(f'Chat HTTP 200 {route} ({mime})', flush=True)
             atlases = sorted((root/'root/codex-mobile/avatar').glob('cel-*.webp'))
             avatar_dir = root/'root/codex-mobile/avatar'

@@ -33,7 +33,7 @@ def wait_for(label, tap=False):
         time.sleep(1)
     raise RuntimeError(f'UI element missing on Android API {api}: {label}')
 
-assert shell('getprop','ro.kernel.qemu') == '1'
+assert '1' in (shell('getprop','ro.kernel.qemu'), shell('getprop','ro.boot.qemu'))
 assert shell('getprop','ro.build.version.sdk') == api
 print('System',shell('getprop','ro.product.manufacturer'),shell('getprop','ro.build.version.release'),flush=True)
 shell('cmd','package','set-home-activity',home)
