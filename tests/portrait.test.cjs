@@ -31,6 +31,37 @@ test('the blink closes before it opens and every wave cel is used in sequence',(
   assert.equal(new Set(wave).size,24);assert.equal(wave[0],0);assert.equal(wave.at(-1),23);
 });
 
+test('regular chat varies its resting gestures before repeating one',()=>{
+  const bag=[];
+  const beats=[];
+  for(const sample of [0,.2,.9,.3,.7,0,.1,.2,.5,.95]){
+    beats.push(portrait.nextIdleBeat(bag,beats.at(-1),()=>sample));
+  }
+  assert.equal(new Set(beats.slice(0,5)).size,5);
+  assert.equal(new Set(beats.slice(5)).size,5);
+  assert.notEqual(beats[4],beats[5]);
+});
+
+test('the breathing, hair and yawn movies contain timed frames and retain transparency',()=>{
+  for(const name of ['body','hair','yawn']){
+    const file=fs.readFileSync(path.join(base,'avatar','idle-'+name+'.webp'));
+    assert.equal(file.toString('ascii',8,12),'WEBP');
+    let duration=0,frames=0,flags=0,loops=null;
+    for(let p=12;p+8<=file.length;){
+      const tag=file.toString('ascii',p,p+4),size=file.readUInt32LE(p+4),start=p+8;
+      assert.ok(start+size<=file.length);
+      if(tag==='VP8X')flags=file[start];
+      if(tag==='ANIM')loops=file.readUInt16LE(start+4);
+      if(tag==='ANMF'){frames++;duration+=file.readUIntLE(start+12,3);}
+      p=start+size+(size%2);
+    }
+    assert.equal(flags&0x12,0x12,name);
+    assert.ok(frames>=40,name);
+    if(name==='body'){assert.equal(loops,0);assert.ok(duration>=4000&&duration<=10000);}
+    else {assert.equal(loops,1);assert.equal(duration,name==='hair'?3200:3600);}
+  }
+});
+
 test('six drawn speech shapes have six steps of articulation and rest during pauses', () => {
   const {speechTrack,speechCue} = portrait;
   const line = speechTrack('АэОюМф.');

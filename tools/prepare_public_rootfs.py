@@ -380,13 +380,15 @@ def smoke_application(archive, root, env, app_archive=None):
                         raise RuntimeError(f'Invalid first-launch response for {route}')
                 print(f'Chat HTTP 200 {route} ({mime})', flush=True)
             atlases = sorted((root/'root/codex-mobile/avatar').glob('cel-*.webp'))
-            for atlas in atlases:
+            avatar_dir = root/'root/codex-mobile/avatar'
+            idle_clips = [avatar_dir/name for name in ('idle-body.webp', 'idle-hair.webp', 'idle-yawn.webp')]
+            for atlas in [*atlases, *idle_clips]:
                 with opener.open(base+'/avatar/'+atlas.name, timeout=5) as response:
                     if (response.headers.get_content_type() != 'image/webp'
                             or hashlib.file_digest(response, 'sha256').hexdigest() != sha(atlas)):
                         raise RuntimeError(f'HTTP portrait atlas differs from APK: {atlas.name}')
             if atlases:
-                print(f'Chat HTTP 200: {len(atlases)} 2D animation atlases verified byte for byte', flush=True)
+                print(f'Chat HTTP 200: {len(atlases)} 2D atlases and {len(idle_clips)} idle clips verified byte for byte', flush=True)
             status = urllib.request.Request(base+'/status', headers={'X-Codex-Token': token})
             deadline = time.monotonic() + 40
             while time.monotonic() < deadline:

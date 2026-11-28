@@ -6,6 +6,11 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
+if __package__:
+    from .chat_gaze import PaintedEyes, pose_at
+else:
+    from chat_gaze import PaintedEyes, pose_at
+
 ROOT = Path(__file__).resolve().parents[1]
 ART = ROOT / 'runtime/codex-mobile/avatar'
 MOODS = ROOT / 'runtime/eva-builtins/emotions'
@@ -93,18 +98,21 @@ def main():
     idle=face(ART/'idle.png')
     refs=sorted(MOODS.glob('*.png'))
     if len(refs)!=2*len(NAMES):raise ValueError('Two painted keys per expression are required')
+    eyes=PaintedEyes(idle,face(MOODS/'28-blink-full.png'),face(MOODS/'06-laugh-full.png'),
+                     face(MOODS/'10-surprised-full.png'),face(MOODS/'26-excited-full.png'))
     for i,name in enumerate([*NAMES,'glance']):
         if name=='glance':
-            cells=[idle,*cel_segment(idle,face(ART/'glance.png'),11)]
+            cells=[idle]*12
         else:
             a,b=refs[2*i:2*i+2]
             if name=='warm':a,b=b,a
-            mid,end=face(a),face(b)
+            mid,end=eyes.remove_key_eyes(face(a)),eyes.remove_key_eyes(face(b))
             cells=[idle,*cel_segment(idle,mid,5),*cel_segment(mid,end,6)]
         mask=facial_mask(name in ('blink','glance'))
         atlas=Image.new('RGBA',(SIZE[0]*4,SIZE[1]*3))
         for index,rgb in enumerate(cells):
-            cel=Image.fromarray(rgb).convert('RGBA');cel.putalpha(mask)
+            drawn=eyes.draw(rgb,pose_at(name,index),name) if index else idle
+            cel=Image.fromarray(drawn).convert('RGBA');cel.putalpha(mask)
             atlas.paste(cel,((index%4)*SIZE[0],(index//4)*SIZE[1]))
         target=ART/f'cel-{name}.webp'
         atlas.save(target,format='WEBP',quality=95,method=5,alpha_quality=100)

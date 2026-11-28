@@ -31,9 +31,15 @@ async function site(root){
       }
       const name=u.pathname==='/'?'index.html':decodeURIComponent(u.pathname.slice(1));
       const publicRoot=root===home&&['question-options.js','ui-icons.js'].includes(name)?chat:root;
-      const target=path.resolve(publicRoot,name);
+      let target=path.resolve(publicRoot,name);
       if(!target.startsWith(publicRoot+path.sep)){res.writeHead(403);res.end();return;}
-      let contents=await readFile(target).catch(()=>null);
+      let contents;
+      if(root===chat&&/^avatar\/[a-z][a-z0-9-]*\.png$/.test(name)){
+        const prepared=target.replace(/\.png$/,'.webp');
+        contents=await readFile(prepared).catch(()=>null);
+        if(contents)target=prepared;
+      }
+      contents??=await readFile(target).catch(()=>null);
       if(root===home&&name==='icon'&&u.searchParams.has('id')){
         res.writeHead(200,{'Content-Type':'image/svg+xml'});
         res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect width="48" height="48" rx="12" fill="#29786f"/><circle cx="24" cy="24" r="10" fill="#fff2cf"/></svg>');
@@ -254,6 +260,12 @@ try{
     await portrait.until("document.querySelector('#messages-viewport').hasAttribute('data-chat-fade')",'Chat mask did not initialise');
     await portrait.shot('chat');
     assert(await portrait.evaluate("document.documentElement.scrollWidth<=innerWidth+1"));
+    await portrait.until("!!document.querySelector('.avatar-body-live .avatar-idle-body')?.naturalWidth",'The resting portrait did not start breathing');
+    await portrait.until("document.querySelector('#avatar-stage').dataset.idleBeat",'The regular chat never left its resting pose',6000);
+    await portrait.until("document.querySelector('.avatar-gesture-visible .avatar-full-gesture')?.src.endsWith('/idle-hair.webp')",'The regular chat did not play a complete gesture',22000);
+    await portrait.evaluate("document.querySelector('#input').focus()");
+    await portrait.rpc('Input.insertText',{text:'Привет'});
+    await portrait.until("document.querySelector('#avatar-stage').dataset.idleBeat==='nod' && !document.querySelector('.avatar-gesture-visible')",'Typing did not interrupt the idle gesture');
     await portrait.press("document.querySelector('#header-toggle')",'Chat sidebar');
     await portrait.press("document.querySelector('#chat-tools > summary')",'Tools');
     await portrait.press("document.querySelector('#avatar-preview-open')",'Avatar preview');
@@ -263,6 +275,23 @@ try{
     assert.equal(await portrait.evaluate("document.querySelector('#avatar-stage').dataset.portraitRenderer"),'cels');
     assert.equal(await portrait.evaluate("document.querySelector('#avatar-preview input[type=range]')!==null"),false);
     await portrait.shot('portrait');
+    await portrait.press("document.querySelector('#avatar-preview-groups [data-group=gestures]')",'Gestures');
+    const named=label=>"[...document.querySelectorAll('#avatar-preview-buttons button')].find(b=>b.textContent==="+JSON.stringify(label)+")";
+    await portrait.press(named('Переводит взгляд'),'Sideways gaze');
+    await portrait.until("document.querySelector('.avatar-cel-face')?.dataset.cel==='glance' && document.querySelector('.avatar-cel-face').dataset.frame==='11'",'Gaze did not reach the side');
+    await portrait.evaluate(`window.eyeOverlap=false;window.sawBlink=false;
+      new MutationObserver(()=>{
+        const eyes=document.querySelector('.avatar-cel-lids'),face=document.querySelector('.avatar-cel-face');
+        if(!eyes.hidden){window.sawBlink=true;if(!face.hidden&&Number(face.dataset.frame)>0)window.eyeOverlap=true;}
+      }).observe(document.querySelector('.avatar-head'),{attributes:true,subtree:true});`);
+    await portrait.press(named('Моргание'),'Blink after a sideways gaze');
+    await portrait.until('window.sawBlink','The requested blink was lost on the way back to centre');
+    assert.equal(await portrait.evaluate('window.eyeOverlap'),false);
+    await portrait.press("document.querySelector('#avatar-preview-close')",'Close preview');
+    await portrait.rpc('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+    await portrait.until("!document.querySelector('.avatar-idle-body,.avatar-full-gesture') && !document.querySelector('#avatar-stage').dataset.idleBeat",'Reduced motion did not release the automatic animations');
+    await portrait.rpc('Emulation.setEmulatedMedia',{features:[]});
+    await portrait.until("!!document.querySelector('.avatar-body-live .avatar-idle-body')?.naturalWidth",'Restoring motion did not restart the portrait');
     assert.deepEqual(portrait.errors,[]);
     console.log('Chat rendering, layout and portrait fade passed.');
   }finally{await portrait.close();}

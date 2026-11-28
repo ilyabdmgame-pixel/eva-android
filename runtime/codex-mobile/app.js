@@ -750,7 +750,7 @@ let thoughtBegan=0,emotionHoldTimer=null,avatarActivity=null,avatarPendingEmotio
 function updateAvatar(){if(avatarPreviewActive)return;if(busy||convoSpeaking||voiceIsAudible)avatarStage.classList.remove('avatar-idle-yawn','avatar-idle-scratch','avatar-idle-calm');const status=$('status').textContent;window.evaMiniPresence?.(voiceIsAudible?'speaking':busy||convoSpeaking?'working':$('mic').classList.contains('listening')?'listening':'idle');if(busy||convoSpeaking||voiceIsAudible)avatarStage.classList.remove('avatar-is-happy','avatar-is-surprised');const activity=busy&&!voiceIsAudible?avatarActivity:null;const thinking=!!(busy||convoSpeaking)&&!voiceIsAudible&&!activity;if(thinking&&!avatarStage.classList.contains('avatar-thinking'))thoughtBegan=Date.now();if(!thinking&&!voiceIsAudible&&!activity&&avatarStage.classList.contains('avatar-thinking')&&Date.now()-thoughtBegan<1800){clearTimeout(emotionHoldTimer);emotionHoldTimer=setTimeout(updateAvatar,1800-(Date.now()-thoughtBegan));return}clearTimeout(emotionHoldTimer);avatarStage.classList.remove('avatar-speaking','avatar-listening','avatar-thinking','avatar-is-reading','avatar-is-searching','avatar-is-working','avatar-is-music');if(voiceIsAudible){avatarStage.classList.add('avatar-speaking');$('avatar-state').textContent='Говорю'}else if(activity){const states={reading:['avatar-is-reading','Читаю'],search:['avatar-is-searching','Ищу'],work:['avatar-is-working','Работаю'],music:['avatar-is-music','Музыка']};const state=states[activity];if(state){avatarStage.classList.add(state[0]);$('avatar-state').textContent=state[1]}}else if(thinking){avatarStage.classList.add('avatar-thinking');$('avatar-state').textContent=convoSpeaking?'Готовлю речь…':'Думаю…'}else if(status.includes('Слушаю')){avatarStage.classList.add('avatar-listening');$('avatar-state').textContent='Слушаю тебя'}else $('avatar-state').textContent='На связи'}
 new MutationObserver(updateAvatar).observe($('status'),{childList:true,subtree:true,characterData:true});updateAvatar();
 
-// Random pauses and occasional double blinks; pause motion when hidden.
+// The portrait owns its motion clock and pauses it with the page.
 const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
 const chatPortrait=window.EvaPortrait.mount(avatarStage,reducedMotion);
 bindAvatarFrames();
@@ -770,21 +770,21 @@ function bindAvatarFrames(){
  function sync(){
   if(avatarStage.hidden||document.hidden||document.body.classList.contains('eva-pet-chat'))return;
   const names=new Set();
-  for(const cls of avatarStage.classList)for(const name of sets[cls]||[])names.add(name);
+  for(const cls of avatarStage.classList){
+    if((cls==='avatar-idle-scratch'||cls==='avatar-idle-yawn')&&!avatarStage.hasAttribute('data-gesture-fallback'))continue;
+    for(const name of sets[cls]||[])names.add(name);
+  }
   for(const img of frames)if(names.has(img.dataset.frame)&&!img.hasAttribute('src'))img.src=img.dataset.src;
  }
  const observer=new MutationObserver(sync);
- observer.observe(avatarStage,{attributes:true,attributeFilter:['class','hidden']});
+ observer.observe(avatarStage,{attributes:true,attributeFilter:['class','hidden','data-gesture-fallback']});
  observer.observe(document.body,{attributes:true,attributeFilter:['class']});
  document.addEventListener('visibilitychange',sync);
  reducedMotion.addEventListener('change',sync);
  requestAnimationFrame(sync);
 }
 reducedMotion.addEventListener('change',syncPortraitMotion);
-function avatarCanMove(){return mouthVisible()&&!reducedMotion.matches}
-function runBlink(){if(avatarCanMove())chatPortrait.blink()}
-function scheduleBlink(){setTimeout(()=>{if(!avatarPreviewActive&&avatarCanMove()){runBlink();if(Math.random()<0.17)setTimeout(runBlink,230+Math.random()*110)}scheduleBlink()},2500+Math.random()*6500)}
-scheduleBlink();
+$('input').addEventListener('input',event=>{if(event.target.value.trim())chatPortrait.noticeTyping()});
 
 // A tap gets a small smile; thinking expression follows the active task.
 let avatarHappyTimer;
@@ -792,13 +792,7 @@ document.querySelector('.avatar-figure').addEventListener('click',()=>{if(busy||
 
 // Tap an empty area of the conversation to interact with the portrait.
 $('messages').addEventListener('click',event=>{if(event.target===$('messages')&&!avatarStage.hidden&&!window.getSelection()?.toString())document.querySelector('.avatar-figure').click()});
-function scheduleGlance(){setTimeout(()=>{if(!avatarPreviewActive&&avatarCanMove()&&!busy&&!convoSpeaking&&!avatarStage.classList.contains('avatar-is-reading')&&!avatarStage.classList.contains('avatar-is-happy')){avatarStage.classList.add('avatar-is-glancing');setTimeout(()=>avatarStage.classList.remove('avatar-is-glancing'),900+Math.random()*1800)}scheduleGlance()},7000+Math.random()*12000)}
-scheduleGlance();
-// Rare idle actions, interrupted immediately by work, speech or listening.
-let idlePoseTimer=null;
-function clearIdlePose(){clearTimeout(idlePoseTimer);avatarStage.classList.remove('avatar-idle-yawn','avatar-idle-scratch','avatar-idle-calm')}
-function scheduleIdlePose(){setTimeout(()=>{if(!avatarPreviewActive&&avatarCanMove()&&!busy&&!voiceIsAudible&&!convoSpeaking&&!conversation&&!avatarStage.classList.contains('avatar-is-happy')){const hour=new Date().getHours(),action=(hour>=22||hour<7)?(Math.random()<.6?'yawn':'calm'):'scratch';clearIdlePose();avatarStage.classList.add('avatar-idle-'+action);idlePoseTimer=setTimeout(clearIdlePose,5200)}scheduleIdlePose()},90000+Math.random()*90000)}
-scheduleIdlePose();
+function clearIdlePose(){avatarStage.classList.remove('avatar-idle-yawn','avatar-idle-scratch','avatar-idle-calm')}
 
 
 // Reconcile an active response after the browser was backgrounded or reconnected.
@@ -962,8 +956,9 @@ function stopPreviewSequence(){
  clearTimeout(avatarPreviewTimer);avatarPreviewTimer=null;previewPlay.setAttribute('aria-pressed','false');previewPlay.textContent='По очереди';
 }
 function resetPreviewPose(){
- clearTimeout(avatarPreviewBlinkTimer);clearIdlePose();clearAvatarExpression();setMouth();
- avatarStage.classList.remove(...avatarPreviewClasses,'avatar-is-glancing','avatar-multimouth-ready');
+ clearTimeout(avatarPreviewBlinkTimer);
+ avatarStage.classList.remove(...avatarPreviewClasses,'avatar-multimouth-ready');
+ clearAvatarExpression();setMouth();
 }
 function selectPreviewGroup(key){
  stopPreviewSequence();avatarPreviewGroup=key;
@@ -981,7 +976,7 @@ function showAvatarPreview(index){
  resetPreviewPose();for(const b of previewButtons.children)b.setAttribute('aria-pressed',String(Number(b.dataset.index)===index));
  previewName.textContent=label;
  if(cls==='wave')chatPortrait.wave();
- else if(cls==='blink')chatPortrait.blink();
+ else if(cls==='blink')chatPortrait.blink(true);
  else if(window.EvaPortrait.faceName(cls))chatPortrait.emote(cls);
  else avatarStage.classList.add(cls);
  if(cls==='avatar-speaking'&&!reducedMotion.matches){
@@ -1021,8 +1016,10 @@ previewPlay.onclick=()=>{
  let index=0;previewPlay.setAttribute('aria-pressed','true');previewPlay.textContent='Остановить';
  function next(){
   if(!avatarPreviewActive||index>=states.length){stopPreviewSequence();return}
-  showAvatarPreview(avatarPreviewStates.indexOf(states[index++]));
-  avatarPreviewTimer=setTimeout(next,3000);
+  const state=states[index++];
+  showAvatarPreview(avatarPreviewStates.indexOf(state));
+  const fullGesture=state[1]==='avatar-idle-scratch'?'hair':state[1]==='avatar-idle-yawn'?'yawn':'';
+  avatarPreviewTimer=setTimeout(next,fullGesture?window.EvaPortrait.gestureTime[fullGesture]+450:3000);
  }
  next();
 };

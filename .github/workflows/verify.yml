@@ -27,6 +27,8 @@ jobs:
           java-version: "17"
       - name: Install Codex used by the offline integration tests
         run: npm install --global --no-audit --no-fund @openai/codex@0.167.1
+      - name: Install readers for the portrait artwork checks
+        run: python3 -m pip install -r tools/requirements-art-check.txt
       - run: python3 tools/audit_source.py
       - run: bash tools/check.sh
 

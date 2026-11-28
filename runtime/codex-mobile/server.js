@@ -98,7 +98,7 @@ function serveFile(res,file,headers){
  });
 }
 const avatarAssets=new Set([
-  'idle', 'curious-v1', 'smile-mid', 'thinking-soft', 'warm-soft', 'laugh-v1', 'talking', 'blink',
+  'idle', 'idle-body', 'idle-hair', 'idle-yawn', 'curious-v1', 'smile-mid', 'thinking-soft', 'warm-soft', 'laugh-v1', 'talking', 'blink',
   'blink-talking', 'blink-thinking', 'blink-reading', 'blink-search', 'blink-work', 'happy', 'thinking',
   'reading', 'glance', 'search', 'work', 'work-writing', 'reading-page', 'yawn', 'yawn-mid', 'scratch',
   'scratch-mid', 'headphones', 'surprised', 'calm', 'joy', 'wink', 'excited', 'sly', 'shy', 'pout',

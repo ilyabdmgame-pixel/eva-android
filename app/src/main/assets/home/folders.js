@@ -202,5 +202,6 @@ function editFolder(i){
  render();
 }
 
-new ResizeObserver(()=>{if(!drag&&folderTiles.length)arrangeFolders()}).observe(document.querySelector('header'));
-window.addEventListener('resize',arrangeFolders);
+function resizeFolders(){if(!drag&&folderTiles.length)arrangeFolders()}
+new ResizeObserver(resizeFolders).observe(document.querySelector('header'));
+window.addEventListener('resize',resizeFolders);

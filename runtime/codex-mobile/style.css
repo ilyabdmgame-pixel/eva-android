@@ -419,10 +419,30 @@ body #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
 #steer[hidden]{display:none!important}
 
 .avatar-front-surface { position:absolute; inset:0; width:100%; height:100%; }
-.avatar-drawn .avatar-front-surface { animation:evaCelBreathing 5.8s ease-in-out infinite; }
-@keyframes evaCelBreathing { 0%,100%{transform:translateY(0)} 48%{transform:translateY(-1.6px)} }
+.avatar-drawn .avatar-front-surface {
+  transform-origin:50% 68%;
+  transition:transform .72s cubic-bezier(.35,0,.2,1);
+}
+.avatar-drawn[data-idle-beat="glance"] .avatar-front-surface { transform:translateX(.3%) rotate(.65deg); }
+.avatar-drawn[data-idle-beat="nod"] .avatar-front-surface { transform:translate(.12%,.68%) rotate(-.7deg); transition-duration:.46s; }
+.avatar-drawn[data-idle-beat="smile"] .avatar-front-surface { transform:translateY(-.3%) rotate(.75deg); }
+.avatar-drawn[data-idle-beat="settle"] .avatar-front-surface { transform:translate(-.72%,.25%) rotate(-1.15deg); transition-duration:1.05s; }
+.avatar-drawn[data-idle-beat="tilt"] .avatar-front-surface { transform:translate(.48%,-.18%) rotate(1.45deg); }
+.avatar-drawn.avatar-listening .avatar-front-surface { transform:translateY(.25%) rotate(-.9deg); }
+.avatar-drawn .avatar-body > .avatar-idle-body {
+  display:none; inset:41.98565% 0 0; width:100%; height:58.01435%; object-fit:fill;
+}
+.avatar-drawn .avatar-body-live > img:first-child { visibility:hidden; }
+.avatar-drawn .avatar-body-live > .avatar-idle-body { display:block; }
+.avatar-drawn .avatar-full-gesture { display:none; z-index:13; }
+.avatar-gesture-visible .avatar-front-surface > :not(.avatar-full-gesture) { visibility:hidden; }
+.avatar-drawn .avatar-gesture-visible .avatar-full-gesture { display:block; }
+@media (prefers-reduced-motion:no-preference) {
+  .avatar-drawn:not([data-gesture-fallback]) :is(.avatar-extra-yawn-mid,.avatar-extra-yawn,.avatar-extra-scratch-mid,.avatar-extra-scratch) { display:none; }
+}
 .avatar-drawn .avatar-head,.avatar-drawn .avatar-body { animation:none!important; transform:none; }
 .avatar-drawn .avatar-head :is(.avatar-blink,.avatar-blink-thinking,.avatar-blink-talking,.avatar-thought,.avatar-happy,.avatar-glance,.avatar-surprised) { display:none; }
+.avatar-drawn .avatar-talking { clip-path:ellipse(12% 3.6% at 50% 34.7%); }
 .avatar-drawn .avatar-cel { position:absolute; left:26%; top:19.5%; width:48.5%; height:19.5%; background-size:400% 300%; background-repeat:no-repeat; z-index:8; }
 .avatar-drawn .avatar-cel-lids { z-index:9; }
 .avatar-drawn .avatar-mouth-patch { background-size:600% 600%; z-index:10; transition:none; }
@@ -435,7 +455,7 @@ body #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
 .avatar-drawn .avatar-pose,.avatar-drawn .avatar-extra { transition:none; }
 .avatar-drawn[data-blink-frame] .avatar-pose .pose-eyeblink { transition:none; opacity:1; clip-path:polygon(26% 23%,75% 23%,75% var(--cel-lid-edge,23%),26% var(--cel-lid-edge,23%)); }
 #avatar-stage[hidden] *,body.eva-pet-chat #avatar-stage *,body.portrait-suspended #avatar-stage * { animation-play-state:paused!important; }
-@media (prefers-reduced-motion:reduce) { .avatar-drawn .avatar-front-surface { animation:none; } }
+@media (prefers-reduced-motion:reduce) { #avatar-stage.avatar-drawn .avatar-front-surface { transform:none; transition:none; } }
 
 .ui-icon { display:inline-block; vertical-align:middle; flex:none; pointer-events:none; }
 .ui-icon-accent { stroke:var(--icon-accent,currentColor); }
