@@ -301,4 +301,4 @@ function build(){
  }
  return {vertices:new Float32Array(vertices),indices:new Uint16Array(indices),stride:evaVertexSize};
 }
-export function evaModel(){return mesh??=build();}
+export function evaModel(){return mesh=mesh??build();}

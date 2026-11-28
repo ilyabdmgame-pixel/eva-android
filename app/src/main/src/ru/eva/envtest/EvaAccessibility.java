@@ -49,6 +49,24 @@ public final class EvaAccessibility extends AccessibilityService {
   private PetWindows.Edge cachedPanel;
   private PetWindows.Edge fullIme,cachedInput;
   private String launcherPackage;
+  private String lastWindowPackage;
+  static String launcherPackage(){return instance==null?null:instance.launcherPackage;}
+
+  private void refreshLauncher(){
+    android.content.pm.PackageManager pm=getPackageManager();
+    android.content.Intent home=new android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME);
+    android.content.pm.ResolveInfo resolved=pm.resolveActivity(home,android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
+    String selected=null;
+    if(resolved!=null&&resolved.activityInfo!=null){
+      for(android.content.pm.ResolveInfo candidate:pm.queryIntentActivities(home,android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)){
+        if(candidate.activityInfo!=null&&candidate.activityInfo.packageName.equals(resolved.activityInfo.packageName)&&
+            candidate.activityInfo.name.equals(resolved.activityInfo.name)){selected=resolved.activityInfo.packageName;break;}
+      }
+    }
+    if(!java.util.Objects.equals(selected,launcherPackage)){
+      launcherPackage=selected;homePage=-1;capturedWindow=-1;visualGeometry=null;prankTiles=Collections.emptyList();
+    }
+  }
   private static long lastPetInteraction=SystemClock.uptimeMillis();
   static long petLastInteraction(){return lastPetInteraction;}
   static PetAppScene petAppScene(){
@@ -63,10 +81,7 @@ public final class EvaAccessibility extends AccessibilityService {
   @Override public void onServiceConnected(){
     instance=this;
     lastPetInteraction=SystemClock.uptimeMillis();
-    android.content.Intent home=new android.content.Intent(android.content.Intent.ACTION_MAIN)
-        .addCategory(android.content.Intent.CATEGORY_HOME);
-    android.content.pm.ResolveInfo launcher=getPackageManager().resolveActivity(home,android.content.pm.PackageManager.MATCH_DEFAULT_ONLY);
-    launcherPackage=launcher!=null&&launcher.activityInfo!=null?launcher.activityInfo.packageName:null;
+    refreshLauncher();
     signalWindows();
   }
   @Override public void onAccessibilityEvent(AccessibilityEvent event){
@@ -79,6 +94,9 @@ public final class EvaAccessibility extends AccessibilityService {
         type==AccessibilityEvent.TYPE_VIEW_SCROLLED||type==AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED))
       lastPetInteraction=SystemClock.uptimeMillis();
     if(petWindowsListener==null)return;
+    if(type==AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED&&source!=null&&!source.toString().equals(lastWindowPackage)){
+      lastWindowPackage=source.toString();refreshLauncher();
+    }
     if(type==AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED){
       int changes=event.getContentChangeTypes();
       if(changes!=0&&(changes&AccessibilityEvent.CONTENT_CHANGE_TYPE_SUBTREE)==0)return;
@@ -345,7 +363,7 @@ public final class EvaAccessibility extends AccessibilityService {
       CharSequence pkg=root.getPackageName();
       if(pkg==null||root.getWindowId()!=id)return null;
       String app=pkg.toString();
-      if(app.equals(HONOR_HOME)||app.equals(launcherPackage)||app.equals(getPackageName()))return null;
+      if(app.equals(launcherPackage)||app.equals(getPackageName()))return null;
       Rect content=new Rect();root.getBoundsInScreen(content);
       if(!content.intersect(host))return null;
       PetWindows.Edge bounds=new PetWindows.Edge(id,PetWindows.APP,content.left,content.top,content.right,content.bottom);
@@ -387,44 +405,63 @@ public final class EvaAccessibility extends AccessibilityService {
     try {
       CharSequence name=root.getPackageName();
       if(name==null)return null;
-      String app=name.toString(), id;
-      switch(app){
-        case "com.hihonor.android.launcher": id=seat?"hotseat_container":"card_stack_view";break;
-        case "com.android.chrome": if(seat)return null;id="toolbar";break;
-        case "com.google.android.youtube": id=seat?"pivot_bar":"toolbar";break;
-        default: return null;
+      String app=name.toString();String[] ids;
+      if(PetLauncherWorkspace.matches(instance.launcherPackage,app,instance.getPackageName())){
+        ids=seat?new String[]{"hotseat_container","hotseat","dock_view"}:new String[]{"card_stack_view"};
+      }else if(app.equals("com.android.chrome")&&!seat)ids=new String[]{"toolbar"};
+      else if(app.equals("com.google.android.youtube"))ids=new String[]{seat?"pivot_bar":"toolbar"};
+      else return null;
+      for(String id:ids){
+        String key=app+":id/"+id;List<AccessibilityNodeInfo> nodes=root.findAccessibilityNodeInfosByViewId(key);
+        try{
+          Rect candidate=null;
+          for(AccessibilityNodeInfo node:nodes){
+            if(!node.isVisibleToUser()||node.isPassword())continue;
+            Rect bounds=new Rect();node.getBoundsInScreen(bounds);
+            if(bounds.isEmpty())continue;
+            if(candidate!=null)return null;
+            candidate=bounds;
+          }
+          if(candidate!=null)return new PetSurface(key,candidate,seat);
+        }finally{for(AccessibilityNodeInfo node:nodes)node.recycle();}
       }
-      String key=app+":id/"+id;
-      List<AccessibilityNodeInfo> nodes=root.findAccessibilityNodeInfosByViewId(key);
-      try {
-        Rect candidate=null;
-        for(AccessibilityNodeInfo node:nodes){
-          if(!node.isVisibleToUser()||node.isPassword())continue;
-          Rect bounds=new Rect();
-          node.getBoundsInScreen(bounds);
-          if(bounds.isEmpty())continue;
-          if(candidate!=null)return null;
-          candidate=bounds;
-        }
-        return candidate==null?null:new PetSurface(key,candidate,seat);
-      }finally {for(AccessibilityNodeInfo node:nodes)node.recycle();}
+      return null;
     }finally{root.recycle();}
   }
 
   private int homePage=-1;
   static int measuredHomePage(){return instance==null?-1:instance.homePage;}
 
-  static int currentWorkspacePage(){
-    AccessibilityNodeInfo root=homeRoot();
-    if(root==null)return -1;
+  /** Some launchers keep their library resource namespace when installed under a different package. */
+  private static AccessibilityNodeInfo workspaceOf(AccessibilityNodeInfo root){
+    java.util.ArrayDeque<AccessibilityNodeInfo> queue=new java.util.ArrayDeque<>();
+    queue.add(AccessibilityNodeInfo.obtain(root));AccessibilityNodeInfo best=null;
+    int rank=0,remaining=110;boolean tied=false;
     try{
-      List<AccessibilityNodeInfo> nodes=root.findAccessibilityNodeInfosByViewId(HONOR_HOME+":id/workspace");
-      try{return nodes.size()==1?PetLearnedEdges.page(nodes.get(0).getContentDescription()):-1;}
-      finally{for(AccessibilityNodeInfo n:nodes)n.recycle();}
+      while(!queue.isEmpty()&&remaining-->0){
+        AccessibilityNodeInfo node=queue.removeFirst();
+        try{
+          if(!node.isVisibleToUser()||node.isPassword())continue;
+          CharSequence cls=node.getClassName();
+          int value=PetLauncherWorkspace.workspaceRank(node.getViewIdResourceName(),cls==null?null:cls.toString());
+          if(value>rank){
+            if(best!=null)best.recycle();best=AccessibilityNodeInfo.obtain(node);rank=value;tied=false;
+          }else if(value>0&&value==rank)tied=true;
+          if(value>0)continue;
+          int count=Math.min(node.getChildCount(),Math.max(0,remaining-queue.size()));
+          for(int i=0;i<count;i++){AccessibilityNodeInfo child=node.getChild(i);if(child!=null)queue.addLast(child);}
+        }finally{node.recycle();}
+      }
+      if(tied){best.recycle();best=null;}return best;
+    }finally{while(!queue.isEmpty())queue.removeFirst().recycle();}
+  }
+  static int currentWorkspacePage(){
+    AccessibilityNodeInfo root=homeRoot();if(root==null)return -1;
+    try{
+      AccessibilityNodeInfo workspace=workspaceOf(root);if(workspace==null)return -1;
+      try{return PetLearnedEdges.page(workspace.getContentDescription());}finally{workspace.recycle();}
     }finally{root.recycle();}
   }
-
-  private static final String HONOR_HOME="com.hihonor.android.launcher";
   private List<PetHomeMap.Box> capturedGeometry, visualGeometry;
   private List<PetLauncherCutout> prankTiles=Collections.emptyList();
 
@@ -445,7 +482,7 @@ public final class EvaAccessibility extends AccessibilityService {
     AccessibilityNodeInfo active=instance.getRootInActiveWindow();
     if(active!=null){
       CharSequence pkg=active.getPackageName();
-      if(HONOR_HOME.contentEquals(pkg==null?"":pkg))return active;
+      if(PetLauncherWorkspace.matches(instance.launcherPackage,pkg,instance.getPackageName()))return active;
       boolean ours=instance.getPackageName().contentEquals(pkg==null?"":pkg);
       active.recycle();
       if(!ours)return null;
@@ -457,7 +494,7 @@ public final class EvaAccessibility extends AccessibilityService {
         AccessibilityNodeInfo root=window.getRoot();
         if(root==null)return null;
         CharSequence pkg=root.getPackageName();
-        if(HONOR_HOME.contentEquals(pkg==null?"":pkg))return root;
+        if(PetLauncherWorkspace.matches(instance.launcherPackage,pkg,instance.getPackageName()))return root;
         root.recycle();
         break;
       }
@@ -497,15 +534,9 @@ public final class EvaAccessibility extends AccessibilityService {
     AccessibilityNodeInfo root=homeRoot();
     if(root==null)return null;
     try {
-      if(!HONOR_HOME.contentEquals(root.getPackageName()==null?"":root.getPackageName()))return null;
-      List<AccessibilityNodeInfo> workspaces=root.findAccessibilityNodeInfosByViewId(HONOR_HOME+":id/workspace");
+      AccessibilityNodeInfo visible=workspaceOf(root);
+      if(visible==null)return null;
       try {
-        AccessibilityNodeInfo visible=null;
-        for(AccessibilityNodeInfo candidate:workspaces)if(candidate.isVisibleToUser()){
-          if(visible!=null)return null;
-          visible=candidate;
-        }
-        if(visible==null)return null;
         List<PetHomeMap.Box> boxes=new ArrayList<>();
         instance.homePage=PetLearnedEdges.page(visible.getContentDescription());
         collectHome(visible,boxes,0);
@@ -515,7 +546,7 @@ public final class EvaAccessibility extends AccessibilityService {
         Rect window=new Rect();
         root.getBoundsInScreen(window);
         return instance.homeWithImage(root.getWindowId(),window,boxes);
-      }finally {for(AccessibilityNodeInfo node:workspaces)node.recycle();}
+      }finally {visible.recycle();}
     }finally {root.recycle();}
   }
 
@@ -529,6 +560,7 @@ public final class EvaAccessibility extends AccessibilityService {
       lastCapture=now;
       capturing=true;
       int precision=Math.round(getResources().getDisplayMetrics().density*4);
+      String capturedLauncher=launcherPackage;
       try {
         takeScreenshotOfWindow(id,ForkJoinPool.commonPool(),new TakeScreenshotCallback(){
           @Override public void onSuccess(ScreenshotResult result){
@@ -550,7 +582,7 @@ public final class EvaAccessibility extends AccessibilityService {
             List<PetLauncherCutout> collected=cutouts;
             getMainExecutor().execute(()->{
               capturing=false;
-              if(instance!=EvaAccessibility.this||refined==null)return;
+              if(instance!=EvaAccessibility.this||refined==null||!java.util.Objects.equals(capturedLauncher,launcherPackage))return;
               capturedGeometry=boxes;
               capturedBounds=window;
               capturedWindow=id;
@@ -575,14 +607,9 @@ public final class EvaAccessibility extends AccessibilityService {
     Rect bounds=new Rect();
     node.getBoundsInScreen(bounds);
     float density=instance.getResources().getDisplayMetrics().density;
-    boolean isFolder=(HONOR_HOME+":id/preview_background").equals(resource)||
-      (HONOR_HOME+":id/card_folder_workspace_layout").equals(resource);
-    boolean isWidget=(HONOR_HOME+":id/card_stack_view").equals(resource);
-    if(isFolder||isWidget){
-      putHomeBox(out,isFolder?PetHomeMap.FOLDER:PetHomeMap.WIDGET,bounds);
-      return;
-    }
     CharSequence cls=node.getClassName();
+    int support=PetLauncherWorkspace.support(resource,cls==null?"":cls.toString());
+    if(support!=0){putHomeBox(out,support,bounds);return;}
     boolean tileContainer="android.widget.LinearLayout".contentEquals(cls==null?"":cls)
       ||"android.widget.FrameLayout".contentEquals(cls==null?"":cls);
     if(node.isClickable()){

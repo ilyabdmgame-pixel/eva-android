@@ -40,7 +40,7 @@ final class PetAppScene {
                 if(root.getPackageName()==null)return null;
                 String app=root.getPackageName().toString();
                 if(app.equals(service.getPackageName()))return null;
-                PetAppScene scene=new PetAppScene(app,app.equals(launcher)||app.equals("com.hihonor.android.launcher"));
+                PetAppScene scene=new PetAppScene(app,PetLauncherWorkspace.matches(launcher,app,service.getPackageName()));
                 if(scene.home)return scene;
                 Rect host=new Rect();active.getBoundsInScreen(host);
                 scene.keyboard.set(ime);

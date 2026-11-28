@@ -8,6 +8,7 @@ import {parts} from './painted-parts.mjs';
 import {gait} from './orientation.mjs';
 import {bones} from './eva-rig.mjs';
 import {createEvaSkin} from './eva-skin.mjs';
+import {characterSelection} from './character-model.mjs';
 import {groundSole,gripGrid} from './eva-motion.mjs';
 import {createStreamGame} from './stream-game.mjs';
 
@@ -240,7 +241,7 @@ export function createScene(canvas) {
           currentUV=clamp(coord-travel*extent*evaStep.y,low,high);
           nextUV=clamp(coord+travel*extent*(1.-evaStep.y),low,high)+vec2(evaStep.x,evaStepRow);
         }
-        if(rigged&&coord.y<.5){
+        if(rigged&&portrait.x>=0.&&coord.y<.5){
           px=texture(source,coord+vec2(portrait.x,0.));
           if(portrait.y>0.)px=mix(px,texture(source,coord+vec2(.25,0.)),portrait.y);
         }else px=texture(source,currentUV);
@@ -461,8 +462,36 @@ export function createScene(canvas) {
 
   const evaSkin=createEvaSkin(gl);
   texture('eva-rig-skin','art/eva-rig-skin.webp');
+  let personalMesh=null;
+  const personalSkin='room-personal-skin';
+  const character=characterSelection(pair=>{
+    if(retired||gl.isContextLost())return;
+    const previous=textures.get(personalSkin);
+    if(pair){
+      const texture=gl.createTexture();
+      if(!texture)throw Error('Room character texture allocation failed');
+      try{
+        gl.bindTexture(gl.TEXTURE_2D,texture);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,pair.atlas);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAX_LEVEL,Math.min(5,Math.floor(Math.log2(Math.max(pair.atlas.width,pair.atlas.height)))));
+        gl.generateMipmap(gl.TEXTURE_2D);
+      }catch(error){gl.deleteTexture(texture);throw error;}
+      textures.set(personalSkin,{t:texture,ready:true,cutout:true});
+    }else textures.delete(personalSkin);
+    if(previous)gl.deleteTexture(previous.t);
+    personalMesh=pair?.mesh??null;
+    // A pick between replacement and paint must use its matching geometry.
+    if(lastActor)evaSkin.submit(personalMesh??lastActor.mesh,lastActor.pose,lastActor.id,!!personalMesh);
+    canvas.dispatchEvent(new Event('art'));
+  });
+  let lastActor=null;
   function actorMesh(mesh,pose,id){
-    evaSkin.submit(mesh,pose,id);
+    lastActor={mesh,pose,id};
+    evaSkin.submit(personalMesh??mesh,pose,id,!!personalMesh);
   }
   const partBuffers=new Map(),partInstances=[];
   function illustratedPart(name,matrix,id,variant,flex=0){
@@ -736,9 +765,10 @@ export function createScene(canvas) {
     }
     if(!pick&&hasCoverage)gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
     geometry();
-    if(evaSkin.visible&&(pick||textures.get('eva-rig-skin').ready)){
+    const actorMaterial=personalMesh?personalSkin:'eva-rig-skin';
+    if(evaSkin.visible&&(pick||textures.get(actorMaterial).ready)){
       gl.uniform1i(uniforms.structure,0);
-      material('eva-rig-skin');
+      material(actorMaterial);
       evaSkin.draw(uniforms);
     }
     if(partInstances.length){
@@ -842,7 +872,7 @@ export function createScene(canvas) {
     imagePanel('stream-game',points,id,streamTextureFrame===streamFrame?null:screen,true);
     streamTextureFrame=streamFrame;
   }
-  return {actorMesh,sleepingSprite,prepare,structure,scenery,streamPanel,advanceStreamScreen,
+  return {get characterRevision(){return character.revision;},selectCharacter:character.select,actorMesh,sleepingSprite,prepare,structure,scenery,streamPanel,advanceStreamScreen,
     streamGameState(){return streamSeconds>=0?streamGame?.state??null:null;},
     endStream(){streamFrame=streamTextureFrame=-1;streamSeconds=-1;},
     windowPanel(points,id,image,visible=true){
@@ -850,7 +880,7 @@ export function createScene(canvas) {
       if(visible)imagePanel('room-window',points,id,image);
     },
     retire(){
-      retired=true;
+      retired=true;character.retire();lastActor=null;
       if(gl.isContextLost())return;
       for(const layers of resident.values())for(const layer of layers){
         gl.deleteBuffer(layer.buffer);gl.deleteVertexArray(layer.vao);
@@ -867,7 +897,7 @@ export function createScene(canvas) {
     shadeBand(points,contact){quad(points,0,[1,1,1],contact?'cornerShade':'groundShade');},box,panel,artPanel,sprite,triangle,illustratedPart,ball,shadow,castFloor,foam,flush,
     setLightingFocus(at,day){reveal=[at.u,at.v,at.z];lightDay=day;},
     setWavePhase(value){wavePhase=value;},
-    reset(){batches=new Map();partInstances.length=0;evaSkin.reset();deskHands=null;},
+    reset(){batches=new Map();partInstances.length=0;lastActor=null;evaSkin.reset();deskHands=null;},
     pick(x,y,night,lamp,climate){
       gl.bindFramebuffer(gl.FRAMEBUFFER,hitBuffer);
       flush(true,night,lamp,climate,Math.floor(x),Math.floor(y));

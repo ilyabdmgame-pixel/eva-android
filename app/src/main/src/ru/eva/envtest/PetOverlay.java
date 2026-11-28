@@ -89,6 +89,9 @@ final class PetOverlay {
     private final PetLadder ladder;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final ExecutorService artLoader=Executors.newSingleThreadExecutor();
+    private final CharacterModels character;
+    private Bitmap personalAtlas;
+    private String requestedAtlas="";
     private final PowerManager power;
     private final KeyguardManager keyguard;
     private final PetMotion.Pose pose=new PetMotion.Pose();
@@ -212,6 +215,7 @@ final class PetOverlay {
 
     PetOverlay(Context context) {
         this.context=context;
+        character=new CharacterModels(context.getFilesDir(),"pet",artLoader,this::selectAtlas);
         displays=(DisplayManager)context.getSystemService(Context.DISPLAY_SERVICE);
         sensors=(SensorManager)context.getSystemService(Context.SENSOR_SERVICE);
         Sensor systemGravity=sensors==null?null:sensors.getDefaultSensor(Sensor.TYPE_GRAVITY);
@@ -274,6 +278,7 @@ final class PetOverlay {
             remove();
             return;
         }
+        character.start();
         if(sprite!=null)return;
         if(frames==null){prepareFrames();return;}
         motionEnabled=Settings.Global.getFloat(context.getContentResolver(),Settings.Global.ANIMATOR_DURATION_SCALE,1f)>0;
@@ -428,14 +433,14 @@ final class PetOverlay {
     void destroy() {
         destroyed=true;
         displays.unregisterDisplayListener(displayListener);
-        artLoader.shutdownNow();
+        character.stop();artLoader.shutdownNow();
         handler.removeCallbacksAndMessages(null);
         remove();
         if(receiverRegistered)context.unregisterReceiver(displayEvents);
         receiverRegistered=false;
         frames=null;
         rearFrames=null;
-        chairBitmap=watchBitmap=null;
+        chairBitmap=watchBitmap=personalAtlas=null;
         playArt=null;
     }
 
@@ -534,6 +539,34 @@ final class PetOverlay {
         });
     }
 
+    private void selectAtlas(String revision){
+        requestedAtlas=revision;
+        if(revision.isEmpty()){
+            personalAtlas=null;if(sprite!=null)sprite.invalidate();return;
+        }
+        artLoader.execute(()->{
+            Bitmap image=null;
+            try{
+                BitmapFactory.Options size=new BitmapFactory.Options();size.inJustDecodeBounds=true;
+                try(InputStream in=character.open(revision,"poses.png")){BitmapFactory.decodeStream(in,null,size);}
+                if(size.outWidth!=PersonalPetPose.WIDTH*PersonalPetPose.COLUMNS||
+                   size.outHeight!=PersonalPetPose.HEIGHT*PersonalPetPose.ROWS||!"image/png".equals(size.outMimeType))
+                    throw new IOException("Unexpected personal pet sheet dimensions");
+                try(InputStream in=character.open(revision,"poses.png")){image=BitmapFactory.decodeStream(in);}
+                if(image==null)throw new IOException("Empty personal pet sheet");
+                image.prepareToDraw();
+            }catch(IOException|RuntimeException unavailable){
+                android.util.Log.w("EvaPet","Personal pet artwork unavailable");
+            }
+            final Bitmap complete=image;
+            handler.post(()->{
+                if(destroyed||!requestedAtlas.equals(revision)){if(complete!=null)complete.recycle();return;}
+                personalAtlas=complete;
+                if(sprite!=null)sprite.invalidate();
+            });
+        });
+    }
+
     private Bitmap loadFullSprite(String name)throws IOException{
         try(InputStream in=context.getAssets().open("eva-pet/"+name+".png")){
             Bitmap art=BitmapFactory.decodeStream(in);
@@ -607,7 +640,7 @@ final class PetOverlay {
     }
 
     private void remove() {
-        resetChair();
+        character.stop();resetChair();
         hideSupportMap();
         handler.removeCallbacks(appCheck);
         parked=appHidden=appParkingMove=imePassthrough=imeInset=false;
@@ -1482,14 +1515,15 @@ final class PetOverlay {
             }
             String measured=PetHomeMap.encode(local,width,height);
             android.content.SharedPreferences memory=context.getSharedPreferences("eva_home_layout",0);
-            String key=rotation==0?"honor_home":"honor_home_rotation_"+rotation;
+            String key=PetLauncherWorkspace.layoutKey(EvaAccessibility.launcherPackage(),rotation);
+            if(key==null)return local;
             String remembered=memory.getString(key,"");
             if(!measured.equals(remembered)){
                 memory.edit().putString(key,measured).apply();
                 remembered=measured;
             }
             List<PetHomeMap.Box> result=PetHomeMap.decode(remembered,width,height);
-            String manualKey=PetLearnedEdges.key(rotation,EvaAccessibility.measuredHomePage());
+            String manualKey=PetLauncherWorkspace.manualKey(EvaAccessibility.launcherPackage(),rotation,EvaAccessibility.measuredHomePage());
             if(manualKey!=null){
                 List<PetHomeMap.Box> learned=PetHomeMap.decode(memory.getString(manualKey,""),width,height);
                 for(PetHomeMap.Box edge:learned)
@@ -1532,7 +1566,7 @@ final class PetOverlay {
         }
         final int turn=rotation,width=worldWidth,height=worldHeight;
         List<PetHomeMap.Box> all=readHome();
-        final String pageKey=PetLearnedEdges.key(turn,EvaAccessibility.measuredHomePage());
+        final String pageKey=PetLauncherWorkspace.manualKey(EvaAccessibility.launcherPackage(),turn,EvaAccessibility.measuredHomePage());
         android.content.SharedPreferences memory=context.getSharedPreferences("eva_home_layout",0);
         List<PetHomeMap.Box> manual=PetHomeMap.decode(pageKey==null?"":memory.getString(pageKey,""),width,height);
         List<PetHomeMap.Box> outlines=new ArrayList<>(windowTerrain);
@@ -1550,14 +1584,14 @@ final class PetOverlay {
                 public void save(List<PetHomeMap.Box> edges){
                     String encoded=PetLearnedEdges.encode(edges,width,height);
                     int page=EvaAccessibility.currentWorkspacePage();
-                    if(pageKey.equals(PetLearnedEdges.key(turn,page))){
+                    if(pageKey.equals(PetLauncherWorkspace.manualKey(EvaAccessibility.launcherPackage(),turn,page))){
                         commit(encoded);return;
                     }
                     // A touchable map can conceal the workspace's accessibility node.
                     // Recheck after dismissing it, before applying the edit.
                     hideSupportMap();
                     handler.postDelayed(()->{
-                        boolean restored=!destroyed&&current()&&pageKey.equals(PetLearnedEdges.key(turn,EvaAccessibility.currentWorkspacePage()));
+                        boolean restored=!destroyed&&current()&&pageKey.equals(PetLauncherWorkspace.manualKey(EvaAccessibility.launcherPackage(),turn,EvaAccessibility.currentWorkspacePage()));
                         if(restored)commit(encoded);
                         android.widget.Toast.makeText(context,restored?"Карта опор сохранена":"Страница изменилась. Открой карту ещё раз",
                             android.widget.Toast.LENGTH_SHORT).show();
@@ -2076,6 +2110,19 @@ final class PetOverlay {
             paint.setAlpha(255);
         }
 
+        final Rect personalCell=new Rect();
+        private void drawPersonal(Canvas canvas,float width,float height,int row,long now){
+            int column=PersonalPetPose.column(row,now-began,motionEnabled);
+            int cw=PersonalPetPose.WIDTH,ch=PersonalPetPose.HEIGHT;
+            personalCell.set(column*cw,row*ch,(column+1)*cw,(row+1)*ch);
+            // All source frames share a foot line and physical scale. Letterbox instead of stretching.
+            float scale=Math.min(width/cw,height/ch),half=cw*scale*.5f;
+            float baseline=height*PetHomeMap.SOLE_CONTACT;
+            dest.set(width*.5f-half,baseline-ch*scale,width*.5f+half,baseline);
+            canvas.drawBitmap(personalAtlas,personalCell,dest,paint);
+            if(motionEnabled&&isShown()&&!composerVisible)postInvalidateDelayed(PersonalPetPose.interval(row));
+        }
+
         // Bend only the trouser legs to hold each planted shoe between artwork samples.
         private static final int GAIT_ROWS=12;
         private final float[] gaitMesh=new float[(GAIT_ROWS+1)*4];
@@ -2195,6 +2242,26 @@ final class PetOverlay {
             canvas.drawText(lastWorkWaiting?"?":"✓",cx,cy-(signalPaint.ascent()+signalPaint.descent())/2,signalPaint);
         }
 
+        private void drawChair(Canvas canvas,float w,float h,float phase,boolean staging){
+            if(mode==PetMotion.SEATED_PEEK&&!touched&&(phase>0||staging)){
+                float open=PetChair.unfolding(phase);
+                if(open>0){
+                    canvas.save();
+                    canvas.scale(w/FRAME_WIDTH,h/FRAME_HEIGHT);
+                    // The folded chair comes from her hip; full extension matches the painted contact points.
+                    canvas.translate(40*(1-open),-52*(1-open));
+                    canvas.rotate(-14*(1-open),170,374);
+                    canvas.scale(.12f+.88f*open,.18f+.82f*open,170,374);
+                    dest.set(0,0,FRAME_WIDTH,FRAME_HEIGHT);
+                    paint.setAlpha(Math.round(255*PetMotion.ease(phase/.13f)));
+                    canvas.drawBitmap(chairBitmap,null,dest,paint);
+                    paint.setAlpha(255);
+                    canvas.restore();
+                }
+                if(staging||!chair.deployed)postInvalidateOnAnimation();
+            }
+        }
+
         @Override protected void onDraw(Canvas canvas) {
             long captionDelay=mood.updateCaption(SystemClock.uptimeMillis());
             if(captionDelay>0)postInvalidateDelayed(captionDelay);
@@ -2208,7 +2275,8 @@ final class PetOverlay {
                 canvas.scale(pose.mirrored?-w/FRAME_WIDTH:w/FRAME_WIDTH,h/FRAME_HEIGHT);
                 canvas.translate(-FRAME_WIDTH/2f,-FRAME_HEIGHT/2f);
                 dest.set(0,0,FRAME_WIDTH,FRAME_HEIGHT);
-                canvas.drawBitmap(hangingBitmap,null,dest,paint);
+                if(personalAtlas==null)canvas.drawBitmap(hangingBitmap,null,dest,paint);
+                else drawPersonal(canvas,FRAME_WIDTH,FRAME_HEIGHT,PersonalPetPose.ACTION,SystemClock.uptimeMillis());
                 if(mood.quip!=null){
                     if(pose.mirrored)canvas.scale(-1f,1f,201,0);
                     playArt.caption(canvas,mood);
@@ -2241,6 +2309,22 @@ final class PetOverlay {
                 }
             }
             if(pose.mirrored)canvas.scale(-1f,1f,w/2,h);
+            if(personalAtlas!=null){
+                long now=SystemClock.uptimeMillis();
+                float phase=chair.phase(now);
+                boolean staging=!touched&&mode==PetMotion.SEATED_PEEK&&(afterPacking!=null||chair.deployed&&phase<1);
+                drawChair(canvas,w,h,phase,staging);
+                if(stories.active!=null){
+                    canvas.save();canvas.scale(w/FRAME_WIDTH,h/FRAME_HEIGHT);
+                    playArt.storySet(canvas,stories,gameTime);canvas.restore();
+                }
+                int row=PersonalPetPose.row(mode,pose.frame,prank.active()||game!=null||touched,staging,PetChair.sitting(phase));
+                drawPersonal(canvas,w,h,row,now);
+                canvas.scale(w/FRAME_WIDTH,h/FRAME_HEIGHT);
+                if(pose.mirrored)canvas.scale(-1,1,201,0);
+                playArt.caption(canvas,mood);
+                canvas.restore();return;
+            }
             if(!touched&&ascent!=null&&(mode==PetMotion.PLACE_LADDER||mode==PetMotion.LADDER_UP)){
                 drawRear(canvas,rearFrames[ladderPose.key]);
                 canvas.restore();
@@ -2266,23 +2350,7 @@ final class PetOverlay {
                     (1-(float)Math.cos(2*Math.PI*swing/7200))*4);
                 postInvalidateDelayed(67);
             }
-            if(mode==PetMotion.SEATED_PEEK&&!touched&&(phase>0||staging)){
-                float open=PetChair.unfolding(phase);
-                if(open>0){
-                    canvas.save();
-                    canvas.scale(w/FRAME_WIDTH,h/FRAME_HEIGHT);
-                    // The folded chair comes from her hip; full extension matches the painted contact points.
-                    canvas.translate(40*(1-open),-52*(1-open));
-                    canvas.rotate(-14*(1-open),170,374);
-                    canvas.scale(.12f+.88f*open,.18f+.82f*open,170,374);
-                    dest.set(0,0,FRAME_WIDTH,FRAME_HEIGHT);
-                    paint.setAlpha(Math.round(255*PetMotion.ease(phase/.13f)));
-                    canvas.drawBitmap(chairBitmap,null,dest,paint);
-                    paint.setAlpha(255);
-                    canvas.restore();
-                }
-                if(staging||!chair.deployed)postInvalidateOnAnimation();
-            }
+            drawChair(canvas,w,h,phase,staging);
             float sitting=PetChair.sitting(phase);
             if(staging)PetMotion.inBetween(chairPose,PetMotion.RISE_FRAME,PetMotion.GENERATED_FRAMES,
                 (PetMotion.GENERATED_FRAMES-1)*(1-sitting));

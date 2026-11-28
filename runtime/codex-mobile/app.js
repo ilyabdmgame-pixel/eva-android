@@ -590,7 +590,7 @@ function makeUtterance(text){
  };
  return u;
 }
-function refreshVoices(){const sel=$('voice-select'),saved=localStorage.getItem('voiceName')??'';sel.replaceChildren(new Option('Системный голос по умолчанию',''));if(sileroAvailable)sel.add(new Option('Ксения — Silero','silero-kseniya'));for(const v of voiceSynth.getVoices()){const o=new Option(v.name+' ('+v.lang+')',v.voiceURI);sel.add(o)}sel.value=[...sel.options].some(o=>o.value===saved)?saved:''}
+function refreshVoices(){const sel=$('voice-select'),saved=localStorage.getItem('voiceName')??'';sel.replaceChildren(new Option('Системный голос по умолчанию',''));if(sileroAvailable)sel.add(new Option('Ксения — Silero','silero-kseniya'));for(const v of voiceSynth.getVoices()){const o=new Option(v.name+' ('+v.lang+(v.localService===false?' · онлайн':'')+')',v.voiceURI);sel.add(o)}sel.value=[...sel.options].some(o=>o.value===saved)?saved:''}
 function syncVoiceControls(){const silero=$('voice-select').value==='silero-kseniya';$('voice-pitch').disabled=silero;const note=$('voice-controls-note');note.hidden=!silero;note.textContent=silero?'Для Ксении скорость меняет также высоту голоса. Отдельная настройка высоты пока недоступна.':''}
 let wakeStatusTimer=null;
 function setupWakeControls(){if(!window.NativeVoice?.wakeEnabled)return;let box=$('eva-wake-settings');if(!box){box=document.createElement('section');box.id='eva-wake-settings';const title=document.createElement('strong');title.textContent='Вызов по слову «Ева»';const desc=document.createElement('p');desc.textContent='При включении микрофон ожидает слово локально, даже когда окно закрыто. Это расходует заряд батареи; доступность зависит от Android.';const button=document.createElement('button');button.id='eva-wake-toggle';button.type='button';const status=document.createElement('p');status.id='eva-wake-status';status.setAttribute('role','status');button.onclick=()=>{window.NativeVoice.setWakeEnabled(!window.NativeVoice.wakeEnabled());updateWakeControls()};box.append(title,desc,button,status);$('voice-settings').append(box)}updateWakeControls();clearInterval(wakeStatusTimer);wakeStatusTimer=setInterval(()=>{if($('voice-settings').hidden){clearInterval(wakeStatusTimer);wakeStatusTimer=null;return}updateWakeControls()},1500)}
@@ -667,7 +667,7 @@ const portraitMotion=JSON.parse(window.EvaApp?.presenceProfile?.()||'{}');
 let portraitBeat=null;
 function animateAvatarPresence(kind){
  const values=portraitMotion[kind];
- if(!values||avatarStage.hidden||document.hidden||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+ if(!values||!window.EvaPortrait.stockEnabled()||avatarStage.hidden||document.hidden||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
  const figure=avatarStage.querySelector('.avatar-figure');
  if(!figure?.animate)return;
  const [duration,displacement,angle]=values;
@@ -698,7 +698,7 @@ function stopAvatarMouth(){
  mouthGeneration++;clearTimeout(mouthTimer);mouthTimer=null;setMouth();
  avatarStage.classList.remove('avatar-multimouth-ready');
 }
-const mouthVisible=()=>!avatarStage.hidden&&!document.hidden&&!document.body.classList.contains('eva-pet-chat');
+const mouthVisible=()=>window.EvaPortrait.stockEnabled()&&!avatarStage.hidden&&!document.hidden&&!document.body.classList.contains('eva-pet-chat');
 async function startAvatarMouth(){
  const generation=++mouthGeneration;
  if(reducedMotion.matches||!mouthVisible())return;
@@ -742,6 +742,8 @@ function syncPortraitMotion(){
  }else if(voiceIsAudible&&mouthTimer==null)startAvatarMouth();
 }
 document.addEventListener('visibilitychange',syncPortraitMotion);
+document.addEventListener('eva-personal-portrait',syncPortraitMotion);
+document.addEventListener('eva-model-portrait',syncPortraitMotion);
 
 avatarStage.hidden=localStorage.getItem('avatar-hidden')==='1';
 function showAvatar(show){avatarStage.hidden=!show;localStorage.setItem('avatar-hidden',show?'0':'1');syncPortraitMotion()}
@@ -768,18 +770,23 @@ function bindAvatarFrames(){
   'avatar-idle-calm':['calm']
  };
  function sync(){
-  if(avatarStage.hidden||document.hidden||document.body.classList.contains('eva-pet-chat'))return;
+  if(!window.EvaPortrait.stockEnabled()||avatarStage.hidden||document.hidden||document.body.classList.contains('eva-pet-chat'))return;
   const names=new Set();
   for(const cls of avatarStage.classList){
     if((cls==='avatar-idle-scratch'||cls==='avatar-idle-yawn')&&!avatarStage.hasAttribute('data-gesture-fallback'))continue;
     for(const name of sets[cls]||[])names.add(name);
   }
-  for(const img of frames)if(names.has(img.dataset.frame)&&!img.hasAttribute('src'))img.src=img.dataset.src;
+  for(const img of frames)if(names.has(img.dataset.frame)&&!img.hasAttribute('src')){
+    img.src=img.dataset.src;
+    img.decode().then(()=>{img.dataset.decoded='1';}).catch(()=>{});
+  }
  }
  const observer=new MutationObserver(sync);
  observer.observe(avatarStage,{attributes:true,attributeFilter:['class','hidden','data-gesture-fallback']});
  observer.observe(document.body,{attributes:true,attributeFilter:['class']});
  document.addEventListener('visibilitychange',sync);
+ document.addEventListener('eva-personal-portrait',sync);
+ document.addEventListener('eva-model-portrait',sync);
  reducedMotion.addEventListener('change',sync);
  requestAnimationFrame(sync);
 }
@@ -999,7 +1006,11 @@ function closeAvatarPreview(){
  document.body.classList.remove('avatar-preview-active');
  avatarStage.hidden=avatarPreviewWasHidden;updateAvatar();$('header-toggle').focus({preventScroll:true});
 }
+for(const event of ['eva-personal-portrait','eva-model-portrait'])document.addEventListener(event,()=>{
+ if(avatarPreviewActive&&!window.EvaPortrait.stockEnabled())closeAvatarPreview();
+});
 $('avatar-preview-open').onclick=()=>{
+ if(!window.EvaPortrait.stockEnabled())return;
  if(busy||conversation||voiceIsAudible){message('Дай мне закончить ответ, и откроем портрет.');return}
  avatarPreviewWasHidden=avatarStage.hidden;avatarStage.hidden=false;avatarPreviewActive=true;clearIdlePose();
  sidebar.hidden=true;$('avatar-preview').hidden=false;document.body.classList.add('avatar-preview-active');

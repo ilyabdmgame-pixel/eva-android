@@ -8,8 +8,8 @@ export function witness(saved,kind,point,residents,sector,at){
  if(!recollections[kind])return;
  for(const p of residents){
    if(p.sleeping||p.sector!==sector||Math.hypot(p.u-point.u,p.v-point.v)>3.4)continue;
-   saved.witnesses??={};
-   const log=saved.witnesses[p.key]??=[];
+   saved.witnesses=saved.witnesses??{};
+   const log=saved.witnesses[p.key]=saved.witnesses[p.key]??[];
    if(log.some(e=>e.kind===kind&&at-e.at<3600000))continue;
    log.push({kind,at});if(log.length>8)log.shift();
  }

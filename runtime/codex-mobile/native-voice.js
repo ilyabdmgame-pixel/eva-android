@@ -13,5 +13,19 @@ if(window.NativeVoice){
   window.__nativeSpeechStart=id=>{if(activeSpeech&&activeSpeech.id===id&&activeSpeech.utterance.onstart)activeSpeech.utterance.onstart()};
   window.__nativeSpeechRange=(id,start,end)=>{if(activeSpeech?.id===id)activeSpeech.utterance.onboundary?.({name:'word',charIndex:start,charLength:Math.max(0,end-start)})};
   window.__nativeSpeechFinish=(id,error)=>{if(!activeSpeech||activeSpeech.id!==id)return;const u=activeSpeech.utterance;activeSpeech=null;if(error){if(u.onerror)u.onerror({error})}else if(u.onend)u.onend()};
-  window.__nativeSpeechSynth={getVoices:()=>[],addEventListener:()=>{},speak(u){const id=String(++nextSpeech);activeSpeech={id,utterance:u};window.NativeVoice.speak(u.text,Number(u.pitch)||1,Number(u.rate)||1,id)},cancel(){activeSpeech=null;window.NativeVoice.stopSpeech()}};
+  const voiceListeners=new Set();
+  window.__nativeVoicesChanged=()=>{for(const listener of voiceListeners)listener();};
+  window.__nativeSpeechSynth={
+    getVoices(){
+      try{const list=JSON.parse(window.NativeVoice.voices?.()||'[]');return Array.isArray(list)?list:[];}catch{return [];}
+    },
+    addEventListener(type,listener){if(type==='voiceschanged')voiceListeners.add(listener);},
+    removeEventListener(type,listener){if(type==='voiceschanged')voiceListeners.delete(listener);},
+    speak(u){
+      const id=String(++nextSpeech);activeSpeech={id,utterance:u};
+      if(window.NativeVoice.speakVoice)window.NativeVoice.speakVoice(u.text,Number(u.pitch)||1,Number(u.rate)||1,id,u.voice?.voiceURI||'');
+      else window.NativeVoice.speak(u.text,Number(u.pitch)||1,Number(u.rate)||1,id);
+    },
+    cancel(){activeSpeech=null;window.NativeVoice.stopSpeech();}
+  };
 }

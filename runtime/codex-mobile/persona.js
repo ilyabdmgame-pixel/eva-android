@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { profile } = require('./personal-profile');
 
 const persona = fs.readFileSync(path.join(__dirname, 'persona.md'), 'utf8').trim();
 const [, ...voiceAndBehavior] = persona.split('\n\n');
@@ -12,9 +13,18 @@ const codexInstructions = [
 
 const voiceInstructions = 'Этот ответ будут слушать. Сохрани голос Евы и скажи главное короткими фразами. Когда нужны команды, ссылки или таблицы, объясни их смысл простой фразой и приведи детали по делу.';
 
+function personalStyle(base) {
+  const preference = profile.style();
+  return preference
+    ? base + '\n\nПредпочтения пользователя по стилю и общению. В вопросах тона и формы ответа следуй им в первую очередь.\n' + preference
+    : base;
+}
+
 function forCharacter(name) {
-  if (!name || name.toLocaleLowerCase('ru') === 'ева') return persona;
-  return [`Имя в этой комнате: ${name}. Ты самостоятельная участница разговора.`, ...voiceAndBehavior].join('\n\n');
+  const voice = !name || name.toLocaleLowerCase('ru') === 'ева'
+    ? persona
+    : [`Имя в этой комнате: ${name}. Ты самостоятельная участница разговора.`, ...voiceAndBehavior].join('\n\n');
+  return personalStyle(voice);
 }
 
 function forReply(instructions, spoken) {
@@ -22,7 +32,7 @@ function forReply(instructions, spoken) {
 }
 
 function withPersona(params = {}) {
-  return { ...params, developerInstructions: codexInstructions };
+  return { ...params, developerInstructions: personalStyle(codexInstructions) };
 }
 
 
@@ -54,7 +64,7 @@ function createPersonaRpc(request) {
         ...turnParams,
         collaborationMode: {
           mode: 'default',
-          settings: { model, reasoning_effort: effort, developer_instructions: forReply(codexInstructions, spoken) }
+          settings: { model, reasoning_effort: effort, developer_instructions: forReply(personalStyle(codexInstructions), spoken) }
         }
       };
       const result = await request(method, options);

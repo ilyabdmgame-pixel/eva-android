@@ -56,7 +56,7 @@ export const streetFurniture={
  pier:[container(54,3.27,-2.72,green)],garden:[container(55,2.84,-3.40,green)]
 };
 for(const key of Object.keys(plots)){
- const stands=rainStand(key);if(stands.length)(streetFurniture[key]??=[]).push(...stands);
+ const stands=rainStand(key);if(stands.length)(streetFurniture[key]=streetFurniture[key]??[]).push(...stands);
 }
 export function drawNotice(r,o,z){
  const point=(x,h)=>o.alongV?[o.u+.162,o.v+x,z+h]:[o.u+x,o.v+.162,z+h];

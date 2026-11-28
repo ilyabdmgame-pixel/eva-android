@@ -19,7 +19,7 @@ const variants={
 };
 export function objectLine(save,o,action,original){
  const deck=variants[action];if(!deck)return original;
- save.objectTalk??={};const key=o.id+'/'+action,n=save.objectTalk[key]||0;save.objectTalk[key]=n+1;
+ save.objectTalk=save.objectTalk??{};const key=o.id+'/'+action,n=save.objectTalk[key]||0;save.objectTalk[key]=n+1;
  return [original,...deck][(n+o.id)% (deck.length+1)];
 }
 const glimpses={

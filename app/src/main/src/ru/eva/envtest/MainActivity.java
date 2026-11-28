@@ -44,6 +44,8 @@ public final class MainActivity extends Activity implements CodexService.Listene
   private static final PetAppPolicy.ChatVisibility visibleChats=new PetAppPolicy.ChatVisibility();
   private WebView web;
   private long chatRendererLostAt=-1;
+  private static final int CHAT_SURFACE=0xff10141c;
+  private LinearLayout chatCover;
   private boolean assistantVoice=false, petChat=false, resumed=false, pendingPetPermission=false;
   private boolean petComposerDetails;
   private Rect petAnchor;
@@ -52,11 +54,14 @@ public final class MainActivity extends Activity implements CodexService.Listene
   private CheckBox petFeature;
   private Button defaultHomeButton;
   private String petUi;
+  private boolean fileMultiple;
   private ValueCallback<Uri[]> fileCallback;
   private PermissionRequest pendingMic;
   private SpeechRecognizer recognizer;
   private TextToSpeech nativeTts;
   private boolean nativeTtsReady=false;
+  private final AndroidVoices nativeVoices=new AndroidVoices();
+  private int ttsGeneration;
   private boolean nativeStartPending=false;
   private boolean wakeStartPending=false;
   private boolean editorActive=false;
@@ -133,6 +138,8 @@ public final class MainActivity extends Activity implements CodexService.Listene
     lp.y=area.top+Math.max(gap,Math.min(area.height()-lp.height-gap,ideal));
   }
   private void enableFullscreen(){
+    int surface=petChat||assistantVoice?Color.TRANSPARENT:CHAT_SURFACE;
+    if(web!=null)web.setBackgroundColor(surface);
     if(petChat||assistantVoice){
       android.util.DisplayMetrics dm=getResources().getDisplayMetrics();
       android.view.WindowManager.LayoutParams lp=getWindow().getAttributes();
@@ -193,12 +200,41 @@ public final class MainActivity extends Activity implements CodexService.Listene
     }
   }
   private void startBackend(){if(bound){if(service!=null)changed();return;}showWelcome("Запускаю Еву…");Intent i=new Intent(this,CodexService.class);startService(i);bound=bindService(i,connection,BIND_AUTO_CREATE);}
-  private void showWelcome(String explanation){LinearLayout layout=new LinearLayout(this);layout.setOrientation(1);layout.setGravity(android.view.Gravity.CENTER);layout.setPadding(40,80,40,40);layout.setBackgroundColor(Color.rgb(20,25,35));TextView title=new TextView(this);title.setText("Ева");title.setTextSize(28);title.setTextColor(Color.rgb(151,222,199));title.setGravity(android.view.Gravity.CENTER);layout.addView(title);TextView info=new TextView(this);info.setText(explanation);info.setTextSize(16);info.setTextColor(Color.LTGRAY);info.setGravity(android.view.Gravity.CENTER);LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-2,-2);textParams.setMargins(0,20,0,28);layout.addView(info,textParams);if(explanation.contains("Запуска")||explanation.contains("Подготавли")||explanation.contains("Перенош")){android.widget.ProgressBar progress=new android.widget.ProgressBar(this);layout.addView(progress,new LinearLayout.LayoutParams(56,56));}if(explanation.startsWith("Ошибка запуска:")||explanation.startsWith("Среда остановлена")){
+  private void showWelcome(String explanation){discardChatView();loadedUrl="";LinearLayout layout=new LinearLayout(this);layout.setOrientation(1);layout.setGravity(android.view.Gravity.CENTER);layout.setPadding(40,80,40,40);layout.setBackgroundColor(Color.rgb(20,25,35));TextView title=new TextView(this);title.setText("Ева");title.setTextSize(28);title.setTextColor(Color.rgb(151,222,199));title.setGravity(android.view.Gravity.CENTER);layout.addView(title);TextView info=new TextView(this);info.setText(explanation);info.setTextSize(16);info.setTextColor(Color.LTGRAY);info.setGravity(android.view.Gravity.CENTER);LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-2,-2);textParams.setMargins(0,20,0,28);layout.addView(info,textParams);if(explanation.contains("Запуска")||explanation.contains("Подготавли")||explanation.contains("Перенош")){android.widget.ProgressBar progress=new android.widget.ProgressBar(this);layout.addView(progress,new LinearLayout.LayoutParams(56,56));}if(explanation.startsWith("Ошибка запуска:")||explanation.startsWith("Среда остановлена")){
       Button retry=new Button(this);retry.setText("Запустить заново");layout.addView(retry);
       retry.setOnClickListener(v->{if(service!=null){service.retry();showWelcome("Запускаю Еву…");}else startBackend();});
     }
     setContentView(layout);layout.setAlpha(0f);layout.animate().alpha(1f).setDuration(450).start();}
-  private void showWeb(String url){pageReady=false;if(web!=null){web.destroy();web=null;}web=new WebView(this);web.setBackgroundColor(Color.TRANSPARENT);web.getSettings().setJavaScriptEnabled(true);web.getSettings().setMediaPlaybackRequiresUserGesture(false);web.getSettings().setDomStorageEnabled(true);WebView.setWebContentsDebuggingEnabled((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0);web.getSettings().setAllowFileAccess(false);web.getSettings().setAllowContentAccess(true);web.addJavascriptInterface(new NativeVoiceBridge(),"NativeVoice");web.addJavascriptInterface(new EvaBridge(),"EvaApp");web.addJavascriptInterface(new NativePhoneBridge(),"NativePhone");web.setWebViewClient(new WebViewClient(){@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest request){
+  private void discardChatView(){
+    pageReady=false;chatCover=null;
+    if(web==null)return;
+    WebView old=web;web=null;
+    if(old.getParent() instanceof ViewGroup)((ViewGroup)old.getParent()).removeView(old);
+    old.destroy();
+  }
+  private LinearLayout chatStatus(String message){
+    LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);
+    box.setGravity(android.view.Gravity.CENTER);int padding=Math.round(12*getResources().getDisplayMetrics().density);
+    box.setPadding(padding,padding,padding,padding);box.setBackgroundColor(CHAT_SURFACE);
+    TextView label=new TextView(this);label.setText(message);label.setTextColor(0xffd9e8e7);
+    label.setGravity(android.view.Gravity.CENTER);box.addView(label);return box;
+  }
+  private void chatRetryButton(LinearLayout box,String url){
+    Button retry=new Button(this);retry.setText("Повторить");box.addView(retry);
+    retry.setOnClickListener(v->showWeb(url));
+  }
+  private void chatFailure(String url,String message){
+    discardChatView();loadedUrl=url;
+    LinearLayout box=chatStatus(message);chatRetryButton(box,url);setContentView(box);
+  }
+  private void showWeb(String url){
+    discardChatView();loadedUrl=url;
+    try{web=new WebView(this);}catch(RuntimeException unavailable){
+      chatFailure(url,"Android WebView недоступен. Включи или обнови системный WebView и открой чат снова.");return;
+    }
+    web.setBackgroundColor(petChat||assistantVoice?Color.TRANSPARENT:CHAT_SURFACE);
+    boolean[] retried={false},failed={false};
+    web.getSettings().setJavaScriptEnabled(true);web.getSettings().setMediaPlaybackRequiresUserGesture(false);web.getSettings().setDomStorageEnabled(true);WebView.setWebContentsDebuggingEnabled((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0);web.getSettings().setAllowFileAccess(false);web.getSettings().setAllowContentAccess(true);web.addJavascriptInterface(new NativeVoiceBridge(),"NativeVoice");web.addJavascriptInterface(new EvaBridge(),"EvaApp");web.addJavascriptInterface(new NativePhoneBridge(),"NativePhone");web.setWebViewClient(new WebViewClient(){@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest request){
     Uri target=request.getUrl();
     if(sameLocalOrigin(url,target.toString())){
       String asset=null;
@@ -223,27 +259,65 @@ public final class MainActivity extends Activity implements CodexService.Listene
   }
   @Override public boolean onRenderProcessGone(WebView lost,RenderProcessGoneDetail detail){
     if(lost!=web)return true;
-    if(lost.getParent() instanceof ViewGroup)((ViewGroup)lost.getParent()).removeView(lost);
-    pageReady=false;web=null;lost.destroy();
+    discardChatView();
     long now=android.os.SystemClock.elapsedRealtime();
-    boolean rapid=chatRendererLostAt>=0&&now-chatRendererLostAt<10000;
-    chatRendererLostAt=now;
-    if(resumed&&!rapid&&!loadedUrl.isEmpty())showWeb(loadedUrl);
-    else{loadedUrl="";showWelcome("Открой Еву ещё раз, чтобы восстановить окно чата.");}
+    boolean rapid=chatRendererLostAt>=0&&now-chatRendererLostAt<10000;chatRendererLostAt=now;
+    if(resumed&&!rapid)showWeb(url);
+    else if(rapid)chatFailure(url,"Android остановил окно чата. Переписка сохранена.");
+    else showWelcome("Открываю чат…");
     return true;
   }
-  @Override public void onPageFinished(WebView v,String loaded){super.onPageFinished(v,loaded);if(v!=web||!sameLocalOrigin(url,loaded))return;pageReady=true;installPetUi();startAssistantIfReady();}@Override public boolean shouldOverrideUrlLoading(WebView v,String target){Uri u=Uri.parse(target);if(("http".equals(u.getScheme())||"https".equals(u.getScheme()))&&!("127.0.0.1".equals(u.getHost())&&u.getPort()==Uri.parse(url).getPort())){try{startActivity(new Intent(Intent.ACTION_VIEW,u));}catch(Exception ignored){}return true;}return !"http".equals(u.getScheme())||!"127.0.0.1".equals(u.getHost())||u.getPort()!=Uri.parse(url).getPort();}@Override public void onReceivedError(WebView v,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame())startBackend();}});
-  web.setWebChromeClient(new WebChromeClient(){@Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> cb,FileChooserParams params){if(fileCallback!=null)fileCallback.onReceiveValue(null);fileCallback=cb;try{Intent choose=new Intent(Intent.ACTION_OPEN_DOCUMENT);choose.addCategory(Intent.CATEGORY_OPENABLE);choose.setType("*/*");choose.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);startActivityForResult(choose,FILES);return true;}catch(Exception e){fileCallback=null;return false;}}@Override public void onPermissionRequest(PermissionRequest req){runOnUiThread(()->{Uri origin=req.getOrigin();if(!"http".equals(origin.getScheme())||!"127.0.0.1".equals(origin.getHost())||origin.getPort()!=Uri.parse(url).getPort()){req.deny();return;}if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){req.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});}else{pendingMic=req;requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},MIC);}});}});setContentView(web);web.loadUrl(url);}
+  @Override public void onPageStarted(WebView v,String target,android.graphics.Bitmap icon){
+    super.onPageStarted(v,target,icon);if(v==web)failed[0]=false;
+  }
+  @Override public void onPageFinished(WebView v,String loaded){
+    super.onPageFinished(v,loaded);
+    if(v!=web||failed[0]||!sameLocalOrigin(url,loaded))return;
+    v.evaluateJavascript("typeof window.evaOpenRoomChat==='function'",usable->{
+      if(v!=web)return;
+      if(!"true".equals(usable)){chatFailure(url,"Чат не загрузился. Проверь обновление Android WebView и повтори.");return;}
+      pageReady=true;installPetUi();startAssistantIfReady();
+      v.postVisualStateCallback(1,new WebView.VisualStateCallback(){
+        @Override public void onComplete(long requestId){
+          if(v!=web||chatCover==null)return;
+          if(chatCover.getParent() instanceof ViewGroup)((ViewGroup)chatCover.getParent()).removeView(chatCover);
+          chatCover=null;
+        }
+      });
+    });
+  }
+  @Override public boolean shouldOverrideUrlLoading(WebView v,String target){Uri u=Uri.parse(target);if(("http".equals(u.getScheme())||"https".equals(u.getScheme()))&&!("127.0.0.1".equals(u.getHost())&&u.getPort()==Uri.parse(url).getPort())){try{startActivity(new Intent(Intent.ACTION_VIEW,u));}catch(Exception ignored){}return true;}return !"http".equals(u.getScheme())||!"127.0.0.1".equals(u.getHost())||u.getPort()!=Uri.parse(url).getPort();}@Override public void onReceivedError(WebView v,WebResourceRequest request,WebResourceError error){if(v!=web||!request.isForMainFrame())return;failed[0]=true;
+    if(!retried[0]){retried[0]=true;v.postDelayed(()->{if(v==web&&!pageReady)v.loadUrl(url);},600);}
+    else chatFailure(url,"Страница чата не отвечает. Попробуй открыть её ещё раз.");}});
+  web.setWebChromeClient(new WebChromeClient(){@Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> cb,FileChooserParams params){if(fileCallback!=null)fileCallback.onReceiveValue(null);
+    fileCallback=cb;fileMultiple=params.getMode()==FileChooserParams.MODE_OPEN_MULTIPLE;
+    Intent choose=EvaDocumentPicker.intent(params.getAcceptTypes(),fileMultiple);
+    try{startActivityForResult(choose,FILES);}
+    catch(android.content.ActivityNotFoundException first){
+      try{choose.setAction(Intent.ACTION_GET_CONTENT);startActivityForResult(choose,FILES);}
+      catch(android.content.ActivityNotFoundException|SecurityException unavailable){fileCallback=null;cb.onReceiveValue(null);}
+    }catch(SecurityException denied){fileCallback=null;cb.onReceiveValue(null);}
+    return true;}@Override public void onPermissionRequest(PermissionRequest req){runOnUiThread(()->{Uri origin=req.getOrigin();if(!"http".equals(origin.getScheme())||!"127.0.0.1".equals(origin.getHost())||origin.getPort()!=Uri.parse(url).getPort()){req.deny();return;}if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED){req.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});}else{pendingMic=req;requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},MIC);}});}});
+    FrameLayout content=new FrameLayout(this);content.addView(web,new FrameLayout.LayoutParams(-1,-1));
+    chatCover=chatStatus("Открываю чат…");content.addView(chatCover,new FrameLayout.LayoutParams(-1,-1));
+    LinearLayout owner=chatCover;owner.postDelayed(()->{if(chatCover==owner)chatRetryButton(owner,url);},10000);
+    setContentView(content);web.loadUrl(url);
+  }
   @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==105){if(phoneId==null)return;if(results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)performPhone();else{String id=phoneId;phoneId=null;phoneReply(id,null,"Android не предоставил разрешение");}return;}if(request==MIC){boolean allowed=results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED;if(wakeStartPending){wakeStartPending=false;if(allowed)EvaVoiceService.setEnabled(this,true);else getSharedPreferences("eva_wake",0).edit().putString("status","Нет разрешения на микрофон").apply();}if(pendingMic!=null){if(allowed)pendingMic.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});else pendingMic.deny();pendingMic=null;}if(nativeStartPending){nativeStartPending=false;if(allowed)startNativeRecognition();else sendRecognitionFinish("not-allowed");}}}
-  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==106){String id=photoId;photoId=null;if(id==null)return;if(result!=RESULT_OK||data==null||data.getExtras()==null){phoneReply(id,null,"Снимок отменён или не получен");return;}Object image=data.getExtras().get("data");if(!(image instanceof android.graphics.Bitmap)){phoneReply(id,null,"Приложение камеры не вернуло снимок");return;}try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();((android.graphics.Bitmap)image).compress(android.graphics.Bitmap.CompressFormat.JPEG,90,bytes);phoneReply(id,Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP),null);}catch(Exception e){phoneReply(id,null,"Не удалось сохранить снимок");}return;}if(request!=FILES||fileCallback==null)return;Uri[] values=null;if(result==RESULT_OK&&data!=null){if(data.getClipData()!=null){int n=data.getClipData().getItemCount();values=new Uri[n];for(int j=0;j<n;j++)values[j]=data.getClipData().getItemAt(j).getUri();}else if(data.getData()!=null)values=new Uri[]{data.getData()};}fileCallback.onReceiveValue(values);fileCallback=null;}
+  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==106){String id=photoId;photoId=null;if(id==null)return;if(result!=RESULT_OK||data==null||data.getExtras()==null){phoneReply(id,null,"Снимок отменён или не получен");return;}Object image=data.getExtras().get("data");if(!(image instanceof android.graphics.Bitmap)){phoneReply(id,null,"Приложение камеры не вернуло снимок");return;}try{ByteArrayOutputStream bytes=new ByteArrayOutputStream();((android.graphics.Bitmap)image).compress(android.graphics.Bitmap.CompressFormat.JPEG,90,bytes);phoneReply(id,Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP),null);}catch(Exception e){phoneReply(id,null,"Не удалось сохранить снимок");}return;}if(request!=FILES||fileCallback==null)return;ValueCallback<Uri[]> callback=fileCallback;fileCallback=null;
+    callback.onReceiveValue(result==RESULT_OK?EvaDocumentPicker.result(data,fileMultiple):null);}
   private void runJs(String js){if(web!=null)web.post(()->{if(web!=null)web.evaluateJavascript(js,null);});}
   private void sendRecognitionResult(Bundle results,boolean finalResult){if(results==null)return;ArrayList<String> lines=results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);if(lines!=null&&!lines.isEmpty())runJs("window.__nativeRecognitionResult&&window.__nativeRecognitionResult("+JSONObject.quote(lines.get(0))+","+(finalResult?"true":"false")+")");}
   private void sendRecognitionFinish(String error){runJs("window.__nativeRecognitionFinish&&window.__nativeRecognitionFinish("+(error==null?"null":JSONObject.quote(error))+")");}
   private void setupNativeTts(){
+    final int generation=++ttsGeneration;
+    nativeTtsReady=false;
     nativeTts=new TextToSpeech(this,status->{
+      if(generation!=ttsGeneration||nativeTts==null)return;
       nativeTtsReady=status==TextToSpeech.SUCCESS;
       if(!nativeTtsReady)return;
-      nativeTts.setLanguage(new Locale("ru","RU"));
+      nativeVoices.refresh(nativeTts);
+      runJs("window.__nativeVoicesChanged?.()");
       nativeTts.setOnUtteranceProgressListener(new UtteranceProgressListener(){
         @Override public void onStart(String id){runJs("window.__nativeSpeechStart?.("+JSONObject.quote(id)+")");}
         @Override public void onRangeStart(String id,int start,int end,int frame){
@@ -263,7 +337,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
   private static String lastScreenshotRequest;
   private void phoneReply(String id, Object value, String error){try{JSONObject result=new JSONObject();if(error!=null)result.put("error",error);else result.put("result",value);runJs("window.__phoneResult&&window.__phoneResult("+JSONObject.quote(id)+","+JSONObject.quote(result.toString())+")");}catch(Exception ignored){}}
   public final class NativePhoneBridge {
-    @JavascriptInterface public void accessibilitySettings(){runOnUiThread(()->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));}
+    @JavascriptInterface public void accessibilitySettings(){runOnUiThread(()->SystemSettings.accessibility(MainActivity.this));}
     @JavascriptInterface public void run(String id,String action,String args){runOnUiThread(()->{if(phoneId!=null){phoneReply(id,null,"Другое действие с телефоном ещё выполняется");return;}phoneId=id;phoneAction=action;phoneArgs=args;String permission="contacts".equals(action)?Manifest.permission.READ_CONTACTS:"call".equals(action)?Manifest.permission.CALL_PHONE:("torch".equals(action)||"photo".equals(action))?Manifest.permission.CAMERA:null;if(permission!=null&&checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{permission},105);return;}performPhone();});}
   }
   private void performPhone(){String id=phoneId,action=phoneAction,args=phoneArgs;phoneId=null;try{org.json.JSONArray a=new org.json.JSONArray(args);Object result;
@@ -272,7 +346,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
     else if("clipboard".equals(action)){android.content.ClipboardManager cb=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);android.content.ClipData data=cb.getPrimaryClip();result=data!=null&&data.getItemCount()>0?String.valueOf(data.getItemAt(0).coerceToText(MainActivity.this)):"";}
     else if("cameras".equals(action)){android.hardware.camera2.CameraManager mgr=(android.hardware.camera2.CameraManager)getSystemService(CAMERA_SERVICE);org.json.JSONArray cameras=new org.json.JSONArray();for(String camera:mgr.getCameraIdList()){android.hardware.camera2.CameraCharacteristics chars=mgr.getCameraCharacteristics(camera);Integer face=chars.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING);JSONObject item=new JSONObject();item.put("id",camera);item.put("facing",face!=null&&face==android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT?"front":"back");cameras.put(item);}result=cameras;}
     else if("open-app".equals(action)){String pkg=a.getString(0);if(!pkg.matches("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+"))throw new Exception("Укажите точное имя пакета приложения");Intent launch=getPackageManager().getLaunchIntentForPackage(pkg);if(launch==null)throw new Exception("Приложение не найдено или его нельзя открыть");startActivity(launch);result="Запрос на открытие приложения передан Android.";}
-    else if("accessibility-settings".equals(action)){startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));result="Открыты настройки специальных возможностей. Включите Еву вручную.";}
+    else if("accessibility-settings".equals(action)){if(!SystemSettings.accessibility(this))throw new Exception("Настройки Android недоступны");result="Открыты настройки Android. Найди Еву в разделе специальных возможностей.";}
     else if("accessibility-status".equals(action)){result=EvaAccessibility.status(this);}
     else if("screenshot".equals(action)){
       if(a.length()!=0)throw new IllegalArgumentException("Снимок экрана не принимает параметры");
@@ -334,11 +408,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
         PetOverlay.setEnabled(this,pet.isChecked());syncPet();return;
       }
       pet.setChecked(false);pendingPetPermission=true;
-      try{startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));}
-      catch(android.content.ActivityNotFoundException error){
-        pendingPetPermission=false;
-        Toast.makeText(this,"Настройки показа поверх приложений недоступны",Toast.LENGTH_LONG).show();
-      }
+      pendingPetPermission=SystemSettings.overlay(this);
     });
     android.app.AlertDialog dialog=new android.app.AlertDialog.Builder(this).setTitle("Рабочий стол и питомец")
         .setView(options).setNeutralButton("Опоры питомца",(d,w)->showPetAnchors())
@@ -349,14 +419,13 @@ public final class MainActivity extends Activity implements CodexService.Listene
   private void showPetAnchors(){
     boolean enabled=PetOverlay.anchorsEnabled(this);
     new android.app.AlertDialog.Builder(this).setTitle("Опоры для аватара")
-      .setMessage("Ева запоминает границы элементов рабочего стола HONOR. На Android 14 и новее сверяет их со снимком лаунчера в памяти и сохраняет карту прямоугольников. В приложениях опорой могут служить верх клавиатуры, край диалога и выдвижная нижняя панель. Ева получает их координаты, пока они видны.")
+      .setMessage("Ева видит границы значков и виджетов, если выбранный рабочий стол передаёт их Android. На Android 14 и новее сверяет их со снимком лаунчера в памяти и сохраняет карту прямоугольников. В приложениях опорой могут служить верх клавиатуры, край диалога и выдвижная нижняя панель. Ева получает их координаты, пока они видны.")
       .setNegativeButton("Закрыть",null)
       .setNeutralButton("В приложениях",(dialog,which)->showAppProfiles())
       .setPositiveButton(enabled&&EvaAccessibility.enabled()?"Выключить опоры":"Включить опоры",(dialog,which)->{
         if(enabled&&EvaAccessibility.enabled()){PetOverlay.setAnchorsEnabled(this,false);return;}
         PetOverlay.setAnchorsEnabled(this,true);
-        if(!EvaAccessibility.enabled())try{startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));}
-        catch(android.content.ActivityNotFoundException error){Toast.makeText(this,"Настройки специальных возможностей недоступны",Toast.LENGTH_SHORT).show();}
+        if(!EvaAccessibility.enabled())SystemSettings.accessibility(this);
       }).show();
   }
   private void showAppProfiles(){
@@ -426,7 +495,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
       startAssistantIfReady();
     });}
 
-    @JavascriptInterface public void voiceSettings(){runOnUiThread(()->{try{startActivity(new Intent("com.android.settings.TTS_SETTINGS"));}catch(Exception e){Toast.makeText(MainActivity.this,"Настройки голоса Android недоступны",Toast.LENGTH_LONG).show();}});}
+    @JavascriptInterface public void voiceSettings(){runOnUiThread(()->SystemSettings.open(MainActivity.this,new Intent("com.android.settings.TTS_SETTINGS"),new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),new Intent(Settings.ACTION_SETTINGS)));}
     @JavascriptInterface public void filePermission(){runOnUiThread(()->{if(checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE,Manifest.permission.WRITE_EXTERNAL_STORAGE},107);});}
     @JavascriptInterface public boolean hasFilePermission(){return checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)==PackageManager.PERMISSION_GRANTED;}
   }
@@ -445,7 +514,9 @@ public final class MainActivity extends Activity implements CodexService.Listene
     @JavascriptInterface public String wakeStatus(){return getSharedPreferences("eva_wake",0).getString("status","Выключено");}
     @JavascriptInterface public void setWakeEnabled(boolean enabled){runOnUiThread(()->{if(enabled&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){wakeStartPending=true;requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},MIC);}else EvaVoiceService.setEnabled(MainActivity.this,enabled);});}
     @JavascriptInterface public void startRecognition(String lang){runOnUiThread(()->{recognitionLanguage="ru-RU";if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)startNativeRecognition();else{nativeStartPending=true;requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},MIC);}});}
-    @JavascriptInterface public void speak(String text,float pitch,float rate,String id){runOnUiThread(()->{if(!nativeTtsReady||nativeTts==null){runJs("window.__nativeSpeechFinish&&window.__nativeSpeechFinish("+JSONObject.quote(id)+",'synthesis-unavailable')");return;}nativeTts.setPitch(Math.max(0.5f,Math.min(2f,pitch)));nativeTts.setSpeechRate(Math.max(0.5f,Math.min(2f,rate)));if(nativeTts.speak(text,TextToSpeech.QUEUE_FLUSH,null,id)==TextToSpeech.ERROR)runJs("window.__nativeSpeechFinish&&window.__nativeSpeechFinish("+JSONObject.quote(id)+",'synthesis-failed')");});}
+    @JavascriptInterface public String voices(){return nativeVoices.json();}
+    @JavascriptInterface public void speak(String text,float pitch,float rate,String id){speakVoice(text,pitch,rate,id,"");}
+    @JavascriptInterface public void speakVoice(String text,float pitch,float rate,String id,String selected){runOnUiThread(()->{if(!nativeTtsReady||nativeTts==null||!nativeVoices.apply(nativeTts,selected)){runJs("window.__nativeSpeechFinish&&window.__nativeSpeechFinish("+JSONObject.quote(id)+",'synthesis-unavailable')");return;}nativeTts.setPitch(Math.max(0.5f,Math.min(2f,pitch)));nativeTts.setSpeechRate(Math.max(0.5f,Math.min(2f,rate)));if(nativeTts.speak(text,TextToSpeech.QUEUE_FLUSH,null,id)==TextToSpeech.ERROR)runJs("window.__nativeSpeechFinish&&window.__nativeSpeechFinish("+JSONObject.quote(id)+",'synthesis-failed')");});}
     @JavascriptInterface public void stopSpeech(){runOnUiThread(()->{if(nativeTts!=null)nativeTts.stop();});}
     @JavascriptInterface public void stopRecognition(){runOnUiThread(()->{if(recognizer!=null)recognizer.stopListening();});}
   }
@@ -456,6 +527,10 @@ public final class MainActivity extends Activity implements CodexService.Listene
   }
   @Override protected void onResume(){
     super.onResume();
+    if(nativeTtsReady&&nativeTts!=null){
+      if(nativeVoices.engineChanged(nativeTts)){nativeTts.shutdown();setupNativeTts();}
+      else{nativeVoices.refresh(nativeTts);runJs("window.__nativeVoicesChanged?.()");}
+    }
     resumed=true;
     if(web==null&&service!=null&&!service.url.isEmpty())changed();
     if(pendingPetPermission){
@@ -473,7 +548,7 @@ public final class MainActivity extends Activity implements CodexService.Listene
     CodexService.refreshPet();
     super.onStop();
   }
-  @Override protected void onDestroy(){if(assistantVoice||petChat)EvaVoiceService.setChatActive(false);if(service!=null)service.detach(this);if(bound)unbindService(connection);if(nativeTts!=null){nativeTts.shutdown();nativeTts=null;}if(recognizer!=null){recognizer.destroy();recognizer=null;}if(web!=null){web.destroy();web=null;}super.onDestroy();}
+  @Override protected void onDestroy(){if(assistantVoice||petChat)EvaVoiceService.setChatActive(false);if(service!=null)service.detach(this);if(bound)unbindService(connection);if(nativeTts!=null){nativeTts.shutdown();nativeTts=null;}if(recognizer!=null){recognizer.destroy();recognizer=null;}discardChatView();super.onDestroy();}
   @Override public void onBackPressed(){
     if(petChat&&pageReady&&web!=null){
       WebView current=web;

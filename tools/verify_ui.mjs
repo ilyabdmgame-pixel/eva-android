@@ -19,9 +19,18 @@ const data={
  '/backup/status':{},'/rpc':{result:{data:[]}},'/drafts':{drafts:[]},'/voice-settings':{settings:{},sileroAvailable:false}
 };
 async function site(root){
+  const waiting = new Map();
+  const modelFixture = new Map();
   const server=createServer(async(req,res)=>{
     try{
       const u=new URL(req.url,'http://localhost');
+      if(waiting.has(u.pathname))await waiting.get(u.pathname);
+      if(root===chat&&u.pathname.startsWith('/character-models/')){
+        const model=modelFixture.get(u.pathname);
+        if(req.headers['x-codex-token']!=='synthetic'){res.writeHead(401);res.end();return;}
+        if(!model){res.writeHead(404);res.end();return;}
+        res.writeHead(200,{'Content-Type':model.type});res.end(model.bytes);return;
+      }
       if(root===chat&&u.pathname==='/events'){res.writeHead(200,{'Content-Type':'text/event-stream'});res.write(': connected\n\n');return;}
       if(root===chat&&u.pathname==='/chat-image'){
         const file=(u.searchParams.get('path')||'').match(/\/eva-builtin-20261116\/((?:speech|emotions)\/[a-z0-9-]+\.(?:png|webp))$/);
@@ -30,7 +39,7 @@ async function site(root){
         res.writeHead(200,{'Content-Type':mime[path.extname(file[1])]});res.end(image);return;
       }
       const name=u.pathname==='/'?'index.html':decodeURIComponent(u.pathname.slice(1));
-      const publicRoot=root===home&&['question-options.js','ui-icons.js'].includes(name)?chat:root;
+      const publicRoot=root===home&&['question-options.js','ui-icons.js','webview-compat.js'].includes(name)?chat:root;
       let target=path.resolve(publicRoot,name);
       if(!target.startsWith(publicRoot+path.sep)){res.writeHead(403);res.end();return;}
       let contents;
@@ -51,7 +60,10 @@ async function site(root){
     }catch{res.writeHead(500);res.end();}
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  return {server,url:'http://127.0.0.1:'+server.address().port};
+  return {server,url:'http://127.0.0.1:'+server.address().port,modelFixture,hold(pathname){
+    let release;waiting.set(pathname,new Promise(resolve=>{release=resolve;}));
+    return ()=>{waiting.delete(pathname);release();};
+  }};
 }
 async function page(devtools,source){
   const tab=await (await fetch(devtools+'/json/new?about:blank',{method:'PUT',signal:AbortSignal.timeout(10000)})).json();
@@ -261,6 +273,9 @@ try{
     const original=HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext=function(kind,...args){return kind.startsWith('webgl')?null:original.call(this,kind,...args);};`:'');
   try{
+    const {verifyChatContinuity,verifyChatModels}=await import('./verify_chat_continuity.mjs');
+    await verifyChatContinuity(portrait,chatSite);
+    await verifyChatModels(portrait,chatSite);
     await portrait.rpc('Page.navigate',{url:chatSite.url+'/#synthetic'});
     await portrait.until("typeof message==='function' && document.readyState==='complete'",'Chat did not initialise');
     await portrait.evaluate("message('Сборка готова. Чай тоже.','agent');");

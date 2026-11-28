@@ -2,8 +2,9 @@
 // reuses the same posed mesh and depth buffer as the visible room.
 export function createEvaSkin(gl){
  let gpu=null,current=null;
- function submit(mesh,pose,id){
-   if(!gpu){
+ function submit(mesh,pose,id,custom=false){
+   if(gpu?.mesh!==mesh){
+     retire();
      const vao=gl.createVertexArray(),buffer=gl.createBuffer(),elements=gl.createBuffer();
      gl.bindVertexArray(vao);
      gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
@@ -15,9 +16,9 @@ export function createEvaSkin(gl){
        gl.vertexAttribPointer(i,size,gl.FLOAT,false,mesh.stride*4,offset*4);
        gl.enableVertexAttribArray(i);
      });
-     gpu={vao,buffer,elements,count:mesh.indices.length};
+     gpu={mesh,vao,buffer,elements,count:mesh.indices.length};
    }
-   current={pose,id};
+   current={pose,id,custom};
  }
  function draw(uniforms){
    if(!current)return;
@@ -25,7 +26,7 @@ export function createEvaSkin(gl){
    gl.uniform1i(uniforms.rigged,1);
    gl.uniformMatrix4fv(uniforms['rigMatrix[0]'],false,pose.matrices);
    gl.uniform2f(uniforms.rigInfo,id,pose.bedFloor);
-   gl.uniform2f(uniforms.portrait,pose.face*.25,pose.blink);
+   gl.uniform2f(uniforms.portrait,current.custom?-1:pose.face*.25,current.custom?0:pose.blink);
    gl.bindVertexArray(gpu.vao);
    gl.drawElements(gl.TRIANGLES,gpu.count,gl.UNSIGNED_SHORT,0);
    gl.uniform1i(uniforms.rigged,0);

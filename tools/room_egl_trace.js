@@ -19,7 +19,15 @@
   }
   function source(value) {
     if (ArrayBuffer.isView(value)) return binary(value);
-    if (value instanceof HTMLImageElement) return {file: new URL(value.src).pathname};
+    if (value instanceof HTMLImageElement) {
+      const url = new URL(value.src);
+      if (url.origin === location.origin && url.pathname.startsWith('/art/')) return {file: url.pathname};
+      // Locally imported character textures have no corresponding file in the source tree.
+      const image = document.createElement('canvas');
+      image.width = value.naturalWidth; image.height = value.naturalHeight;
+      getContext.call(image, '2d').drawImage(value, 0, 0);
+      return {image: image.toDataURL('image/png')};
+    }
     if (value instanceof HTMLCanvasElement) return {image: value.toDataURL('image/png')};
     return value;
   }

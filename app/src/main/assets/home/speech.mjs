@@ -69,7 +69,7 @@ export function createSpeech(layer,status,protectedElements){
     }
     const rects=[...protectedRects];
     if(streamBounds)rects.push(streamBounds);
-    for(const line of lines.values())line.size??={w:line.el.offsetWidth,h:line.el.offsetHeight};
+    for(const line of lines.values())line.size=line.size??{w:line.el.offsetWidth,h:line.el.offsetHeight};
     for(const [speaker,line] of [...lines].sort((a,b)=>b[1].order-a[1].order)){
       const head=heads.get(speaker);
       const placement=head&&bubblePosition(head,line.size,screen,rects);

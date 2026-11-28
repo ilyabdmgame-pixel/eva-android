@@ -265,10 +265,10 @@ body>header#top-panel:not([hidden]){position:fixed;top:calc(max(7px,env(safe-are
 #models-panel [hidden],#voice-settings [hidden],#notes-panel [hidden],#tasks-panel [hidden],.eva-account [hidden]{display:none!important}
 
 /* Small entrance and depth using the existing layers; no new image requests. */
-body #avatar-stage:not([hidden]) .avatar-figure{animation:evaArrival 900ms ease-out both}
-@keyframes evaArrival{from{opacity:.35;transform:translateX(-50%) translateY(9px) scale(.985)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
-body .avatar-glow{animation:evaGlow 8s ease-in-out infinite alternate}
-@keyframes evaGlow{from{opacity:.32;transform:scale(.96)}to{opacity:.62;transform:scale(1.04)}}
+body #avatar-stage:not([hidden]) .avatar-figure{animation:none}
+
+body #avatar-stage .avatar-glow{background:radial-gradient(ellipse,#c484824d,transparent 70%);filter:none;transform:translate(-50%,-50%);animation:none}
+
 @media (prefers-reduced-motion:reduce){body #avatar-stage:not([hidden]) .avatar-figure,body .avatar-glow{animation:none!important}}
 .sound-feedback-option{display:flex!important;align-items:center;gap:8px}
 
@@ -418,7 +418,10 @@ body #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
 #steer:disabled{opacity:.65}
 #steer[hidden]{display:none!important}
 
-.avatar-front-surface { position:absolute; inset:0; width:100%; height:100%; }
+.avatar-front-surface,.avatar-paint { position:absolute; inset:0; width:100%; height:100%; }
+/* Inside the opaque silhouette shared by all body and full-gesture drawings. */
+.avatar-paint { --steady-ink:polygon(44.0% 1.5%,34.7% 4.1%,28.0% 8.3%,24.0% 12.4%,20.0% 26.3%,22.0% 27.4%,22.0% 39.8%,8.0% 62.4%,10.0% 63.9%,8.0% 75.6%,12.0% 75.9%,12.0% 80.5%,16.7% 86.5%,13.3% 95.9%,15.3% 98.5%,84.0% 98.5%,86.7% 96.2%,86.0% 91.7%,88.7% 88.7%,88.7% 84.2%,93.3% 74.8%,89.3% 65.4%,91.3% 62.4%,80.0% 41.0%,77.3% 17.3%,71.3% 8.3%,63.3% 3.4%,56.7% 1.5%); }
+.avatar-paint[data-base-ready] > .avatar-poster { clip-path:var(--steady-ink); }
 .avatar-drawn .avatar-front-surface {
   transform-origin:50% 68%;
   transition:transform .72s cubic-bezier(.35,0,.2,1);
@@ -432,27 +435,28 @@ body #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
 .avatar-drawn .avatar-body > .avatar-idle-body {
   display:none; inset:41.98565% 0 0; width:100%; height:58.01435%; object-fit:fill;
 }
-.avatar-drawn .avatar-body-live > img:first-child { visibility:hidden; }
+.avatar-drawn .avatar-body-live > img:first-child { clip-path:var(--steady-ink); }
 .avatar-drawn .avatar-body-live > .avatar-idle-body { display:block; }
 .avatar-drawn .avatar-full-gesture { display:none; z-index:13; }
-.avatar-gesture-visible .avatar-front-surface > :not(.avatar-full-gesture) { visibility:hidden; }
+.avatar-gesture-visible .avatar-paint { clip-path:var(--steady-ink); }
 .avatar-drawn .avatar-gesture-visible .avatar-full-gesture { display:block; }
 @media (prefers-reduced-motion:no-preference) {
   .avatar-drawn:not([data-gesture-fallback]) :is(.avatar-extra-yawn-mid,.avatar-extra-yawn,.avatar-extra-scratch-mid,.avatar-extra-scratch) { display:none; }
 }
-.avatar-drawn .avatar-head,.avatar-drawn .avatar-body { animation:none!important; transform:none; }
+.avatar-drawn .avatar-head,.avatar-drawn .avatar-body { animation:none!important; transform:none; will-change:auto; }
 .avatar-drawn .avatar-head :is(.avatar-blink,.avatar-blink-thinking,.avatar-blink-talking,.avatar-thought,.avatar-happy,.avatar-glance,.avatar-surprised) { display:none; }
 .avatar-drawn .avatar-talking { clip-path:ellipse(12% 3.6% at 50% 34.7%); }
 .avatar-drawn .avatar-cel { position:absolute; left:26%; top:19.5%; width:48.5%; height:19.5%; background-size:400% 300%; background-repeat:no-repeat; z-index:8; }
 .avatar-drawn .avatar-cel-lids { z-index:9; }
 .avatar-drawn .avatar-mouth-patch { background-size:600% 600%; z-index:10; transition:none; }
 .avatar-drawn .avatar-cel[hidden],.avatar-cel-arm[hidden] { display:none!important; }
-.avatar-drawn .avatar-cel-arm,.avatar-wave-rest { position:absolute; inset:0; }
+.avatar-drawn .avatar-cel-arm { position:absolute; inset:0; }
 .avatar-cel-arm { z-index:12; pointer-events:none; }
-.avatar-wave-rest { background:url('/avatar/idle.png') center/100% 100% no-repeat; clip-path:polygon(0 0,100% 0,100% 100%,41% 100%,41% 53%,0 53%); }
+.avatar-waving .avatar-paint { clip-path:polygon(0 0,100% 0,100% 100%,41% 100%,41% 53%,0 53%); }
 .avatar-wave-cels { position:absolute; top:24%; left:0; width:41%; height:76%; clip-path:polygon(0 0,68% 0,68% 24%,100% 32%,100% 100%,0 100%); background-size:600% 400%; background-repeat:no-repeat; }
-.avatar-waving .avatar-front-surface > :not(.avatar-cel-arm) { visibility:hidden; }
+
 .avatar-drawn .avatar-pose,.avatar-drawn .avatar-extra { transition:none; }
+.avatar-drawn :is(.avatar-pose,.avatar-extra) img:not([data-decoded]) { visibility:hidden; }
 .avatar-drawn[data-blink-frame] .avatar-pose .pose-eyeblink { transition:none; opacity:1; clip-path:polygon(26% 23%,75% 23%,75% var(--cel-lid-edge,23%),26% var(--cel-lid-edge,23%)); }
 #avatar-stage[hidden] *,body.eva-pet-chat #avatar-stage *,body.portrait-suspended #avatar-stage * { animation-play-state:paused!important; }
 @media (prefers-reduced-motion:reduce) { #avatar-stage.avatar-drawn .avatar-front-surface { transform:none; transition:none; } }
@@ -490,3 +494,9 @@ body #voice-output{right:max(10px,env(safe-area-inset-right));left:auto}
  #avatar-preview { width:min(460px,98%); max-height:56dvh; gap:4px; padding-block:6px; overflow:auto; }
  #avatar-preview-buttons { min-height:42px; }
 }
+
+body.eva-model-portrait #sidebar #avatar-preview-open,html:is([data-eva-custom-portrait="pending"],[data-eva-custom-portrait="1"]) #sidebar #avatar-preview-open { display:none; }
+
+#character-model-view { position:absolute; inset:0; z-index:3; pointer-events:none; }
+#character-model-view canvas { display:block; width:100%; height:100%; }
+body.eva-model-portrait .avatar-figure { visibility:hidden; }

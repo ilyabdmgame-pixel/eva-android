@@ -149,7 +149,7 @@ export function createStreamChat(panel,canvas,protectedElements){
     if(!position){panel.hidden=true;return null}
     const nextLimit=Math.max(0,position.h-chromeHeight)+'px';
     if(logLimit!==nextLimit){
-      followLatest ||= log.scrollHeight-log.scrollTop-log.clientHeight<=8;
+      followLatest = followLatest || log.scrollHeight-log.scrollTop-log.clientHeight<=8;
       panel.style.setProperty('--stream-log-height',nextLimit);
       logLimit=nextLimit;
     }

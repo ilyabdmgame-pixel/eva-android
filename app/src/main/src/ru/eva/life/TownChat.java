@@ -7,6 +7,7 @@ import android.os.*;
 import android.speech.*;
 import android.speech.tts.*;
 import ru.eva.envtest.CodexService;
+import ru.eva.envtest.AndroidVoices;
 import org.json.*;
 import java.util.*;
 
@@ -22,6 +23,7 @@ final class TownChat {
  private SpeechRecognizer mic;
  private TextToSpeech tts;
  private boolean ttsReady;
+ private final AndroidVoices voices=new AndroidVoices();
  private String utterance="";
  private Runnable waitingSpeech;
  TownChat(Home activity){
@@ -49,6 +51,10 @@ final class TownChat {
  };
  void resume(){
   active=true;
+  if(ttsReady&&tts!=null){
+   if(voices.engineChanged(tts)){tts.shutdown();tts=null;ttsReady=false;}
+   else voices.refresh(tts);
+  }
  }
  private void bind(){
   if(!bound)try{bound=home.bindService(new Intent(home,ru.eva.envtest.TownService.class),link,Context.BIND_AUTO_CREATE);}catch(RuntimeException ignored){}
@@ -85,12 +91,10 @@ final class TownChat {
    askingMic=true;home.requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},MIC_PERMISSION);return;
   }
   try{
-   ComponentName provider=null;
-   for(ResolveInfo match:home.getPackageManager().queryIntentServices(new Intent(RecognitionService.SERVICE_INTERFACE),0)){
-    ServiceInfo s=match.serviceInfo;
-    if(s!=null&&s.exported&&s.packageName.equals("com.google.android.tts"))provider=new ComponentName(s.packageName,s.name);
+   if(!SpeechRecognizer.isRecognitionAvailable(home)){
+     error("mic","В Android не выбран сервис распознавания речи.");return;
    }
-   mic=provider==null?SpeechRecognizer.createSpeechRecognizer(home):SpeechRecognizer.createSpeechRecognizer(home,provider);
+   mic=SpeechRecognizer.createSpeechRecognizer(home);
    mic.setRecognitionListener(new RecognitionListener(){
     public void onReadyForSpeech(Bundle b){event("mic","status","listening");}
     public void onResults(Bundle b){ArrayList<String> lines=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);cancelMic();if(lines!=null&&!lines.isEmpty())event("mic","text",lines.get(0));else error("mic","Не расслышала. Попробуй ещё раз.");}
@@ -111,22 +115,23 @@ final class TownChat {
   }catch(JSONException ignored){}
   if(channel!=null)try{request(new JSONObject().put("op","stopVoice").put("id",id).toString());}catch(JSONException ignored){}
  }
- void speak(String id,String text,float rate,float pitch,float volume){
+ void speak(String id,String text,float rate,float pitch,float volume,String selected){
   if(!active||text.isEmpty())return;
   utterance=id;
-  Runnable next=()->{if(utterance.equals(id)&&active)play(id,text,rate,pitch,volume);};
+  Runnable next=()->{if(utterance.equals(id)&&active)play(id,text,rate,pitch,volume,selected);};
   if(ttsReady){next.run();return;}
   waitingSpeech=next;
   if(tts==null)tts=new TextToSpeech(home,status->handler.post(()->{
    if(tts==null)return;
-   ttsReady=status==TextToSpeech.SUCCESS&&tts.setLanguage(new Locale("ru","RU"))>=0;
+   ttsReady=status==TextToSpeech.SUCCESS;
+   if(ttsReady)voices.refresh(tts);
    Runnable pending=waitingSpeech;waitingSpeech=null;
    if(!ttsReady){tts.shutdown();tts=null;}
    if(pending!=null)pending.run();
   }));
  }
- private void play(String id,String text,float rate,float pitch,float volume){
-  if(!ttsReady){event("voiceError","id",id);return;}
+ private void play(String id,String text,float rate,float pitch,float volume,String selected){
+  if(!ttsReady||!voices.apply(tts,selected)){event("voiceError","id",id);return;}
   tts.setPitch(Math.max(.5f,Math.min(2f,pitch)));
   tts.setSpeechRate(Math.max(.5f,Math.min(2f,rate)));
   Bundle params=new Bundle();params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME,Math.max(0f,Math.min(1f,volume)));

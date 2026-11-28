@@ -70,8 +70,8 @@ const roomActivities=JSON.parse(Desk.roomActivities());
 const currentEntry=at=>scheduledPeriod(routines.entries,at);
 let nextAmbientFrame=0,paintCount=0;
 let nextPastime=0,automaticWalk=false;
-saved.roomRoutineCursor??={};
-saved.roomActivityCounts??={};
+saved.roomRoutineCursor=saved.roomRoutineCursor??{};
+saved.roomActivityCounts=saved.roomActivityCounts??{};
 let roomActivity=null;
 let autoFollow=localStorage.getItem('followSchedule')!=='no';
 let view,speechAnchors=new Map(),motionFrames={},night=0,lighting=[1,1,1],dirty=true,nextFrame=0,last=0;
@@ -185,7 +185,7 @@ function trade(type,item,extra={}){
  const result=applyEconomy(saved.economy,{type,item,...extra});
  if(!result.ok){say(result.reason,'wry');return false}
  if(type==='pickup'&&extra.fixture){
-   saved.packed??={};saved.packed[extra.fixture]=true;
+   saved.packed=saved.packed??{};saved.packed[extra.fixture]=true;
  }
  if(type==='drop'&&fixtureIds[item]){
    const id=fixtureIds[item];
@@ -416,7 +416,7 @@ function finishRoomActivity(state){
    case 'tv':saved.channel=(saved.channel||0)%2+1;break;
    case 'nap':leaveSeat();break;
    case 'wash': {
-     saved.houseUses??={};
+     saved.houseUses=saved.houseUses??{};
      saved.houseUses[fixture.id]=(saved.houseUses[fixture.id]||0)+1;
      break;
    }
@@ -508,12 +508,12 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
    sound(action==='fountain'?'water':action==='clock'?'chime':action);
    switch(action){
      case 'wardrobe':
-       saved.cabinets??={};saved.cabinets[o.id]=!saved.cabinets[o.id];
+       saved.cabinets=saved.cabinets??{};saved.cabinets[o.id]=!saved.cabinets[o.id];
        if(!reduceMotion)gesture={motion:'reach',id:o.id,start:now(),until:now()+790};
        say(saved.cabinets[o.id]?'Рубашки слева, худи справа. Парадная толстовка посередине.':'Закрыла. Ни один рукав наружу не торчит.','pleased');break;
      case 'blanket':
        if(o.id===11)saved.blanket=!saved.blanket;
-       else {saved.linens??={};saved.linens[o.id]=!saved.linens[o.id];}
+       else {saved.linens=saved.linens??{};saved.linens[o.id]=!saved.linens[o.id];}
        say('Поправила плед. До первого кота.');break;
      case 'notice':say(objectLine(saved,o,action,o.remark),'curious');break;
      case 'wallArt':say(o.art==='town-menu'?'На стене кофе и круассан. Дальновидно повесили как раз на голодном уровне глаз.':o.art==='town-flowers'?'Подсолнухи. Вот у кого поворот к свету работает из коробки.':'Гора, крыши, тихий двор. Интересно, сколько там стоит коммуналка?');break;
@@ -531,7 +531,7 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
        takeSeat(seat);
        appEvent('sit');say(remark('seat'),'pleased');break;
      case 'desk':
-       saved.drawers??={};saved.drawers[o.id]=!drawerOpen(o.id);
+       saved.drawers=saved.drawers??{};saved.drawers[o.id]=!drawerOpen(o.id);
        say(saved.drawers[o.id]?'Бумаги в ящике. Я их рассредоточила.':'Закрыла. Бумаги могут выдохнуть.');break;
      case 'tableWipe':
        say(objectLine(saved,o,action,'Столик протёрла. Если что, круг от кружки уже был.'));break;
@@ -623,7 +623,7 @@ function perform(o,action,automatic=false,snack=null,fromChat=false){
      }
      default:
        if(domestic[action]){
-         const lines=domestic[action][1];saved.houseUses??={};const n=saved.houseUses[o.id]||0;
+         const lines=domestic[action][1];saved.houseUses=saved.houseUses??{};const n=saved.houseUses[o.id]||0;
          say(lines[n%lines.length],'pleased');saved.houseUses[o.id]=n+1;break;
        }
        if(activityLines[action]){
@@ -802,7 +802,7 @@ function rememberPlacement(o){
    stack.push(()=>{
      saved.decor=saved.decor.filter(e=>e.id!==id);if(entry)saved.decor.push(entry);
      if(lamp!==undefined)saved.lamps[id]=lamp;else delete saved.lamps[id];
-     if(uses!==undefined)(saved.houseUses??={})[id]=uses;else if(saved.houseUses)delete saved.houseUses[id];
+     if(uses!==undefined)(saved.houseUses=saved.houseUses??{})[id]=uses;else if(saved.houseUses)delete saved.houseUses[id];
    });
  }else if(o.placementId!=null){
    const entry=saved.economy.placements.find(e=>e.id===o.placementId);
@@ -894,7 +894,7 @@ $('layout-apply').onclick=()=>{
  else if(o.placementId!=null){
    const entry=saved.economy.placements.find(e=>e.id===o.placementId);if(!entry)return;
    Object.assign(entry,p);
- }else{saved.chairs??={};saved.chairs[o.id]={...p,turned:!!o.turned,back:!!o.back,world:true,sector:regionAt(p.u,p.v).key}}
+ }else{saved.chairs=saved.chairs??{};saved.chairs[o.id]={...p,turned:!!o.turned,back:!!o.back,world:true,sector:regionAt(p.u,p.v).key}}
  refreshObjects();storage();
  layout.newItem=false;layout.object=null;layout.point=null;layoutHUD('Сохранено. Можно выбрать следующий предмет.');
 };
@@ -1446,9 +1446,11 @@ function updateHomeVisibility(){
    cancelAnimationFrame(nextFrame);clearTimeout(timer);nextFrame=timer=0;
  }
 }
+window.setRoomCharacter=revision=>renderer?.selectCharacter(revision);
 window.setHomeActive=(value,returning=false)=>{
  nativeActive=Boolean(value);updateHomeVisibility();
  if(nativeActive){
+   window.setRoomCharacter(Desk.characterModel?.());
    repairHomeSheet(returning);releaseHomePointer();
    if(returning)town.close();
    if(active){dirty=true;wake();}
@@ -1480,6 +1482,7 @@ function restoreRoom(){
  if(renderer)return;
  try{
    renderer=createScene(canvas);
+   window.setRoomCharacter(Desk.characterModel?.());
    paintWindow.invalidate();
    last=now();paint(last);
  }catch(error){useFallback(error);return;}
@@ -1615,7 +1618,7 @@ function openWeather(){
  }
  choices('season','Сезон по местному календарю',Object.entries(seasons).map(([key,v])=>[key,v.name]));
  const connected=Desk.weatherState()==='connected';
- out.append(label(connected?'Виджет Погоды HONOR':'Подключить Погоду HONOR',
+ out.append(label(connected?'Виджет погоды':'Выбрать виджет Android',
    connected?(widgetWeather(JSON.parse(Desk.weatherLabels())).area||'Открыть данные погодного приложения'):'Подключить системный виджет погоды','☁',()=>{
      delete weatherOptions.weather;saved.weatherOptions=weatherOptions;storage();closeSheet();Desk.connectWeather();
    }));
@@ -1717,7 +1720,7 @@ window.worldCheck=()=>{
  const far=view&&project(view,{u:-2,v:-1,z:1.62}).y-project(view,{u:-2,v:-1}).y;
  return {section,climate,lighting,motionFrames,paintCount,activeLights:Array.from(lamps).filter((strength,i)=>i%4===3&&strength>0).length,
    cameraScale:roomView(roomExtra).scale*cameraPose.zoom,cameraYaw:cameraPose.yaw,cameraOffset:roomOffset,roomExpanded:!!roomExtra,
-   sound:audioState(),outdoors:false,
+   sound:audioState(),outdoors:false,character:renderer?.characterRevision??'',
    anchors:Object.fromEntries(speechAnchors),move:move.length,direction,
    activity:roomActivity?.key||null,activityPhase:roomActivity?.sample?.index??null,
    pose:seated?.sleep?'sleep':seated?'sit':move.length||walkHold?'walk':roomActivity?.sample?.motion||gesture?.motion||'idle',

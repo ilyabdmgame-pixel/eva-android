@@ -31,32 +31,37 @@
   }
   function mount(stage,motion){
     const figure=stage.querySelector('.avatar-figure'), surface=figure.querySelector('.avatar-front-surface');
-    const head=surface.querySelector('.avatar-head');
+    const paint=surface.querySelector('.avatar-paint'),head=paint.querySelector('.avatar-head');
     function layer(className,parent){
       const node=document.createElement('span');node.className=className;node.setAttribute('aria-hidden','true');node.hidden=true;parent.append(node);return node;
     }
     const face=layer('avatar-cel avatar-cel-face',head), lids=layer('avatar-cel avatar-cel-lids',head);
-    const waving=layer('avatar-cel-arm',surface), resting=document.createElement('span'), arm=document.createElement('span');
-    resting.className='avatar-wave-rest';arm.className='avatar-wave-cels';waving.append(resting,arm);
+    const waving=layer('avatar-cel-arm',surface),arm=document.createElement('span');
+    arm.className='avatar-wave-cels';waving.append(arm);
     const cache = new Map();
-    const visible=()=>!stage.hidden&&!document.hidden&&!document.body.classList.contains('eva-pet-chat');
+    const visible=()=>!stage.hidden&&!document.hidden&&!document.body.classList.contains('eva-pet-chat')&&stockEnabled();
     const activity=()=>['avatar-is-reading','avatar-is-working','avatar-is-searching','avatar-is-music','avatar-idle-scratch','avatar-idle-yawn','avatar-idle-calm'].some(key=>stage.classList.contains(key));
     const body=surface.querySelector('.avatar-body');
-    let bodyArt=null;
+    // This thumbnail ships inside the document. Keep it behind every dynamic
+    // drawing, including a cold start or a process returning from the background.
+    let bodyArt=null,bodyDecoded=false,baseReady=false;
+    Promise.all([head.querySelector('.avatar-idle').decode(),body.firstElementChild.decode()])
+      .then(()=>{baseReady=true;paint.dataset.baseReady='1';if(visible())syncBodyArt();}).catch(()=>{});
     function dropBodyArt(){
       if(!bodyArt)return;
       body.classList.remove('avatar-body-live');
-      bodyArt.onload=bodyArt.onerror=null;bodyArt.removeAttribute('src');bodyArt.remove();bodyArt=null;
+      const previous=bodyArt;bodyArt=null;bodyDecoded=false;previous.remove();
     }
     function syncBodyArt(){
-      if(motion.matches||!visible()){dropBodyArt();return;}
+      if(!baseReady||motion.matches||!visible()){dropBodyArt();return;}
       if(!bodyArt&&!activity()){
-        bodyArt=new Image();bodyArt.className='avatar-idle-body';bodyArt.alt='';bodyArt.decoding='async';
-        bodyArt.onload=syncBodyArt;
-        bodyArt.onerror=()=>body.classList.remove('avatar-body-live');
-        body.append(bodyArt);bodyArt.src='/avatar/idle-body.webp';
+        const image=new Image();bodyArt=image;image.className='avatar-idle-body';image.alt='';image.decoding='async';
+        body.append(image);image.src='/avatar/idle-body.webp';
+        image.decode().then(()=>{
+          if(bodyArt===image){bodyDecoded=true;syncBodyArt();}
+        }).catch(()=>{if(bodyArt===image)body.classList.remove('avatar-body-live');});
       }
-      body.classList.toggle('avatar-body-live',!!bodyArt?.naturalWidth&&!activity());
+      body.classList.toggle('avatar-body-live',bodyDecoded&&!activity()&&!gestureImage);
     }
     function artwork(name){
       let result=cache.get(name);
@@ -76,7 +81,7 @@
     let requested='', requestedAmount=1, override='', current='', position=0, goal=0, faceAt=0, blinkStarted=null, waveStarted=null;
     let frame=0, lastTick=-Infinity, serial=0, blinkId=0, waveId=0, wavePending=false, stillTimer=null;
     let idleTimer=null, blinkTimer=null, idle='', lastIdle='', lastTyping=-Infinity, doubleBlink=false;
-    let gesture='', gestureStill=false, gestureImage=null, gestureTimer=null, nextGestureAt=0, lastGesture='';
+    let gesture='', gestureStill=false, gestureImage=null, pendingGesture=null, gestureTimer=null, nextGestureAt=0, lastGesture='';
     let previewBlinkPending=false;
     const bag=[];
     const autonomous=()=>visible()&&!motion.matches&&!document.body.classList.contains('avatar-preview-active');
@@ -127,28 +132,29 @@
     function dropGestureImage(){
       clearTimeout(gestureTimer);
       figure.classList.remove('avatar-gesture-visible');
-      if(gestureImage){
-        gestureImage.onload=gestureImage.onerror=null;gestureImage.removeAttribute('src');gestureImage.remove();gestureImage=null;
-      }
+      pendingGesture?.remove();pendingGesture=null;gestureImage?.remove();gestureImage=null;
     }
     function showGesture(name,still=false){
       if(name===gesture&&still===gestureStill)return;
-      dropGestureImage();gesture=name;gestureStill=still;delete stage.dataset.gestureFallback;
-      if(!name)return;
+      clearTimeout(gestureTimer);pendingGesture?.remove();pendingGesture=null;
+      gesture=name;gestureStill=still;delete stage.dataset.gestureFallback;
+      if(!name){dropGestureImage();if(visible())syncBodyArt();return;}
       clearBlink();
-      const image=new Image();gestureImage=image;image.className='avatar-full-gesture';image.alt='';
-      image.onload=()=>{
-        if(gestureImage!==image)return;
-        figure.classList.add('avatar-gesture-visible');
-        if(idle===name)finishIdleAfter(gestureTime[name]);
-        else if(!still)gestureTimer=setTimeout(dropGestureImage,gestureTime[name]);
-      };
-      image.onerror=()=>{
-        if(gestureImage!==image)return;
-        dropGestureImage();stage.dataset.gestureFallback=name;
-      };
+      const image=new Image();pendingGesture=image;image.className='avatar-full-gesture';image.alt='';image.decoding='async';
       const asset=still?(name==='hair'?'scratch':'yawn'):'idle-'+name;
-      surface.append(image);image.src='/avatar/'+asset+'.webp';
+      image.src='/avatar/'+asset+'.webp';
+      image.decode().then(()=>{
+        if(pendingGesture!==image||!visible())return;
+        pendingGesture=null;const previous=gestureImage;gestureImage=image;
+        surface.append(image);previous?.remove();
+        figure.classList.add('avatar-gesture-visible');
+        syncBodyArt();
+        if(idle===name)finishIdleAfter(gestureTime[name]);
+        else if(!still)gestureTimer=setTimeout(()=>{dropGestureImage();syncBodyArt();},gestureTime[name]);
+      }).catch(()=>{
+        if(pendingGesture!==image)return;
+        dropGestureImage();stage.dataset.gestureFallback=name;syncBodyArt();
+      });
     }
     function nextBlink(){
       blinkTimer=null;
@@ -262,8 +268,14 @@
     new MutationObserver(sync).observe(document.body,{attributes:true,attributeFilter:['class']});
     motion.addEventListener('change',()=>{if(motion.matches){clearBlink();cancelWave();}sync();wake();});
     document.addEventListener('visibilitychange',()=>{document.body.classList.toggle('portrait-suspended',document.hidden);sync();});
+    document.addEventListener('eva-personal-portrait',sync);
+    document.addEventListener('eva-model-portrait',sync);
     window.addEventListener('pagehide',reset);window.addEventListener('pageshow',sync);sync();
     return {emote,clear,blink,wave,noticeTyping};
+  }
+  function stockEnabled(){
+    const mode=document.documentElement.dataset.evaCustomPortrait;
+    return mode!=='1'&&mode!=='pending'&&!document.body.classList.contains('eva-model-portrait');
   }
   function waveFrame(step){
     // Ease into the raised hand, two small waves, then release back to the resting sleeve.
@@ -300,7 +312,7 @@
     return track.cues[low] || null;
   }
 
-  const api = {mount,faceName,poses,blinkAt,waveFrame,nextIdleBeat,gestureTime,speechTrack,speechCue};
+  const api = {mount,stockEnabled,faceName,poses,blinkAt,waveFrame,nextIdleBeat,gestureTime,speechTrack,speechCue};
   root.EvaPortrait = api;
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(globalThis);

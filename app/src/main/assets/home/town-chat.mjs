@@ -34,7 +34,7 @@ export function townChat({note,quip,world,apply,usage,stream}){
   const below=(point.feetY??point.y+76)+10;
   const above=point.y-form.offsetHeight-(bubble.hidden?36:bubble.offsetHeight+40);
   if(!form.hidden){
-   position??={x:point.x,y:below+form.offsetHeight<=top+h-8?below:above,height:h};
+   position=position??{x:point.x,y:below+form.offsetHeight<=top+h-8?below:above,height:h};
    const keyboard=document.activeElement===input&&h<position.height-76;
    place(form,position.x,keyboard?top+h-form.offsetHeight-8:position.y);
   }
@@ -51,6 +51,7 @@ export function townChat({note,quip,world,apply,usage,stream}){
  }
  function playVoice(id,text,volume,options){
   if(options.voiceName==='silero-kseniya')post('synthesize',{...options,id,text,volume});
+  else if(window.Desk?.townSpeakVoice)window.Desk.townSpeakVoice(id,text,options.rate,options.pitch,volume,options.voiceName||'');
   else window.Desk?.townSpeak?.(id,text,options.rate,options.pitch,volume);
  }
  function stopPhrase(){
@@ -135,7 +136,7 @@ export function townChat({note,quip,world,apply,usage,stream}){
    const token=sessionStorage.getItem('townActionToken'),match=answer.text.match(/\[town ([a-z0-9-]+) ([0-9]+) ([a-zA-Z]+)\]\s*$/);
    if(token&&match&&match[1]===token){
      sessionStorage.removeItem('townActionToken');answer.text=answer.text.slice(0,match.index).trim();
-     const report=apply(Number(match[2]),match[3]);note(report);answer.text||=report;
+     const report=apply(Number(match[2]),match[3]);note(report);answer.text=answer.text||report;
    }
    document.querySelector('#speech [data-speaker="15"]')?.style.setProperty('display','none');
    choicePoll=window.EvaQuestions?.parse(answer.text)||null;

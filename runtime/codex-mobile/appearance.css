@@ -1,0 +1,32 @@
+#appearance-settings{box-sizing:border-box;width:min(94vw,30rem);max-height:88vh;max-height:88dvh;overflow:auto;padding:18px;color:#f1eae0;background:#1a2530;border:1px solid #41545e;border-radius:20px;color-scheme:dark}
+#appearance-settings::backdrop{background:#0a121baf}
+#appearance-settings header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#appearance-settings h2,#appearance-settings h3,#appearance-settings p{margin:0}
+#appearance-settings h2{font-size:1.2rem}
+#appearance-settings h3,#appearance-style-form>label{font-size:1rem;font-weight:650}
+#appearance-settings section:not(:empty),#appearance-style-form{display:grid;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid #3c4c53}
+#appearance-settings p{font-size:.875rem;line-height:1.4;color:#c6d0d1}
+#appearance-settings button{min-height:44px;padding:8px 13px;border:1px solid #55656d;border-radius:12px;background:#263a45;color:#edf4f2;white-space:normal}
+#appearance-settings button:disabled{opacity:.55}
+#appearance-settings [hidden]{display:none!important}
+#appearance-settings #appearance-close{display:grid;width:44px;place-items:center;padding:8px;background:transparent}
+#appearance-settings button:focus-visible,#appearance-settings textarea:focus-visible{outline:2px solid #8adac2;outline-offset:2px}
+#appearance-settings #appearance-save,#appearance-settings #appearance-pick{background:#395c57;border-color:#66948a}
+#appearance-settings textarea{width:100%;box-sizing:border-box;min-height:6em;padding:10px;border:1px solid #607078;border-radius:12px;background:#101a22;color:#f0f4f3;font:inherit;font-size:16px;resize:vertical}
+.appearance-actions,.appearance-preview{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#appearance-thumb{width:40px;height:56px;object-fit:contain;background:#101923;border-radius:8px}
+#appearance-settings #appearance-status:not(:empty){margin-top:14px;color:#e8d4a0}
+#personal-portrait-image{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:50% 0;pointer-events:none}
+body.eva-custom-portrait #avatar-stage .avatar-figure{display:none}
+body.eva-pet-chat #personal-portrait-image{display:none}
+body.eva-model-portrait #personal-portrait-image{visibility:hidden}
+
+#character-models { margin-block-start:1.25rem; display:grid; gap:.6rem; }
+#character-models h3,#character-models p { margin:0; }
+#character-models fieldset { display:flex; flex-wrap:wrap; gap:.5rem 1rem; border:0; padding:0; margin:.25rem 0; }
+#character-models fieldset label { display:inline-flex; align-items:center; gap:.3rem; min-height:44px; }
+#character-models input[type=checkbox] { width:1.1rem; height:1.1rem; }
+#character-models button,#character-models select { min-height:44px; }
+#character-models select { max-width:100%; }
+#character-models .character-slot { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.4rem; min-height:36px; }
+#character-models [role=status]:empty { display:none; }

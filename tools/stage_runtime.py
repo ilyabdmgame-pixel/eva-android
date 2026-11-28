@@ -36,6 +36,10 @@ def add_file(archive, source, name):
 
 
 def runtime_files():
+    for name in ("eva-rig.mjs", "eva-clips.mjs"):
+        yield ROOT / "app/src/main/assets/home" / name, "root/codex-mobile/model-rig/" + name
+    for name in ("LICENSE", "three.module.min.js", "GLTFLoader.js", "BufferGeometryUtils.js"):
+        yield RUNTIME / "codex-mobile/model-vendor" / name, "root/codex-mobile/model-vendor/" + name
     for dirname in ("codex-mobile", "eva-workshop", "eva-builtins"):
         for source in sorted((RUNTIME / dirname).rglob("*")):
             if source.is_symlink() or not source.is_file():
@@ -87,6 +91,7 @@ def pack_application(assets, rootfs):
     assets.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(RUNTIME / "codex-mobile" / "question-options.js", assets / "eva-questions.js")
     shutil.copyfile(RUNTIME / "codex-mobile" / "ui-icons.js", assets / "eva-icons.js")
+    shutil.copyfile(RUNTIME / "codex-mobile/webview-compat.js", assets / "eva-webview-compat.js")
     (assets / "eva-replaced-portraits.tsv").write_bytes(portrait_replacements())
     pack = assets / "eva-runtime.pack"
     with pack.open("wb") as destination, gzip.GzipFile(filename="", fileobj=destination, mode="wb", mtime=0) as compressed:

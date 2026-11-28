@@ -8,6 +8,7 @@ import tarfile
 import zipfile
 import tempfile
 import shutil
+import struct
 
 if __package__:
     from .stage_runtime import portrait_replacements, runtime_files
@@ -61,7 +62,8 @@ def audit_assets(apk):
               for p in source_dir.rglob("*") if p.is_file() and not p.is_symlink()}
     root = ROOT / "runtime/codex-mobile"
     wanted.update({"assets/eva-questions.js": root / "question-options.js",
-                   "assets/eva-icons.js": root / "ui-icons.js"})
+                   "assets/eva-icons.js": root / "ui-icons.js",
+                   "assets/eva-webview-compat.js": root / "webview-compat.js"})
     replacements = "assets/eva-replaced-portraits.tsv"
     if apk.read(replacements) != portrait_replacements():
         raise ValueError("Portrait upgrade list differs from source")
@@ -98,10 +100,33 @@ def audit_voice_model(apk):
                 raise ValueError("Incomplete or oversized speech model")
 
 
+def audit_android_alignment(apk):
+    # These libraries can be extracted by Android, but the ELF segment alignment
+    # must still match a 16-KiB kernel when Android loads or executes them.
+    for entry in apk.infolist():
+        if not entry.filename.startswith("lib/arm64-v8a/") or not entry.filename.endswith(".so"):
+            continue
+        with apk.open(entry) as stream:
+            header = stream.read(64)
+            if len(header) != 64 or header[:6] != b"\x7fELF\x02\x01" or struct.unpack_from("<H", header, 18)[0] != 183:
+                raise ValueError(f"Invalid AArch64 ELF: {entry.filename}")
+            offset = struct.unpack_from("<Q", header, 32)[0]
+            stride, count = struct.unpack_from("<HH", header, 54)
+            if stride < 56 or offset < 64 or offset + stride * count > min(entry.file_size, 1 << 20):
+                raise ValueError(f"Invalid ELF program headers: {entry.filename}")
+            stream.read(offset - 64)
+            table = stream.read(stride * count)
+            loads = [struct.unpack_from("<IIQQQQQQ", table, i * stride) for i in range(count)]
+            loads = [segment for segment in loads if segment[0] == 1]
+            if not loads or any(p[7] < 16384 or (p[3] - p[2]) % 16384 for p in loads):
+                raise ValueError(f"ELF cannot load on 16 KiB Android: {entry.filename}")
+
+
 def audit(path):
     with zipfile.ZipFile(path) as apk:
         if len(set(apk.namelist())) != len(apk.namelist()):
             raise ValueError("Duplicate APK entries")
+        audit_android_alignment(apk)
         audit_assets(apk)
         audit_voice_model(apk)
         for name in apk.namelist():

@@ -19,6 +19,8 @@ import ru.eva.envtest.CodexService;
 import ru.eva.envtest.EvaAccessibility;
 import ru.eva.envtest.EvaPresence;
 import ru.eva.envtest.MainActivity;
+import ru.eva.envtest.SystemSettings;
+import ru.eva.envtest.CharacterModels;
 import org.json.*;
 import java.io.*;
 import java.util.*;
@@ -31,24 +33,26 @@ public final class Home extends Activity {
         return new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
     }
     public static boolean isDefaultHome(Context context){
+        if(Build.VERSION.SDK_INT>=29){
+            RoleManager roles=context.getSystemService(RoleManager.class);
+            if(roles!=null)try{
+                if(roles.isRoleAvailable(RoleManager.ROLE_HOME)&&roles.isRoleHeld(RoleManager.ROLE_HOME))return true;
+            }catch(SecurityException ignored){}
+        }
         ResolveInfo selected=context.getPackageManager().resolveActivity(homeIntent(),PackageManager.MATCH_DEFAULT_ONLY);
-        return selected!=null&&selected.activityInfo!=null&&new ComponentName(context,Home.class).equals(
-            new ComponentName(selected.activityInfo.packageName,selected.activityInfo.name));
+        return selected!=null&&selected.activityInfo!=null&&context.getPackageName().equals(selected.activityInfo.packageName);
     }
     public static void chooseDefaultHome(Activity activity){
         if(!isDefaultHome(activity)&&Build.VERSION.SDK_INT>=29){
             RoleManager roles=activity.getSystemService(RoleManager.class);
-            if(roles!=null&&roles.isRoleAvailable(RoleManager.ROLE_HOME)&&!roles.isRoleHeld(RoleManager.ROLE_HOME)){
-                try{
-                    activity.startActivityForResult(roles.createRequestRoleIntent(RoleManager.ROLE_HOME),701);
-                    return;
-                }catch(ActivityNotFoundException|SecurityException ignored){}
-            }
+            if(roles!=null)try{
+                if(roles.isRoleAvailable(RoleManager.ROLE_HOME)&&!roles.isRoleHeld(RoleManager.ROLE_HOME)){
+                    activity.startActivityForResult(roles.createRequestRoleIntent(RoleManager.ROLE_HOME),701);return;
+                }
+            }catch(ActivityNotFoundException|SecurityException ignored){}
         }
-        try{activity.startActivity(new Intent(Settings.ACTION_HOME_SETTINGS));}
-        catch(ActivityNotFoundException|SecurityException error){
-            Toast.makeText(activity,"Настройки главного экрана недоступны",Toast.LENGTH_SHORT).show();
-        }
+        SystemSettings.open(activity,new Intent(Settings.ACTION_HOME_SETTINGS),
+            new Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS),new Intent(Settings.ACTION_SETTINGS));
     }
     public static void openDefaultHome(Activity activity){
         if(!isDefaultHome(activity)){chooseDefaultHome(activity);return;}
@@ -72,7 +76,8 @@ public final class Home extends Activity {
     private String catalog="[]";
     private WebView web;
     private FrameLayout scene;
-    private Button recovery;
+    private CharacterModels character;
+    private android.widget.LinearLayout recovery;
     private long rendererLostAt = -1;
     private boolean homeActive;
     private int batteryLevel=-1;
@@ -125,6 +130,12 @@ public final class Home extends Activity {
         if(!"https".equals(u.getScheme())||!HOST.equals(u.getHost()))return empty();
         try{
             String p=u.getPath();
+            if(p!=null&&p.startsWith("/character-model/")){
+                java.util.List<String> parts=u.getPathSegments();if(parts.size()!=3||!"character-model".equals(parts.get(0)))return empty();
+                String name=parts.get(2);InputStream model=character.open(parts.get(1),name);
+                return new WebResourceResponse("room.mesh".equals(name)?"application/octet-stream":"image/png",null,
+                    200,"OK",Collections.singletonMap("Cache-Control","private, no-store"),model);
+            }
             if("/icon".equals(p)){
                 String key=u.getQueryParameter("id");ResolveInfo app=find(key);if(app==null)return empty();
                 byte[] bytes=icons.get(key);
@@ -140,6 +151,7 @@ public final class Home extends Activity {
             String mime=p.endsWith(".html")?"text/html":p.endsWith(".css")?"text/css":(p.endsWith(".js")||p.endsWith(".mjs"))?"text/javascript":p.endsWith(".svg")?"image/svg+xml":p.endsWith(".jpg")?"image/jpeg":p.endsWith(".webp")?"image/webp":p.endsWith(".json")?"application/json":"image/png";
             String asset;
             if ("/question-options.js".equals(p)) asset = "eva-questions.js";
+            else if ("/webview-compat.js".equals(p)) asset = "eva-webview-compat.js";
             else if ("/ui-icons.js".equals(p)) asset = "eva-icons.js";
             else asset = "home"+p;
             return new WebResourceResponse(mime,mime.startsWith("text/")?"utf-8":null,getAssets().open(asset));
@@ -160,6 +172,7 @@ public final class Home extends Activity {
         if(web!=null)web.evaluateJavascript("window.setHomeBattery?.("+batteryLevel+","+batteryCharging+")",null);
     }
     public final class Bridge{
+        @JavascriptInterface public String characterModel(){return character.revision();}
         @JavascriptInterface public String presenceProfile(){return EvaPresence.webProfile(Home.this);}
         @JavascriptInterface public void deviceSnapshot(String tab,long request){
             runOnUiThread(()->{
@@ -180,7 +193,7 @@ public final class Home extends Activity {
         }
         @JavascriptInterface public void deviceSettings(String page){
             String action="usage".equals(page)?Settings.ACTION_USAGE_ACCESS_SETTINGS:Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS;
-            launch(new Intent(action));
+            runOnUiThread(()->SystemSettings.open(Home.this,new Intent(action),new Intent(Settings.ACTION_SETTINGS)));
         }
         @JavascriptInterface public void reloadRoom(){
             runOnUiThread(()->{if(homeActive&&web!=null)web.reload();});
@@ -195,7 +208,10 @@ public final class Home extends Activity {
         }
         @JavascriptInterface public void townMic(){runOnUiThread(()->chat.microphone());}
         @JavascriptInterface public void townSpeak(String id,String text,float rate,float pitch,float volume){
-            runOnUiThread(()->chat.speak(id,text,rate,pitch,volume));
+            townSpeakVoice(id,text,rate,pitch,volume,"");
+        }
+        @JavascriptInterface public void townSpeakVoice(String id,String text,float rate,float pitch,float volume,String selected){
+            runOnUiThread(()->chat.speak(id,text,rate,pitch,volume,selected));
         }
         @JavascriptInterface public void stopRoomVoice(String id){runOnUiThread(()->chat.stopSpeech(id));}
         @JavascriptInterface public String routines(){return LifeState.routines(Home.this).toString();}
@@ -254,7 +270,7 @@ public final class Home extends Activity {
     }
     private void showRecentAppsHint(){
         if(homeActive&&hasWindowFocus()){
-            Toast.makeText(this,"Смахни от нижнего края и задержи палец",Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,"Открой недавние приложения кнопкой обзора или свайпом снизу с удержанием",Toast.LENGTH_SHORT).show();
         }
     }
     public void onCreate(Bundle b){
@@ -269,12 +285,15 @@ public final class Home extends Activity {
             getWindow().setAttributes(params);
         }
         scene=new FrameLayout(this);setContentView(scene);
+        character=new CharacterModels(getFilesDir(),"room",worker,revision->{
+            if(web!=null)web.evaluateJavascript("window.setRoomCharacter && window.setRoomCharacter("+JSONObject.quote(revision)+")",null);
+        });
         chat=new TownChat(this);weather=new WeatherWidget(this,scene);monitor=new DeviceMonitor(this);
         createRoomView();
     }
     private void createRoomView(){
         if(recovery!=null){scene.removeView(recovery);recovery=null;}
-        web=new WebView(this);
+        try{web=new WebView(this);}catch(RuntimeException unavailable){showRecovery();return;}
         if((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE)!=0)WebView.setWebContentsDebuggingEnabled(true);
         web.setBackgroundColor(0xff293335);scene.addView(web,new FrameLayout.LayoutParams(-1,-1));
         WebSettings w=web.getSettings();w.setJavaScriptEnabled(true);w.setDomStorageEnabled(true);w.setAllowFileAccess(false);w.setAllowContentAccess(false);w.setBlockNetworkLoads(true);
@@ -283,8 +302,11 @@ public final class Home extends Activity {
             public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return true;}
             @Override public void onPageFinished(WebView v,String url){
                 if(v!=web)return;
-                v.evaluateJavascript("window.refreshApps?.(); window.setHomeActive?.("+homeActive+")",null);
-                showBattery();
+                v.evaluateJavascript("typeof window.closeSheet==='function' && typeof window.setHomeActive==='function'",usable->{
+                    if(v!=web)return;
+                    if(!"true".equals(usable)){discardRoomView();showRecovery();return;}
+                    v.evaluateJavascript("window.refreshApps?.(); window.setHomeActive?.("+homeActive+")",null);showBattery();
+                });
             }
             @Override public boolean onRenderProcessGone(WebView v,RenderProcessGoneDetail detail){
                 if(v!=web)return true;
@@ -305,20 +327,38 @@ public final class Home extends Activity {
         scene.removeView(old);old.destroy();
     }
     private void showRecovery(){
-        recovery=new Button(this);recovery.setText("Восстановить комнату");
-        FrameLayout.LayoutParams params=new FrameLayout.LayoutParams(-2,-2,android.view.Gravity.CENTER);
-        scene.addView(recovery,params);
-        recovery.setOnClickListener(view->createRoomView());
+        if(recovery!=null)return;
+        recovery=new android.widget.LinearLayout(this);recovery.setOrientation(android.widget.LinearLayout.VERTICAL);
+        recovery.setGravity(android.view.Gravity.CENTER);recovery.setBackgroundColor(0xff273337);
+        android.widget.TextView status=new android.widget.TextView(this);status.setText("Комната не загрузилась");
+        status.setTextColor(0xffe5f1ed);recovery.addView(status);
+        recoveryButton("Восстановить комнату",this::createRoomView);
+        recoveryButton("Приложения",this::nativeApps);
+        recoveryButton("Чат с Евой",()->launch(new Intent(Home.this,MainActivity.class)));
+        recoveryButton("Сменить рабочий стол",()->chooseDefaultHome(Home.this));
+        scene.addView(recovery,new FrameLayout.LayoutParams(-1,-1));
+    }
+    private void recoveryButton(String title,Runnable action){
+        Button button=new Button(this);button.setText(title);button.setOnClickListener(v->action.run());recovery.addView(button);
+    }
+    private void nativeApps(){
+        String snapshot; synchronized(entries){snapshot=catalog;}
+        try{
+            JSONArray apps=new JSONArray(snapshot);String[] keys=new String[apps.length()],labels=new String[apps.length()];
+            for(int i=0;i<apps.length();i++){JSONObject app=apps.getJSONObject(i);keys[i]=app.getString("key");labels[i]=app.getString("name");}
+            if(keys.length==0){refresh();Toast.makeText(this,"Обновляю список приложений",Toast.LENGTH_SHORT).show();return;}
+            new android.app.AlertDialog.Builder(this).setTitle("Приложения").setItems(labels,(d,i)->new Bridge().open(keys[i])).show();
+        }catch(JSONException unavailable){refresh();}
     }
     protected void onStart(){
-        super.onStart();visible=this;CodexService.desktopVisibilityChanged();weather.start();
+        super.onStart();visible=this;CodexService.desktopVisibilityChanged();character.start();weather.start();
         IntentFilter filter=new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
         updateBattery(Build.VERSION.SDK_INT>=33?registerReceiver(battery,filter,Context.RECEIVER_NOT_EXPORTED):registerReceiver(battery,filter));
     }
     protected void onStop(){
         unregisterReceiver(battery);
         if(visible==this){visible=null;CodexService.desktopVisibilityChanged();}
-        weather.stop();super.onStop();
+        character.stop();weather.stop();super.onStop();
     }
     protected void onActivityResult(int request,int code,Intent data){
         super.onActivityResult(request,code,data);
@@ -326,7 +366,7 @@ public final class Home extends Activity {
     }
     protected void onNewIntent(Intent i){super.onNewIntent(i);if(web!=null)web.evaluateJavascript("window.closeSheet?.()",null);}
     protected void onResume(){
-        super.onResume();homeActive=true;chat.resume();
+        super.onResume();homeActive=true;chat.resume();character.check();
         if(web==null&&recovery==null)createRoomView();
         if(web!=null){web.onResume();web.evaluateJavascript("window.setHomeActive?.(true,true)",null);}
         refresh();
@@ -347,5 +387,5 @@ public final class Home extends Activity {
         super.onPause();
     }
     public void onBackPressed(){if(web!=null)web.evaluateJavascript("window.backLayout?.() || window.closeTown?.() || window.closeSheet?.()",null);}
-    protected void onDestroy(){chat.destroy();worker.shutdownNow();discardRoomView();super.onDestroy();}
+    protected void onDestroy(){chat.destroy();character.stop();worker.shutdownNow();discardRoomView();super.onDestroy();}
 }

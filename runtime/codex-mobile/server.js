@@ -1,6 +1,7 @@
 'use strict';
 const http=require('http'), fs=require('fs'), path=require('path'), crypto=require('crypto'), {spawn}=require('child_process'), readline=require('readline');
 const {codexInstructions, createPersonaRpc}=require('./persona');
+const {profile, MAX_PNG}=require('./personal-profile');
 const runtimeHome=process.env.EVA_RUNTIME_HOME||'/root';
 const workshopDir=path.join(__dirname,'../eva-workshop');
 const tasks=require('./tasks'), providers=require('./providers'), notes=require('./notes');
@@ -97,6 +98,45 @@ function serveFile(res,file,headers){
   stream.pipe(res);
  });
 }
+async function handleAppearance(req,res,route) {
+ const invalid=(message,status=400)=>Object.assign(new Error(message),{status});
+ function payload(limit) {
+   return new Promise((resolve,reject)=>{
+     if(Number(req.headers['content-length'])>limit){req.resume();reject(invalid('Файл слишком большой.',413));return;}
+     let length=0,parts=[];
+     req.on('data',chunk=>{
+       length+=chunk.length;
+       if(length>limit){parts=[];reject(invalid('Файл слишком большой.',413));}
+       else parts.push(chunk);
+     });
+     req.once('error',reject);
+     req.once('end',()=>resolve(Buffer.concat(parts)));
+   });
+ }
+ try {
+   if(route==='/appearance'&&req.method==='GET')return json(res,200,profile.state());
+   if(route==='/appearance/style'&&req.method==='POST'){
+     let request;
+     try{request=JSON.parse((await payload(24576)).toString('utf8'));}
+     catch(e){if(e.status)throw e;throw invalid('Некорректные данные характера.');}
+     const style=profile.setStyle(request?.style);
+     emit({type:'appearance-changed'});return json(res,200,{style});
+   }
+   if(route==='/appearance/portrait'){
+     if(req.method==='GET')return serveFile(res,profile.imagePath,{'Content-Type':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'});
+     if(req.method==='DELETE'){profile.resetPortrait();emit({type:'appearance-changed'});return json(res,200,{portraitVersion:''});}
+     if(req.method==='PUT'){
+       if(req.headers['content-type']!=='image/png')throw invalid('Ожидается обработанный PNG.',415);
+       const portraitVersion=await profile.savePortrait(await payload(MAX_PNG));
+       emit({type:'appearance-changed'});return json(res,200,{portraitVersion});
+     }
+   }
+   return json(res,404,{error:'Настройка не найдена.'});
+ }catch(e){return json(res,e.status||500,{error:e.status?e.message:'Не удалось открыть или сохранить профиль Евы.'});}
+}
+const characterRoutes=require('./character-library').routes(runtimeHome,json,serveFile);
+const modelScripts=new Set(['three.module.min.js','GLTFLoader.js','BufferGeometryUtils.js']);
+const rigScripts=new Set(['eva-rig.mjs','eva-clips.mjs']);
 const avatarAssets=new Set([
   'idle', 'idle-body', 'idle-hair', 'idle-yawn', 'curious-v1', 'smile-mid', 'thinking-soft', 'warm-soft', 'laugh-v1', 'talking', 'blink',
   'blink-talking', 'blink-thinking', 'blink-reading', 'blink-search', 'blink-work', 'happy', 'thinking',
@@ -106,7 +146,15 @@ const avatarAssets=new Set([
   'cel-surprised', 'cel-sly', 'cel-thinking', 'cel-skeptical', 'cel-shy', 'cel-pout', 'cel-confident',
   'cel-sad', 'cel-excited', 'cel-wink', 'cel-annoyed', 'cel-tired', 'cel-relieved', 'cel-confused', 'cel-wave'
 ]);
-const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://127.0.0.1'); const host=req.headers.host;if(host!==`127.0.0.1:${server.address()?.port}`)return json(res,403,{error:'Неверный адрес'});if(req.method==='GET'&&u.pathname==='/'){return serveFile(res,path.join(__dirname,'index.html'),{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:",'X-Frame-Options':'DENY'})}if(req.method==='GET'&&['/app.js','/style.css','/sw.js','/native-voice.js','/question-options.js','/avatar-activity.js','/portrait.js','/ui-icons.js','/account.js'].includes(u.pathname)){return serveFile(res,path.join(__dirname,u.pathname),{'Content-Type':u.pathname.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8','Cache-Control':'no-store'})}
+const server=http.createServer(async(req,res)=>{try{const u=new URL(req.url,'http://127.0.0.1'); const host=req.headers.host;if(host!==`127.0.0.1:${server.address()?.port}`)return json(res,403,{error:'Неверный адрес'});if(req.method==='GET'&&u.pathname==='/'){return serveFile(res,path.join(__dirname,'index.html'),{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' blob:; img-src 'self' data: blob:",'X-Frame-Options':'DENY'})}if(req.method==='GET'&&['/app.js','/style.css','/sw.js','/native-voice.js','/question-options.js','/avatar-activity.js','/portrait.js','/ui-icons.js','/account.js','/appearance-ui.js','/appearance.css','/character-models.js','/character-format.js','/webview-compat.js','/character-bake.js','/character-art.js','/character-chat.js'].includes(u.pathname)){return serveFile(res,path.join(__dirname,u.pathname),{'Content-Type':u.pathname.endsWith('.js')?'text/javascript; charset=utf-8':'text/css; charset=utf-8','Cache-Control':'no-store'})}
+if(req.method==='GET'&&(u.pathname.startsWith('/model-vendor/')||u.pathname.startsWith('/model-rig/'))){
+ const [,folder,file,...rest]=u.pathname.split('/');
+ const rig=folder==='model-rig';
+ if(rest.length||!(rig?rigScripts:modelScripts).has(file))return json(res,404,{error:'Файл не найден'});
+ let source=path.join(__dirname,folder,file);
+ if(rig&&!fs.existsSync(source))source=path.resolve(__dirname,'../../app/src/main/assets/home',file);
+ return serveFile(res,source,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-cache'});
+}
 if(req.method==='GET'&&u.pathname.startsWith('/avatar/')){
  const match=/^\/avatar\/([a-z][a-z0-9-]*)\.(png|webp)$/.exec(u.pathname);
  if(!match||!avatarAssets.has(match[1]))return json(res,404,{error:'Кадр не найден'});
@@ -116,6 +164,8 @@ if(req.method==='GET'&&u.pathname.startsWith('/avatar/')){
 }
 
 if((req.headers['x-codex-token']||u.searchParams.get('token'))!==token)return json(res,403,{error:'Нет доступа'});if(req.headers.origin&&req.headers.origin!==`http://${host}`)return json(res,403,{error:'Неверный источник'});
+if(u.pathname==='/character-models'||u.pathname.startsWith('/character-models/'))return await characterRoutes(req,res,u);
+if(u.pathname==='/appearance'||u.pathname.startsWith('/appearance/'))return await handleAppearance(req,res,u.pathname);
 if(req.method==='GET'&&u.pathname==='/chat-image'){const supplied=u.searchParams.get('path')||'';const roots=['/sdcard/Documents/Codex','/root/.codex/generated_images'].filter(p=>fs.existsSync(p)).map(p=>fs.realpathSync(p));let file;try{file=fs.realpathSync(require("./screenshot-path").resolveScreenshot(supplied))}catch{return json(res,404,{error:'Изображение не найдено'})}if(!roots.some(root=>file.startsWith(root+path.sep)))return json(res,403,{error:'Изображение вне доступных папок'});const ext=path.extname(file).toLowerCase(),types={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif'};if(!Object.hasOwn(types,ext)||!fs.statSync(file).isFile())return json(res,400,{error:'Формат изображения не поддерживается'});return serveFile(res,file,{'Content-Type':types[ext],'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'})}
 if(req.method==='POST'&&u.pathname==='/chat-image/save'){const o=JSON.parse((await read(req,16384)).toString());try{return json(res,200,{name:require('./image-download').saveImage(o.path)})}catch(e){return json(res,400,{error:'Не удалось сохранить изображение: '+e.message})}}
 if(req.method==='GET'&&u.pathname==='/backup/status')return json(res,200,chatBackup.status());

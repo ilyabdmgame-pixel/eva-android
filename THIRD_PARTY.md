@@ -11,3 +11,7 @@ MIT в корне относится к исходному коду Евы. Гр
 Gradle подключает Vosk Android через Maven Central вместе с JNA. Условия обоих проектов доступны в исходных репозиториях. [Vosk](https://github.com/alphacep/vosk-api), [JNA](https://github.com/java-native-access/jna).
 
 Для русской модели `vosk-model-small-ru-0.22` проверены размер 46 236 750 байт и MD5 по записи Alpha Cephei. SHA-256 локального архива совпал с повторной загрузкой у издателя. В APK входят уведомление о модели, её SHA-256 и полный текст Apache 2.0 в `assets/licenses/`. [Каталог моделей](https://alphacephei.com/vosk/models) и [контрольные суммы издателя](https://alphacephei.com/vosk/models/model-list.json).
+
+## Загрузка моделей glTF
+
+Для пользовательских моделей приложение поставляет Three.js 0.160.1, GLTFLoader и BufferGeometryUtils под лицензией MIT. Три модуля взяты из одного npm-архива. Два импорта в загрузчике и импорт в утилите указывают на соседние файлы, чтобы модели открывались офлайн. [Лицензия](runtime/codex-mobile/model-vendor/LICENSE) · [Исходный выпуск Three.js](https://github.com/mrdoob/three.js/tree/r160) · [Архив 0.160.1](https://registry.npmjs.org/three/-/three-0.160.1.tgz)

@@ -125,8 +125,8 @@ function folderBar(){
   drawerSection='loose';drawer();
  });
  const tile=node('span',null,'tile');tile.append(node('i',null,'art-icon grid-art'));
- loose.append(tile,node('span','Вне папок'));bar.append(loose);wireFolder(loose,extras.inbox??={});
- const add=btn(null,'newfolder',()=>nameFolder(-1));add.append(node('i',null,'art-icon add-art'));add.setAttribute('aria-label','Новая папка');bar.append(add);wireFolder(add,extras.add??={});
+ loose.append(tile,node('span','Вне папок'));bar.append(loose);wireFolder(loose,extras.inbox=extras.inbox??{});
+ const add=btn(null,'newfolder',()=>nameFolder(-1));add.append(node('i',null,'art-icon add-art'));add.setAttribute('aria-label','Новая папка');bar.append(add);wireFolder(add,extras.add=extras.add??{});
  arrangeFolders();
 }
 function nameFolder(i){
