@@ -128,7 +128,9 @@ jobs:
           name: stock-android-${{ matrix.api }}
           path: |
             ${{ runner.temp }}/stock-${{ matrix.api }}/emulator.log
-            ${{ runner.temp }}/stock-${{ matrix.api }}/last-ui.xml
+            ${{ runner.temp }}/stock-${{ matrix.api }}/android.log
+            ${{ runner.temp }}/stock-${{ matrix.api }}/result.txt
+            ${{ runner.temp }}/stock-${{ matrix.api }}/last-screen.png
           retention-days: 3
   publish:
     if: startsWith(github.ref, 'refs/tags/v')

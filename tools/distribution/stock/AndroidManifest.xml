@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.evaassistant.smoke">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+    <application android:label="Eva integration test" />
+    <instrumentation android:name=".HomeSmoke" android:targetPackage="org.evaassistant.app" />
+</manifest>
